@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//c/Users/jfran/testcrewai/lancement_appli/langgraph/app_manager/.specify/memory/**)",
+      "Bash(git fetch:*)",
+      "Bash(powershell:*)",
+      "WebSearch",
+      "Bash(git add:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

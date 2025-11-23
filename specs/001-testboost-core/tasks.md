@@ -12,6 +12,7 @@
 - **[P]**: Can run in parallel (different files, no dependencies)
 - **[Story]**: Which user story (US1-US5)
 - Include exact file paths in descriptions
+- **Validation**: `> ✓` lines show acceptance criteria, `> $` shows test command
 
 ---
 
@@ -20,10 +21,48 @@
 **Purpose**: Project initialization and basic structure
 
 - [ ] T001 Create project structure per plan.md in src/
+  > ✓ Répertoires api/, cli/, core/, db/, lib/, workflows/, agents/, mcp_servers/ avec __init__.py
+  > $ `find src -type d -name "__pycache__" -prune -o -type d -print | wc -l`
 - [ ] T002 Initialize Python project with Poetry and pyproject.toml
+  > ✓ `poetry install` réussit, .venv/ créé
+  > $ `poetry check && poetry install --dry-run`
 - [ ] T003 [P] Configure ruff linter and black formatter in pyproject.toml
+  > ✓ Sections [tool.ruff] et [tool.black] présentes
+  > $ `ruff check src/ --select=E999`
 - [ ] T004 [P] Create .env.example with all required environment variables
+  > ✓ DATABASE_URL, API keys, LANGSMITH configurés (placeholders)
+  > $ `grep -c "^[A-Z_]=" .env.example`
 - [ ] T005 [P] Create docker-compose.yaml for PostgreSQL and application
+  > ✓ Services postgres et testboost définis
+  > $ `docker-compose config -q && echo "Valid"`
+
+---
+
+## Phase 1.5: Test Projects Setup
+
+**Purpose**: Prepare reference Java projects for validation testing
+
+**Projects**:
+- **Petit**: `LableOrg/java-maven-junit-helloworld` (~5 classes)
+- **Moyen**: `spring-petclinic/spring-petclinic-reactjs` (~50 classes, Spring Boot)
+- **Gros**: `spring-petclinic/spring-petclinic-microservices` (8+ modules, Docker)
+
+- [ ] T005a Clone test repositories into test-projects/
+  > ✓ 3 repos clonés avec .git valide
+  > $ `ls test-projects/*/pom.xml`
+- [ ] T005b Verify small project builds (java-maven-junit-helloworld)
+  > ✓ `mvn clean verify` réussit, JAR généré
+  > $ `cd test-projects/java-maven-junit-helloworld && mvn clean verify -q`
+- [ ] T005c Verify medium project builds (spring-petclinic-reactjs)
+  > ✓ `mvn clean package -DskipTests` réussit
+  > $ `cd test-projects/spring-petclinic-reactjs && mvn clean package -DskipTests -q`
+- [ ] T005d Verify large project builds (spring-petclinic-microservices)
+  > ✓ Tous modules compilent, docker-compose valide
+  > $ `cd test-projects/spring-petclinic-microservices && mvn clean install -DskipTests -q`
+- [ ] T005e Launch and validate all test applications
+  > ✓ Petit: tests passent, Moyen: health OK port 8080, Gros: services Docker healthy
+
+**Checkpoint**: Test projects ready for validation testing
 
 ---
 
@@ -36,46 +75,98 @@
 ### Database Layer
 
 - [ ] T006 Create SQLAlchemy base and session factory in src/db/__init__.py
+  > ✓ Exporte Base, SessionLocal, get_db
+  > $ `python -c "from src.db import Base, SessionLocal, get_db; print('OK')"`
 - [ ] T007 [P] Implement Session model in src/db/models/session.py
+  > ✓ Tous champs data-model.md, relations steps/events/artifacts
+  > $ `python -c "from src.db.models.session import Session; print(Session.__tablename__)"`
 - [ ] T008 [P] Implement Step model in src/db/models/step.py
+  > ✓ FK Session, inputs/outputs JSON, enum status
+  > $ `python -c "from src.db.models.step import Step; print(Step.__tablename__)"`
 - [ ] T009 [P] Implement Event model in src/db/models/event.py
+  > ✓ FK Session/Step, event_data JSON, index event_type
+  > $ `python -c "from src.db.models.event import Event; print(Event.__tablename__)"`
 - [ ] T010 [P] Implement Artifact model in src/db/models/artifact.py
+  > ✓ FK Session/Step, content_type, file_path, size_bytes
+  > $ `python -c "from src.db.models.artifact import Artifact; print(Artifact.__tablename__)"`
 - [ ] T011 [P] Implement ProjectLock model in src/db/models/project_lock.py
+  > ✓ project_path unique, expires_at, FK Session
+  > $ `python -c "from src.db.models.project_lock import ProjectLock; print(ProjectLock.__tablename__)"`
 - [ ] T012 Create Alembic migrations for all models in src/db/migrations/
+  > ✓ alembic.ini, migrations/, `alembic upgrade head` réussit
+  > $ `alembic check`
 - [ ] T013 Implement repository pattern in src/db/repository.py
+  > ✓ BaseRepository CRUD, SessionRepository, StepRepository
+  > $ `python -c "from src.db.repository import SessionRepository; print('OK')"`
 
 ### Core Services
 
 - [ ] T014 Implement configuration management with Pydantic Settings in src/lib/config.py
+  > ✓ Classe Settings, validation, support .env
+  > $ `python -c "from src.lib.config import get_settings; print(get_settings().model_dump_json()[:50])"`
 - [ ] T015 [P] Implement structured JSON logging with structlog in src/lib/logging.py
+  > ✓ JSON en prod, coloré en dev, contexte auto
+  > $ `python -c "from src.lib.logging import get_logger; get_logger('test').info('ok')"`
 - [ ] T016 [P] Implement sensitive data masking in src/lib/logging.py (FR-046A)
+  > ✓ Masque password, token, api_key, secret
+  > $ `pytest tests/lib/test_logging.py::test_sensitive_masking -v`
 - [ ] T017 Implement event sourcing service in src/core/events.py
+  > ✓ emit(), get_events(), persist en DB
+  > $ `python -c "from src.core.events import EventService; print('OK')"`
 - [ ] T018 Implement project lock service in src/core/locking.py
+  > ✓ acquire_lock(), release_lock(), is_locked(), cleanup expired
+  > $ `python -c "from src.core.locking import LockService; print('OK')"`
 
 ### API Foundation
 
 - [ ] T019 Create FastAPI app with middleware in src/api/main.py
+  > ✓ CORS, request ID middleware, exception handlers, OpenAPI metadata
+  > $ `python -c "from src.api.main import app; print(app.title, app.version)"`
 - [ ] T020 [P] Implement API key authentication middleware in src/api/middleware/auth.py
+  > ✓ Vérifie X-API-Key, 401 si invalide, bypass /health et /docs
+  > $ `pytest tests/api/test_auth.py -v`
 - [ ] T021 [P] Implement request logging middleware in src/api/middleware/logging.py
+  > ✓ Log method, path, duration, status, request_id
+  > $ `pytest tests/api/test_logging_middleware.py -v`
 - [ ] T022 Implement health check endpoint in src/api/routers/health.py
+  > ✓ Vérifie DB, retourne status/version/checks, 503 si unhealthy
+  > $ `pytest tests/api/test_health.py -v`
 - [ ] T023 Create Pydantic schemas for Session/Step/Event in src/api/models/
+  > ✓ SessionCreate, SessionResponse, StepResponse, EventResponse
+  > $ `python -c "from src.api.models import SessionCreate, SessionResponse; print('OK')"`
 
 ### LangGraph Foundation
 
 - [ ] T024 Implement LLM provider factory with retry logic (FR-009A) in src/lib/llm.py
+  > ✓ Support OpenAI/Anthropic, retry exponential backoff, timeout
+  > $ `python -c "from src.lib.llm import get_llm; print(type(get_llm()).__name__)"`
 - [ ] T025 Create base workflow state schema in src/workflows/state.py
+  > ✓ WorkflowState(TypedDict) avec session_id, project_path, mode, current_step
+  > $ `python -c "from src.workflows.state import WorkflowState; print(list(WorkflowState.__annotations__.keys())[:3])"`
 - [ ] T026 Implement workflow executor with LangGraph in src/core/workflow.py
+  > ✓ Charge StateGraph, transitions, events, pause/resume checkpoint
+  > $ `python -c "from src.core.workflow import WorkflowExecutor; print('OK')"`
 
 ### Agent Foundation
 
 - [ ] T027 Implement DeepAgents YAML loader in src/agents/loader.py
+  > ✓ Parse YAML DeepAgents, valide avec Pydantic
+  > $ `python -c "from src.agents.loader import load_agent_config; print('OK')"`
 - [ ] T028 Implement LangGraph agent adapter in src/agents/adapter.py
+  > ✓ Convertit config en node LangGraph, bind tools MCP
+  > $ `python -c "from src.agents.adapter import AgentAdapter; print('OK')"`
 - [ ] T029 [P] Create common Java expert prompt in config/prompts/common/java_expert.md
+  > ✓ Expertise Java/Maven/Spring, guidelines modifications
+  > $ `test -f config/prompts/common/java_expert.md && wc -l config/prompts/common/java_expert.md`
 
 ### CLI Foundation
 
 - [ ] T030 Create Typer CLI app structure in src/cli/main.py
+  > ✓ App Typer, --version, --help, structure sous-commandes
+  > $ `python -m src.cli.main --help`
 - [ ] T031 Implement CLI exit codes per quickstart.md in src/cli/main.py
+  > ✓ 0=succès, 1=erreur, 2=args invalides dans exit_codes.py
+  > $ `python -c "from src.cli.exit_codes import SUCCESS, ERROR; print(SUCCESS, ERROR)"`
 
 **Checkpoint**: Foundation ready - user story implementation can now begin
 

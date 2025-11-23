@@ -23,9 +23,14 @@
 - [ ] T001 Create project structure per plan.md in src/
   > ✓ Répertoires api/, cli/, core/, db/, lib/, workflows/, agents/, mcp_servers/ avec __init__.py
   > $ `find src -type d -name "__pycache__" -prune -o -type d -print | wc -l`
-- [ ] T002 Initialize Python project with Poetry and pyproject.toml
+- [ ] T002 Initialize Python project with Poetry and pyproject.toml using versions from research.md
   > ✓ `poetry install` réussit, .venv/ créé
+  > ✓ All dependency versions MUST match research.md exactly (no substitution)
   > $ `poetry check && poetry install --dry-run`
+- [ ] T002b Validate pyproject.toml versions against research.md
+  > ✓ Every dependency in pyproject.toml matches the version specified in research.md
+  > ✓ No missing dependencies from research.md (including deepagents)
+  > $ Manual verification or diff check
 - [ ] T003 [P] Configure ruff linter and black formatter in pyproject.toml
   > ✓ Sections [tool.ruff] et [tool.black] présentes
   > $ `ruff check src/ --select=E999`

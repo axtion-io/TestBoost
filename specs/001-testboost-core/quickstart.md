@@ -81,17 +81,23 @@ docker-compose up -d
 ### CLI
 
 ```bash
-# Maintenance Maven
-boost maintenance --project-path /path/to/maven/project
+# Maintenance Maven (via Python module)
+python -m src.cli.main maintenance /path/to/maven/project
+
+# Or using the boost command if installed via pip
+boost maintenance /path/to/maven/project
 
 # Génération de tests
-boost tests --project-path /path/to/maven/project --types unit,integration
+boost generate /path/to/maven/project --types unit,integration
 
 # Déploiement Docker
-boost deploy --project-path /path/to/maven/project
+boost deploy /path/to/maven/project
 
 # Audit seul (pas de modification)
-boost audit --project-path /path/to/maven/project
+boost audit /path/to/maven/project
+
+# Check session status
+boost status [session_id]
 ```
 
 ### API

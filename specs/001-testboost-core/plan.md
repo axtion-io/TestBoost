@@ -10,7 +10,7 @@ TestBoost automatise la maintenance des applications Java/Spring Boot avec g√©n√
 ## Technical Context
 
 **Language/Version**: Python 3.10+ (LangGraph 1.0 requirement)
-**Primary Dependencies**:
+**Primary Dependencies** (see research.md for exact versions):
 - LangGraph (orchestration workflows)
 - LangChain + DeepAgents (configuration agents)
 - FastAPI (REST API)

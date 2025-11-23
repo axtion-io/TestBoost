@@ -149,6 +149,7 @@ langchain-google-genai = "^2.1"
 langchain-anthropic = "^1.1"
 langchain-openai = "^1.0"
 mcp = "^1.22"  # MCP SDK from Anthropic
+deepagents = "^0.2.7"  # Deep agents with sub-agent spawning
 typer = "^0.20"
 httpx = "^0.28"
 structlog = "^25.5"

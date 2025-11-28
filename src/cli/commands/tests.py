@@ -5,8 +5,9 @@ from pathlib import Path
 
 import typer
 from rich.console import Console
-from rich.progress import Progress, SpinnerColumn, TextColumn
+from rich.progress import Progress, TextColumn
 from rich.table import Table
+from src.cli.progress import create_progress
 
 from src.lib.logging import get_logger
 
@@ -235,11 +236,10 @@ def _run_analysis(project_dir: Path, verbose: bool) -> None:
         from src.mcp_servers.test_generator.tools.analyze import analyze_project_context
         from src.mcp_servers.test_generator.tools.conventions import detect_test_conventions
 
-        with Progress(
-            SpinnerColumn(),
-            TextColumn("[progress.description]{task.description}"),
-            console=console,
-        ) as progress:
+        with create_progress(console) as progress:
+            
+            
+        
             # Analyze project
             task = progress.add_task("Analyzing project structure...", total=None)
             result = await analyze_project_context(str(project_dir))
@@ -311,11 +311,10 @@ async def _run_test_generation(
     """Run test generation workflow."""
     from src.workflows.test_generation import run_test_generation
 
-    with Progress(
-        SpinnerColumn(),
-        TextColumn("[progress.description]{task.description}"),
-        console=console,
-    ) as progress:
+    with create_progress(console) as progress:
+        
+        
+    
         task = progress.add_task("Running test generation workflow...", total=None)
 
         try:
@@ -374,11 +373,10 @@ async def _run_mutation_testing(
 
     from src.mcp_servers.test_generator.tools.mutation import run_mutation_testing
 
-    with Progress(
-        SpinnerColumn(),
-        TextColumn("[progress.description]{task.description}"),
-        console=console,
-    ) as progress:
+    with create_progress(console) as progress:
+        
+        
+    
         task = progress.add_task("Running mutation testing (this may take a while)...", total=None)
 
         classes = [target_classes] if target_classes else None
@@ -428,11 +426,10 @@ async def _show_recommendations(project_dir: Path, target_score: float, strategy
     from src.mcp_servers.pit_recommendations.tools.prioritize import prioritize_test_efforts
     from src.mcp_servers.pit_recommendations.tools.recommend import recommend_test_improvements
 
-    with Progress(
-        SpinnerColumn(),
-        TextColumn("[progress.description]{task.description}"),
-        console=console,
-    ) as progress:
+    with create_progress(console) as progress:
+        
+        
+    
         task = progress.add_task("Analyzing mutation results...", total=None)
 
         # Get recommendations

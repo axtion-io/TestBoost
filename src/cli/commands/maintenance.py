@@ -11,9 +11,9 @@ from pathlib import Path
 import typer
 from rich.console import Console
 from rich.panel import Panel
-from rich.progress import Progress, SpinnerColumn, TextColumn
 from rich.table import Table
 
+from src.cli.progress import create_progress
 from src.lib.logging import get_logger
 
 logger = get_logger(__name__)
@@ -91,11 +91,7 @@ def run_maintenance(
     async def _run():
         from src.workflows.maven_maintenance import run_maven_maintenance
 
-        with Progress(
-            SpinnerColumn(),
-            TextColumn("[progress.description]{task.description}"),
-            console=console,
-        ) as progress:
+        with create_progress(console) as progress:
             if dry_run:
                 task = progress.add_task("Analyzing dependencies...", total=None)
             else:
@@ -289,11 +285,7 @@ def list_updates(
     async def _analyze():
         from src.mcp_servers.maven_maintenance.tools.analyze import analyze_dependencies
 
-        with Progress(
-            SpinnerColumn(),
-            TextColumn("[progress.description]{task.description}"),
-            console=console,
-        ) as progress:
+        with create_progress(console) as progress:
             task = progress.add_task("Analyzing dependencies...", total=None)
 
             result = await analyze_dependencies(

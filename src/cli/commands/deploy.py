@@ -11,8 +11,9 @@ from pathlib import Path
 import typer
 from rich.console import Console
 from rich.panel import Panel
-from rich.progress import Progress, SpinnerColumn, TextColumn
+from rich.progress import Progress, TextColumn
 from rich.table import Table
+from src.cli.progress import create_progress
 
 from src.lib.logging import get_logger
 
@@ -99,11 +100,10 @@ def run_deployment(
     async def _run():
         from src.workflows.docker_deployment import run_docker_deployment
 
-        with Progress(
-            SpinnerColumn(),
-            TextColumn("[progress.description]{task.description}"),
-            console=console,
-        ) as progress:
+        with create_progress(console) as progress:
+            
+            
+        
             task = progress.add_task("Running Docker deployment...", total=None)
 
             try:
@@ -246,11 +246,10 @@ def stop_deployment(
         stdout, _ = await process.communicate()
         return stdout.decode("utf-8", errors="replace"), process.returncode
 
-    with Progress(
-        SpinnerColumn(),
-        TextColumn("[progress.description]{task.description}"),
-        console=console,
-    ) as progress:
+    with create_progress(console) as progress:
+        
+        
+    
         task = progress.add_task("Stopping deployment...", total=None)
         output, returncode = asyncio.run(_stop())
         progress.update(task, completed=True)
@@ -455,11 +454,10 @@ def build_only(
             "exit_code": process.returncode,
         }
 
-    with Progress(
-        SpinnerColumn(),
-        TextColumn("[progress.description]{task.description}"),
-        console=console,
-    ) as progress:
+    with create_progress(console) as progress:
+        
+        
+    
         task = progress.add_task("Building Docker image...", total=None)
         result = asyncio.run(_build())
         progress.update(task, completed=True)

@@ -696,6 +696,13 @@ def should_rollback(state: MavenMaintenanceState) -> Literal["rollback", "commit
     return "commit"
 
 
+def has_updates(state: MavenMaintenanceState) -> Literal["continue", "end"]:
+    """Check if there are any pending updates."""
+    if not state.pending_updates:
+        return "end"
+    return "continue"
+
+
 def create_maven_maintenance_workflow() -> StateGraph:
     """
     Create the Maven maintenance workflow graph.
@@ -726,7 +733,14 @@ def create_maven_maintenance_workflow() -> StateGraph:
     # Add edges
     workflow.add_edge("validate_project", "check_git_status")
     workflow.add_edge("check_git_status", "analyze_maven")
-    workflow.add_edge("analyze_maven", "fetch_release_notes")
+
+    # Conditional edge after analyze - check if there are updates
+    workflow.add_conditional_edges(
+        "analyze_maven",
+        has_updates,
+        {"continue": "fetch_release_notes", "end": "finalize"},
+    )
+
     workflow.add_edge("fetch_release_notes", "run_baseline_tests")
     workflow.add_edge("run_baseline_tests", "user_validation")
     workflow.add_edge("user_validation", "create_maintenance_branch")
@@ -740,7 +754,7 @@ def create_maven_maintenance_workflow() -> StateGraph:
         {"rollback": "rollback_changes", "commit": "commit_changes"},
     )
 
-    workflow.add_edge("rollback_changes", "user_validation")  # Return to user for retry
+    workflow.add_edge("rollback_changes", "finalize")  # Go to finalize after rollback
     workflow.add_edge("commit_changes", "finalize")
     workflow.add_edge("finalize", END)
 

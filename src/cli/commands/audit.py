@@ -11,8 +11,9 @@ from pathlib import Path
 import typer
 from rich.console import Console
 from rich.panel import Panel
-from rich.progress import Progress, SpinnerColumn, TextColumn
+from rich.progress import Progress, TextColumn
 from rich.table import Table
+from src.cli.progress import create_progress
 
 from src.lib.logging import get_logger
 
@@ -87,11 +88,10 @@ def scan_vulnerabilities(
     async def _scan():
         from src.mcp_servers.maven_maintenance.tools.analyze import analyze_dependencies
 
-        with Progress(
-            SpinnerColumn(),
-            TextColumn("[progress.description]{task.description}"),
-            console=console,
-        ) as progress:
+        with create_progress(console) as progress:
+            
+            
+        
             task = progress.add_task("Scanning for vulnerabilities...", total=None)
 
             result = await analyze_dependencies(
@@ -287,11 +287,10 @@ def generate_report(
     async def _analyze():
         from src.mcp_servers.maven_maintenance.tools.analyze import analyze_dependencies
 
-        with Progress(
-            SpinnerColumn(),
-            TextColumn("[progress.description]{task.description}"),
-            console=console,
-        ) as progress:
+        with create_progress(console) as progress:
+            
+            
+        
             task = progress.add_task("Generating security report...", total=None)
 
             result = await analyze_dependencies(

@@ -1,0 +1,43 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: testboost-db
+    environment:
+      POSTGRES_USER: testboost
+      POSTGRES_PASSWORD: testboost
+      POSTGRES_DB: testboost
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U testboost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  testboost:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: testboost-app
+    environment:
+      DATABASE_URL: postgresql+asyncpg://testboost:testboost@postgres:5432/testboost
+      API_HOST: 0.0.0.0
+      API_PORT: 8000
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./:/app
+      - maven_cache:/root/.m2
+    env_file:
+      - .env
+
+volumes:
+  postgres_data:
+  maven_cache:

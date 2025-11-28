@@ -1,0 +1,86 @@
+[tool.poetry]
+name = "testboost"
+version = "0.1.0"
+description = "Automated Java/Spring Boot maintenance with test generation, Maven updates, and Docker deployment"
+authors = ["TestBoost Team"]
+readme = "README.md"
+packages = [{include = "src"}]
+
+[tool.poetry.dependencies]
+python = "^3.11"
+fastapi = "^0.121"
+uvicorn = "^0.38"
+sqlalchemy = "^2.0"
+alembic = "^1.17"
+asyncpg = "^0.30"
+pydantic = "^2.12"
+pydantic-settings = "^2.7"
+langgraph = "^1.0"
+langchain = "^1.0"
+langchain-core = "^1.1"
+langchain-google-genai = "^2.1"
+langchain-anthropic = "^1.1"
+langchain-openai = "^1.0"
+mcp = "^1.22"
+deepagents = "^0.2.7"
+typer = "^0.20"
+httpx = "^0.28"
+structlog = "^25.5"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^8.2"
+pytest-asyncio = "^0.24"
+pytest-cov = "^6.0"
+black = "^24.10"
+ruff = "^0.8"
+mypy = "^1.13"
+
+[tool.poetry.scripts]
+boost = "src.cli.main:app"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+exclude = [
+    ".venv",
+    "venv",
+    "__pycache__",
+    ".git",
+    "build",
+    "dist",
+]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "C4", "SIM"]
+ignore = ["E501", "B008", "SIM102", "SIM108"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["src"]
+
+[tool.black]
+line-length = 100
+target-version = ["py311"]
+exclude = '''
+/(
+    \.venv
+  | venv
+  | __pycache__
+  | \.git
+  | build
+  | dist
+)/
+'''
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+addopts = "-v --cov=src --cov-report=term-missing"

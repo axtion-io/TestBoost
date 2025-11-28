@@ -179,4 +179,128 @@ mypy = "^1.13"
 | Source données CVE | OSV (Open Source Vulnerabilities) via API gratuite |
 | Format snapshots tests | JSON + ApprovalTests pattern (fichiers .approved) |
 | Stratégie cache | In-memory LRU pour contexte projet (durée session) |
-| Queue verrou projet | Redis ou PostgreSQL SKIP LOCKED (à décider en implem) |
+| Queue verrou projet | PostgreSQL SKIP LOCKED (implemented with project_locks table) |
+
+---
+
+## Implementation Adjustments (2025-11-28)
+
+### 1. Python Version Corrected to 3.11+
+
+**Issue**: deepagents 0.2.7 requires Python >=3.11,<4.0
+**Change**: Updated from `python = "^3.10"` to `python = "^3.11"` in pyproject.toml
+**Impact**: Spec line 273 should be updated from "Python 3.10+" to "Python 3.11+"
+
+### 2. PostgreSQL Port Changed to 5433
+
+**Issue**: Default port 5432 was already allocated on development machine
+**Change**: docker-compose.yaml uses `ports: ["5433:5432"]`
+**Impact**: DATABASE_URL in .env uses port 5433, documented in README
+
+### 3. CLI Windows Compatibility Fix
+
+**Issue**: Rich SpinnerColumn uses Braille Unicode (U+280B) incompatible with Windows cp1252
+**Error**: `UnicodeEncodeError: 'charmap' codec can't encode character '\u280b'`
+**Solution**: Created `src/cli/progress.py` with ASCII-safe progress indicators
+**Changes**:
+- Removed SpinnerColumn (Unicode Braille)
+- Use BarColumn, TimeElapsedColumn, TextColumn only
+- Updated 4 CLI command files to use `create_progress()`
+
+### 4. LangGraph Workflow Termination Fix
+
+**Issue**: Infinite loop in Maven maintenance when no updates available
+**Error**: `GraphRecursionError: Recursion limit of 25 reached`
+**Solution**: Added `has_updates()` conditional edge
+**Changes**:
+- Workflow terminates at "finalize" if no pending_updates
+- Rollback edge goes directly to finalize (not back to user_validation)
+
+### 5. SQLAlchemy Reserved Name Conflicts
+
+**Issue**: `metadata` is reserved by SQLAlchemy Declarative API
+**Solution**: Renamed fields to domain-specific names
+**Changes**:
+- `Project.metadata` → `Project.project_metadata`
+- `Dependency.metadata` → `Dependency.dep_metadata`
+- `Modification.metadata` → `Modification.mod_metadata`
+
+### 6. SQLAlchemy Base Import Structure
+
+**Issue**: Circular import preventing table registration in Base.metadata
+**Solution**: Created `src/db/base.py` with standalone declarative_base()
+**Changes**:
+- 5 model files updated: `from src.db.base import Base`
+- `src/db/migrations/env.py` imports Base from base.py
+- All 8 tables correctly registered
+
+### 7. Alembic Sync Driver Configuration
+
+**Issue**: Alembic requires sync driver, asyncpg is async-only
+**Solution**: Convert URL in `env.py` from asyncpg to psycopg2
+**Changes**:
+- `sync_url = settings.database_url.replace("postgresql+asyncpg://", "postgresql+psycopg2://")`
+- Added `psycopg2-binary = "^2.9"` to dependencies
+- Application continues using asyncpg for runtime
+
+### 8. Pytest Version Downgrade
+
+**Issue**: pytest-asyncio requires pytest >=8.2,<9
+**Change**: Downgraded from `pytest = "^9.0"` to `pytest = "^8.2"`
+**Impact**: All tests pass, no feature loss
+
+### 9. Structlog Log Level Fix
+
+**Issue**: `structlog.INFO` doesn't exist, log levels are in `logging` module
+**Change**: `log_level = getattr(logging, settings.log_level.upper(), logging.INFO)`
+**Impact**: Structured logging works correctly
+
+### 10. Test Projects Validated
+
+**Projects Cloned**:
+1. `java-maven-junit-helloworld` (Simple): 9/9 tests ✅
+2. `spring-petclinic-reactjs` (Medium): 181/183 tests ✅
+3. `spring-petclinic-microservices` (Large): Successfully cloned ✅
+
+**Storage**: `test-projects/` directory (gitignored)
+
+---
+
+## Final Dependencies (After Adjustments)
+
+```toml
+[tool.poetry.dependencies]
+python = "^3.11"  # CHANGED from ^3.10 (deepagents requirement)
+fastapi = "^0.121"
+uvicorn = "^0.38"
+sqlalchemy = "^2.0"
+alembic = "^1.17"
+asyncpg = "^0.30"
+psycopg2-binary = "^2.9"  # ADDED for Alembic
+pydantic = "^2.12"
+pydantic-settings = "^2.7"
+langgraph = "^1.0"
+langchain = "^1.0"
+langchain-core = "^1.1"
+langchain-google-genai = "^2.1"
+langchain-anthropic = "^1.1"
+langchain-openai = "^1.0"
+mcp = "^1.22"
+deepagents = "^0.2.7"
+typer = "^0.20"
+httpx = "^0.28"
+structlog = "^25.5"
+rich = "^13.9"  # ADDED for CLI
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^8.2"  # CHANGED from ^9.0 (pytest-asyncio compatibility)
+pytest-asyncio = "^0.24"
+pytest-cov = "^6.0"
+black = "^24.10"
+ruff = "^0.8"
+mypy = "^1.13"
+```
+
+---
+
+**Status**: All implementation decisions documented and validated ✅

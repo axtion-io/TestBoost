@@ -82,3 +82,9 @@ alembic/versions/__pycache__/
 
 # Local settings
 .claude/settings.local.json
+
+# Test projects (cloned Maven projects)
+test-projects/
+
+# Docker build artifacts
+docker/maven-cache/

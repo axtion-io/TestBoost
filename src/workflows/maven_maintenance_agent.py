@@ -228,7 +228,7 @@ async def run_maven_maintenance_with_agent(
         )
 
         # T038: Load system prompt from Markdown
-        system_prompt = loader.load_prompt("dependency_update", category="maven")
+        system_prompt = loader.load_prompt("system_agent", category="maven")
 
         # Interpolate variables in prompt
         project_name = Path(project_path).name

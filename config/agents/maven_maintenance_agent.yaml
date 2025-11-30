@@ -20,7 +20,7 @@ tools:
     - git-maintenance
 
 prompts:
-  system: config/prompts/maven/dependency_update.md
+  system: config/prompts/maven/system_agent.md
 
 workflow:
   graph_name: maven_maintenance

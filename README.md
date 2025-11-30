@@ -365,5 +365,3 @@ Built with:
 ---
 
 **Version**: 0.2.0
-**Status**: Beta - DeepAgents integration complete with config management
-**Last Updated**: 2025-11-30

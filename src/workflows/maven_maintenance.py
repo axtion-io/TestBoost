@@ -1,10 +1,15 @@
 """
 Maven Maintenance Workflow using LangGraph.
 
+⚠️ DEPRECATED: This workflow is deprecated in favor of maven_maintenance_agent.py
+which uses DeepAgents for real LLM agent reasoning. This file will be removed
+in a future version.
+
 Implements a full workflow for analyzing and updating Maven dependencies
 with validation, rollback support, and interactive user confirmation.
 """
 
+import warnings
 import json
 from datetime import datetime
 from typing import Annotated, Literal
@@ -769,6 +774,9 @@ async def run_maven_maintenance(project_path: str, user_approved: bool = False) 
     """
     Run the Maven maintenance workflow.
 
+    ⚠️ DEPRECATED: Use run_maven_maintenance_with_agent() from maven_maintenance_agent.py
+    instead. This function will be removed in a future version.
+
     Args:
         project_path: Path to the Maven project
         user_approved: Whether user has pre-approved updates
@@ -776,6 +784,13 @@ async def run_maven_maintenance(project_path: str, user_approved: bool = False) 
     Returns:
         Final workflow state
     """
+    warnings.warn(
+        "run_maven_maintenance() is deprecated. Use run_maven_maintenance_with_agent() "
+        "from src.workflows.maven_maintenance_agent instead.",
+        DeprecationWarning,
+        stacklevel=2
+    )
+
     initial_state = MavenMaintenanceState(project_path=project_path, user_approved=user_approved)
 
     final_state = await maven_maintenance_graph.ainvoke(initial_state)

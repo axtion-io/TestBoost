@@ -60,11 +60,15 @@ def _initialize_registry() -> None:
     from src.mcp_servers.test_generator.langchain_tools import get_test_gen_tools
     from src.mcp_servers.docker.langchain_tools import get_docker_tools
     from src.mcp_servers.git_maintenance.langchain_tools import get_git_tools
+    from src.mcp_servers.pit_recommendations.langchain_tools import get_pit_tools
+    from src.mcp_servers.container_runtime.langchain_tools import get_container_runtime_tools
 
     register_tools("maven-maintenance", get_maven_tools)
     register_tools("test-generator", get_test_gen_tools)
     register_tools("docker-deployment", get_docker_tools)
     register_tools("git-maintenance", get_git_tools)
+    register_tools("pit-recommendations", get_pit_tools)
+    register_tools("container-runtime", get_container_runtime_tools)
 
 
 # Initialize on module import

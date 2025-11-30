@@ -89,24 +89,51 @@ def run_maintenance(
 
     # Run the maintenance workflow
     async def _run():
-        from src.workflows.maven_maintenance import run_maven_maintenance
+        # Use new agent-based workflow (US2)
+        from src.workflows.maven_maintenance_agent import run_maven_maintenance_with_agent
+        from uuid import uuid4
+
+        session_id = str(uuid4())
 
         with create_progress(console) as progress:
             if dry_run:
-                task = progress.add_task("Analyzing dependencies...", total=None)
+                task = progress.add_task("Analyzing dependencies with AI agent...", total=None)
             else:
-                task = progress.add_task("Running maintenance workflow...", total=None)
+                task = progress.add_task("Running AI-powered maintenance workflow...", total=None)
 
             try:
-                result = await run_maven_maintenance(str(project_dir), user_approved=auto_approve)
+                # Convert mode to agent-compatible format
+                agent_mode = mode if mode in ["autonomous", "interactive", "analysis_only", "debug"] else "autonomous"
+
+                result_json = await run_maven_maintenance_with_agent(
+                    project_path=str(project_dir),
+                    session_id=session_id,
+                    mode=agent_mode
+                )
 
                 progress.update(task, completed=True)
 
-                return result
+                # Parse JSON result
+                result_data = json.loads(result_json)
+
+                # Create a result object compatible with old format
+                class AgentResult:
+                    def __init__(self, data):
+                        self.completed = data.get("success", False)
+                        self.errors = [] if self.completed else ["Workflow failed"]
+                        self.warnings = []
+                        self.applied_updates = []
+                        self.failed_updates = []
+                        self.maintenance_branch = "agent-maintenance"
+                        self.session_id = data.get("session_id", session_id)
+                        self.analysis = data.get("analysis", "")
+
+                return AgentResult(result_data)
 
             except Exception as e:
                 progress.stop()
                 console.print(f"[red]Error:[/red] {str(e)}")
+                logger.error("maintenance_workflow_failed", error=str(e))
                 raise typer.Exit(1)
 
     result = asyncio.run(_run())
@@ -116,6 +143,8 @@ def run_maintenance(
         output = {
             "success": result.completed and len(result.errors) == 0,
             "project_path": str(project_dir),
+            "session_id": getattr(result, "session_id", "unknown"),
+            "analysis": getattr(result, "analysis", ""),
             "applied_updates": result.applied_updates,
             "failed_updates": result.failed_updates,
             "errors": result.errors,
@@ -126,9 +155,19 @@ def run_maintenance(
     else:
         # Rich formatted output
         if result.completed and len(result.errors) == 0:
+            # Show AI agent analysis
+            if hasattr(result, "analysis") and result.analysis:
+                console.print(
+                    Panel(
+                        f"[green]AI Agent Analysis[/green]\n\n{result.analysis}",
+                        title="Maven Maintenance Analysis",
+                    )
+                )
+
             console.print(
                 Panel(
                     f"[green]Maintenance Complete[/green]\n\n"
+                    f"Session ID: {getattr(result, 'session_id', 'unknown')}\n"
                     f"Branch: {result.maintenance_branch}\n"
                     f"Applied: {len(result.applied_updates)} updates\n"
                     f"Failed: {len(result.failed_updates)} updates",

@@ -2,11 +2,15 @@
 
 from langchain_core.tools import BaseTool, tool
 
+from src.lib.logging import get_logger
+
 # Import existing MCP tool implementations
 from src.mcp_servers.maven_maintenance.tools.analyze import analyze_dependencies
 from src.mcp_servers.maven_maintenance.tools.compile import compile_tests
 from src.mcp_servers.maven_maintenance.tools.run_tests import run_tests
 from src.mcp_servers.maven_maintenance.tools.package import package_project
+
+logger = get_logger(__name__)
 
 
 @tool
@@ -33,11 +37,27 @@ async def maven_analyze_dependencies(
         JSON string with analysis results including outdated dependencies,
         vulnerabilities, and update recommendations
     """
-    return await analyze_dependencies(
+    logger.info(
+        "mcp_tool_called",
+        tool="maven_analyze_dependencies",
         project_path=project_path,
         include_snapshots=include_snapshots,
         check_vulnerabilities=check_vulnerabilities
     )
+
+    result = await analyze_dependencies(
+        project_path=project_path,
+        include_snapshots=include_snapshots,
+        check_vulnerabilities=check_vulnerabilities
+    )
+
+    logger.info(
+        "mcp_tool_completed",
+        tool="maven_analyze_dependencies",
+        result_length=len(result)
+    )
+
+    return result
 
 
 @tool
@@ -62,11 +82,27 @@ async def maven_compile_tests(
     Returns:
         Compilation result message with success/failure status and error details
     """
-    return await compile_tests(
+    logger.info(
+        "mcp_tool_called",
+        tool="maven_compile_tests",
+        project_path=project_path,
+        profiles=profiles,
+        skip_main=skip_main
+    )
+
+    result = await compile_tests(
         project_path=project_path,
         profiles=profiles or [],
         skip_main=skip_main
     )
+
+    logger.info(
+        "mcp_tool_completed",
+        tool="maven_compile_tests",
+        result_length=len(result)
+    )
+
+    return result
 
 
 @tool
@@ -95,13 +131,31 @@ async def maven_run_tests(
     Returns:
         Test execution results with pass/fail counts, execution time, and failure details
     """
-    return await run_tests(
+    logger.info(
+        "mcp_tool_called",
+        tool="maven_run_tests",
+        project_path=project_path,
+        test_pattern=test_pattern,
+        profiles=profiles,
+        parallel=parallel,
+        fail_fast=fail_fast
+    )
+
+    result = await run_tests(
         project_path=project_path,
         test_pattern=test_pattern,
         profiles=profiles or [],
         parallel=parallel,
         fail_fast=fail_fast
     )
+
+    logger.info(
+        "mcp_tool_completed",
+        tool="maven_run_tests",
+        result_length=len(result)
+    )
+
+    return result
 
 
 @tool
@@ -126,11 +180,27 @@ async def maven_package(
     Returns:
         Packaging result with artifact location and build status
     """
-    return await package_project(
+    logger.info(
+        "mcp_tool_called",
+        tool="maven_package",
+        project_path=project_path,
+        skip_tests=skip_tests,
+        profiles=profiles
+    )
+
+    result = await package_project(
         project_path=project_path,
         skip_tests=skip_tests,
         profiles=profiles or []
     )
+
+    logger.info(
+        "mcp_tool_completed",
+        tool="maven_package",
+        result_length=len(result)
+    )
+
+    return result
 
 
 def get_maven_tools() -> list[BaseTool]:

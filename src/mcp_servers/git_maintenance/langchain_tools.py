@@ -2,10 +2,14 @@
 
 from langchain_core.tools import BaseTool, tool
 
+from src.lib.logging import get_logger
+
 # Import existing MCP tool implementations
 from src.mcp_servers.git_maintenance.tools.branch import create_maintenance_branch
 from src.mcp_servers.git_maintenance.tools.commit import commit_changes
 from src.mcp_servers.git_maintenance.tools.status import get_status
+
+logger = get_logger(__name__)
 
 
 @tool
@@ -31,11 +35,27 @@ async def git_create_maintenance_branch(
     Returns:
         Success message with branch name and current HEAD
     """
-    return await create_maintenance_branch(
+    logger.info(
+        "mcp_tool_called",
+        tool="git_create_maintenance_branch",
         repo_path=repo_path,
         branch_name=branch_name,
         base_branch=base_branch
     )
+
+    result = await create_maintenance_branch(
+        repo_path=repo_path,
+        branch_name=branch_name,
+        base_branch=base_branch
+    )
+
+    logger.info(
+        "mcp_tool_completed",
+        tool="git_create_maintenance_branch",
+        result_length=len(result)
+    )
+
+    return result
 
 
 @tool
@@ -61,11 +81,27 @@ async def git_commit_changes(
     Returns:
         Commit hash and summary of committed files
     """
-    return await commit_changes(
+    logger.info(
+        "mcp_tool_called",
+        tool="git_commit_changes",
+        repo_path=repo_path,
+        message=message,
+        files=files
+    )
+
+    result = await commit_changes(
         repo_path=repo_path,
         message=message,
         files=files or []
     )
+
+    logger.info(
+        "mcp_tool_completed",
+        tool="git_commit_changes",
+        result_length=len(result)
+    )
+
+    return result
 
 
 @tool
@@ -89,10 +125,25 @@ async def git_get_status(
     Returns:
         Git status with staged, unstaged, and untracked files
     """
-    return await get_status(
+    logger.info(
+        "mcp_tool_called",
+        tool="git_get_status",
         repo_path=repo_path,
         include_untracked=include_untracked
     )
+
+    result = await get_status(
+        repo_path=repo_path,
+        include_untracked=include_untracked
+    )
+
+    logger.info(
+        "mcp_tool_completed",
+        tool="git_get_status",
+        result_length=len(result)
+    )
+
+    return result
 
 
 def get_git_tools() -> list[BaseTool]:

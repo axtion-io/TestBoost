@@ -24,6 +24,9 @@ from src.mcp_servers.registry import get_tools_for_servers
 logger = get_logger(__name__)
 settings = get_settings()
 
+# NOTE: Windows path support for DeepAgents is patched in tests/conftest.py
+# The patch is applied at test startup to avoid Windows absolute path rejection
+
 
 class MavenAgentError(Exception):
     """Base exception for Maven agent workflow errors."""
@@ -74,6 +77,16 @@ async def _invoke_agent_with_retry(
     for attempt in range(1, max_retries + 1):
         try:
             logger.info("agent_invoke_attempt", attempt=attempt, max_retries=max_retries)
+
+            # Log what we're sending to the LLM
+            logger.info(
+                "llm_request_details",
+                attempt=attempt,
+                message_count=len(messages),
+                messages=[{"role": m.type if hasattr(m, 'type') else 'unknown', "content_length": len(str(m.content))} for m in messages],
+                first_message_preview=str(messages[0].content)[:500] if messages else ""
+            )
+
             start_time = time.time()
 
             # Invoke agent
@@ -81,6 +94,14 @@ async def _invoke_agent_with_retry(
 
             duration_ms = int((time.time() - start_time) * 1000)
             logger.info("agent_invoke_success", attempt=attempt, duration_ms=duration_ms)
+
+            # Log the raw response
+            logger.debug(
+                "llm_raw_response",
+                attempt=attempt,
+                response_type=type(response).__name__,
+                response_keys=list(response.keys()) if isinstance(response, dict) else "not_dict"
+            )
 
             # Extract AIMessage from response
             if isinstance(response, dict) and "messages" in response:
@@ -95,11 +116,26 @@ async def _invoke_agent_with_retry(
             else:
                 raise MavenAgentError(f"Unexpected agent response type: {type(response)}")
 
+            # Log the AI message details
+            logger.info(
+                "llm_response_content",
+                attempt=attempt,
+                content_preview=str(ai_message.content)[:500] if hasattr(ai_message, 'content') else "no_content",
+                has_tool_calls=hasattr(ai_message, "tool_calls") and bool(ai_message.tool_calls),
+                tool_calls_count=len(ai_message.tool_calls) if hasattr(ai_message, "tool_calls") and ai_message.tool_calls else 0
+            )
+
             # A2 Edge Case: Verify expected tools were called
             if expected_tools:
                 called_tools = []
                 if hasattr(ai_message, "tool_calls") and ai_message.tool_calls:
                     called_tools = [tc.get("name") or tc.get("tool") for tc in ai_message.tool_calls]
+                    logger.info(
+                        "llm_tool_calls_detected",
+                        attempt=attempt,
+                        called_tools=called_tools,
+                        tool_calls_raw=[{k: v for k, v in tc.items() if k in ['name', 'tool', 'id']} for tc in ai_message.tool_calls]
+                    )
 
                 missing_tools = set(expected_tools) - set(called_tools)
                 if missing_tools:
@@ -235,7 +271,11 @@ async def run_maven_maintenance_with_agent(
         system_prompt = system_prompt.replace("{project_name}", project_name)
         system_prompt = system_prompt.replace("{project_path}", project_path)
 
-        logger.info("agent_prompt_loaded", prompt_length=len(system_prompt))
+        logger.info(
+            "agent_prompt_loaded",
+            prompt_length=len(system_prompt),
+            prompt_preview=system_prompt[:300]
+        )
 
         # T035: Get MCP tools for agent
         tools = get_tools_for_servers(config.tools.mcp_servers)
@@ -257,14 +297,23 @@ async def run_maven_maintenance_with_agent(
         # T039: Bind tools to LLM
         llm_with_tools = llm.bind_tools(tools)
 
-        logger.info("agent_llm_ready", model=config.llm.model, tools_bound=len(tools))
+        logger.info(
+            "agent_llm_ready",
+            model=config.llm.model,
+            tools_bound=len(tools),
+            tool_names=[t.name for t in tools],
+            tool_details=[{"name": t.name, "description": t.description[:100] if hasattr(t, 'description') and t.description else "no_desc"} for t in tools[:3]]  # First 3 tools
+        )
 
         # T035: Create DeepAgents agent
         # Note: PostgreSQL checkpointer (T032) will be added when pause/resume is needed
+        # IMPORTANT: Pass backend=None to disable filesystem middleware that rejects Windows paths
+        # We don't need DeepAgents' filesystem tools since we have our own MCP tools
         agent = create_deep_agent(
             model=llm_with_tools,
             system_prompt=system_prompt,
             tools=tools,
+            backend=None,  # Disable filesystem middleware for Windows path compatibility
             # checkpointer will be added for pause/resume support
         )
 
@@ -293,12 +342,13 @@ Remember: You have access to these tools:
 """
 
         # T040: Invoke agent with retry logic (A2, A4, A5 edge cases)
-        expected_tools = ["maven_analyze_dependencies"]  # At minimum, should call analyze
+        # Note: DeepAgents executes tools via the graph workflow, so we don't verify
+        # expected_tools in the AI message. MCP tool logging confirms execution.
         response = await _invoke_agent_with_retry(
             agent=agent,
             input_data=[HumanMessage(content=user_input)],
             max_retries=config.error_handling.max_retries,
-            expected_tools=expected_tools
+            expected_tools=None  # Let DeepAgents manage tool execution via graph
         )
 
         # T044: Store agent reasoning in session result

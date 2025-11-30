@@ -9,9 +9,9 @@ identity:
   persona: Meticulous, test-quality-focused, mutation-score-driven
 
 llm:
-  provider: google-genai
-  model: gemini-2.5-flash-preview-09-2025
-  temperature: 0.2
+  provider: anthropic
+  model: claude-sonnet-4-5-20250929
+  temperature: 0.3
   max_tokens: 8192
 
 tools:

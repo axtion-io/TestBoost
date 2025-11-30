@@ -9,8 +9,8 @@ identity:
   persona: Thorough, security-conscious, risk-aware
 
 llm:
-  provider: google-genai
-  model: gemini-2.5-flash-preview-09-2025
+  provider: anthropic
+  model: claude-sonnet-4-5
   temperature: 0.3
   max_tokens: 8192
 

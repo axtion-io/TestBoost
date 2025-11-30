@@ -273,17 +273,27 @@ async def run_maven_maintenance_with_agent(
         # Prepare input for agent
         user_input = f"""Analyze the Maven project at: {project_path}
 
-Please:
-1. Analyze dependencies for outdated packages and security vulnerabilities
-2. Prioritize updates based on risk (HIGH/MEDIUM/LOW)
-3. Provide a recommended update strategy
-4. Include rollback plan if updates fail
+IMPORTANT: You MUST start by calling the maven_analyze_dependencies tool with the project path.
 
-Use the available Maven and Git tools to complete this analysis.
+Step-by-step instructions:
+1. FIRST: Call maven_analyze_dependencies tool with project_path="{project_path}"
+2. THEN: Analyze the results for outdated packages and security vulnerabilities
+3. Prioritize updates based on risk (HIGH/MEDIUM/LOW)
+4. Provide a recommended update strategy
+5. Include rollback plan if updates fail
+
+Remember: You have access to these tools:
+- maven_analyze_dependencies (use this FIRST)
+- maven_compile_tests
+- maven_run_tests
+- maven_package
+- git_create_maintenance_branch
+- git_commit_changes
+- git_get_status
 """
 
         # T040: Invoke agent with retry logic (A2, A4, A5 edge cases)
-        expected_tools = ["analyze_dependencies"]  # At minimum, should call analyze
+        expected_tools = ["maven_analyze_dependencies"]  # At minimum, should call analyze
         response = await _invoke_agent_with_retry(
             agent=agent,
             input_data=[HumanMessage(content=user_input)],

@@ -92,6 +92,27 @@ Access the API documentation at http://localhost:8000/docs
 
 ### CLI Usage
 
+**Configuration Management:**
+```bash
+# Validate agent configurations
+python -m src.cli.main config validate
+
+# Validate specific agent
+python -m src.cli.main config validate --agent maven_maintenance_agent
+
+# Show agent configuration
+python -m src.cli.main config show maven_maintenance_agent
+
+# Backup configuration
+python -m src.cli.main config backup maven_maintenance_agent
+
+# Rollback to latest backup
+python -m src.cli.main config rollback maven_maintenance_agent
+
+# Reload configurations (hot-reload)
+python -m src.cli.main config reload --all
+```
+
 **Analyze dependencies:**
 ```bash
 python -m src.cli.main maintenance list /path/to/maven/project
@@ -136,10 +157,12 @@ TestBoost/
 - **Backend**: Python 3.11+, FastAPI, Uvicorn
 - **Database**: PostgreSQL 15 with Alembic migrations
 - **Workflows**: LangGraph 1.0 for state machines
-- **Agents**: DeepAgents with YAML configuration
+- **Agents**: DeepAgents 0.2.8 with YAML configuration
+- **LLM Providers**: Google Gemini, Anthropic Claude, OpenAI GPT
 - **Tools**: MCP (Model Context Protocol) servers
 - **CLI**: Typer with Rich for terminal UI
 - **Logging**: Structlog for structured JSON logs
+- **Observability**: LangSmith tracing integration
 
 ### Database Schema
 
@@ -204,10 +227,49 @@ LANGSMITH_TRACING=true
 
 ### Agent Configuration
 
-Agent behaviors are configured in `config/agents/*.yaml`:
+Agent behaviors are configured in `config/agents/*.yaml` using DeepAgents 0.2.8 format:
+
+```yaml
+name: maven_maintenance_agent
+description: Handles Maven dependency updates and security fixes
+
+identity:
+  role: Maven Dependency Maintenance Expert
+  persona: Technical advisor for Java/Spring Boot projects
+
+llm:
+  provider: google-genai
+  model: gemini-2.5-flash-preview-09-2025
+  temperature: 0.1
+  max_tokens: 4096
+
+tools:
+  mcp_servers:
+    - maven_maintenance
+    - container_runtime
+
+prompts:
+  system: config/prompts/maven/system.md
+
+workflow:
+  graph_name: maven_maintenance_workflow
+  node_name: agent_node
+
+error_handling:
+  max_retries: 3
+  timeout_seconds: 300
+```
+
+Available agents:
 - `maven_maintenance_agent.yaml` - Dependency update logic
 - `test_gen_agent.yaml` - Test generation strategies
 - `deployment_agent.yaml` - Docker deployment rules
+
+**Configuration Management Features:**
+- **Hot-reload**: Changes detected automatically via file modification time tracking
+- **Validation**: 7-layer validation (YAML syntax, schema, MCP servers, prompts, LLM provider, parameters)
+- **Backup/Rollback**: Timestamped backups with one-command rollback
+- **CLI Integration**: Complete configuration management via `config` command group
 
 Prompt templates are in `config/prompts/`:
 - `common/java_expert.md` - Java/Spring Boot expertise
@@ -302,6 +364,6 @@ Built with:
 
 ---
 
-**Version**: 0.1.0
-**Status**: Beta - Core features implemented and tested
-**Last Updated**: 2025-11-28
+**Version**: 0.2.0
+**Status**: Beta - DeepAgents integration complete with config management
+**Last Updated**: 2025-11-30

@@ -1,5 +1,7 @@
 """API key authentication middleware."""
 
+import secrets
+
 from fastapi import Request
 from fastapi.responses import JSONResponse
 
@@ -38,7 +40,7 @@ async def api_key_auth_middleware(request: Request, call_next):
             content={"detail": "Missing API key"},
         )
 
-    if api_key != settings.api_key:
+    if not secrets.compare_digest(api_key, settings.api_key):
         logger.warning(
             "invalid_api_key",
             path=request.url.path,

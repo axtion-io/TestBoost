@@ -3,6 +3,7 @@
 import typer
 
 from src.cli.commands.audit import app as audit_app
+from src.cli.commands.config import app as config_app
 from src.cli.commands.deploy import app as deploy_app
 from src.cli.commands.maintenance import app as maintenance_app
 from src.cli.commands.tests import app as tests_app
@@ -194,6 +195,7 @@ app.add_typer(maintenance_app, name="maintenance")
 app.add_typer(audit_app, name="audit")
 app.add_typer(tests_app, name="tests")
 app.add_typer(deploy_app, name="deploy")
+app.add_typer(config_app, name="config")
 
 if __name__ == "__main__":
     app()

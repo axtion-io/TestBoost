@@ -88,3 +88,6 @@ test-projects/
 
 # Docker build artifacts
 docker/maven-cache/
+
+# Config backups
+config/agents/.backups/

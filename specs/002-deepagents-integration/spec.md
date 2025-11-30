@@ -57,14 +57,48 @@ As a TestBoost administrator, I want to configure agent behavior through YAML fi
 
 ---
 
+### User Story 4 - Test Generation with Real LLM Agent (Priority: P2)
+
+As a developer, when I run test generation, I want an LLM agent to analyze my Java code and generate contextually appropriate tests based on class type and existing patterns.
+
+**Why this priority**: Same priority as Maven maintenance (P2) - both are core workflows that need agent reasoning. Test generation requires AI to understand code context, not just template filling.
+
+**Independent Test**: Run test generation on Java project and verify LangSmith traces show ≥3 real LLM API calls with analysis tool invocations.
+
+**Acceptance Scenarios**:
+
+1. **Given** a Java/Spring Boot project, **When** I run test generation, **Then** the LLM agent calls analyze-project MCP tool and classifies classes (Controller, Service, Repository)
+2. **Given** classes classified, **When** agent generates tests, **Then** it follows existing project conventions (imports, assertions, mocking patterns)
+3. **Given** tests generated with compilation errors, **When** agent detects errors, **Then** it retries with auto-correction (max 3 attempts) using LLM reasoning
+4. **Given** LangSmith tracing enabled, **When** workflow runs, **Then** dashboard shows agent invocations analyzing class structure and test patterns
+
+---
+
+### User Story 5 - Docker Deployment with Real LLM Agent (Priority: P2)
+
+As a developer, when I deploy my application to Docker, I want an LLM agent to analyze my project type and generate optimal Dockerfile and docker-compose configuration.
+
+**Why this priority**: Same priority as Maven and test generation (P2) - deployment workflow requires AI to detect project type and dependencies, not hardcoded templates.
+
+**Independent Test**: Run Docker deployment on Java project and verify LangSmith traces show ≥3 real LLM API calls with project analysis tool invocations.
+
+**Acceptance Scenarios**:
+
+1. **Given** a packaged Java project, **When** I run deployment, **Then** the LLM agent calls detect-project-type MCP tool and identifies JAR/WAR/JSP type
+2. **Given** project type detected, **When** agent generates Dockerfile, **Then** it includes detected dependencies (PostgreSQL, Redis) via docker-compose
+3. **Given** containers starting, **When** agent monitors health, **Then** it waits for health check OK before declaring success
+4. **Given** LangSmith tracing enabled, **When** workflow runs, **Then** dashboard shows agent invocations analyzing project structure and dependencies
+
+---
+
 ### Edge Cases
 
-- What happens when LLM API rate limits are exceeded during workflow execution?
-- How does system handle LLM responses that don't call expected MCP tools?
-- What happens if agent workflow is paused and YAML config changes before resumption?
-- How does system behave with intermittent LLM provider connectivity?
-- What happens if LLM returns malformed tool calls or invalid JSON?
-- How does system handle prompts exceeding LLM context windows?
+- **LLM API rate limits exceeded**: Workflow fails immediately with clear error message indicating rate limit and retry-after duration. No silent degradation (respects "Zéro Complaisance").
+- **LLM doesn't call expected MCP tools**: Agent invocation retries with modified prompt instructing tool use (max 3 attempts). If tools still not called, workflow fails with error listing expected vs actual tool calls.
+- **YAML config changes during paused workflow**: Workflows reload configuration on resume. Changes take effect mid-execution. Config snapshot not preserved.
+- **Intermittent LLM connectivity**: Agent invocations use retry logic with exponential backoff (3 attempts, 1s-10s wait). Network errors trigger automatic retry. Persistent failures abort workflow.
+- **Malformed tool calls or invalid JSON**: Agent invocation validates JSON responses. JSONDecodeError or ToolCallError triggers retry (max 3 attempts). Malformed responses logged to artifacts. All retries exhausted → workflow fails.
+- **Prompts exceeding context windows**: DeepAgents automatic summarization handles this (170k token threshold). No explicit validation needed. Token counts monitored in cost analysis.
 
 ## Requirements
 
@@ -99,12 +133,12 @@ As a TestBoost administrator, I want to configure agent behavior through YAML fi
 ### Measurable Outcomes
 
 - **SC-001**: Application startup fails within 5 seconds if LLM provider not accessible
-- **SC-002**: Every Maven maintenance workflow results in at least 3 LLM API calls
+- **SC-002**: Every workflow (Maven, test generation, deployment) results in at least 3 LLM API calls
 - **SC-003**: LLM agents use reasoning from Markdown prompts (verifiable in responses)
 - **SC-004**: Switching LLM provider requires zero code changes
 - **SC-005**: 100% of agent tool calls traced in LangSmith when enabled
 - **SC-006**: YAML config changes take effect on next workflow execution
-- **SC-007**: All three workflows use LLM agents by end of implementation
+- **SC-007**: All three workflows (Maven maintenance, test generation, Docker deployment) use LLM agents
 - **SC-008**: Zero workflows execute without LLM invocation
 - **SC-009**: LLM metrics logged for every workflow execution
 - **SC-010**: Agent failure rate under 5% with retry logic
@@ -114,14 +148,17 @@ As a TestBoost administrator, I want to configure agent behavior through YAML fi
 ### In Scope
 
 - LLM connectivity check at startup
-- Refactoring Maven maintenance to use DeepAgents
+- Refactoring all three workflows to use DeepAgents:
+  - Maven dependency maintenance (P1 workflow)
+  - Test generation (P1 workflow)
+  - Docker deployment (P2 workflow)
 - Loading agent configs from YAML files
 - Loading prompts from Markdown templates
 - Binding MCP tools to LLM agents
 - LangSmith tracing integration
 - Session artifact storage
-- Retry logic for LLM errors
-- End-to-end tests with real LLM calls
+- Retry logic for LLM errors and edge cases
+- End-to-end tests with real LLM calls for all workflows
 
 ### Out of Scope
 

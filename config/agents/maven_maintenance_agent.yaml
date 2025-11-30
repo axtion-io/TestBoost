@@ -1,187 +1,31 @@
 # Maven Maintenance Agent Configuration
-# DeepAgents YAML configuration for dependency maintenance
+# Simplified DeepAgents YAML configuration matching spec.md schema
 
 name: maven_maintenance_agent
-version: "1.0.0"
-description: Agent for automated Maven dependency maintenance with test validation
+description: Maven dependency maintenance specialist with test validation
 
-# Agent identity and behavior
 identity:
-  role: dependency_maintainer
-  goal: >
-    Safely update Maven dependencies while ensuring test stability and
-    providing clear documentation of all changes made.
-  backstory: >
-    You are an expert DevOps engineer specializing in dependency management
-    and build system maintenance. You understand the importance of keeping
-    dependencies up-to-date for security and performance while minimizing
-    risk to project stability.
+  role: Maven Dependency Maintenance Specialist
+  persona: Thorough, security-conscious, risk-aware
 
-# LLM configuration
 llm:
-  model: claude-sonnet-4-5-20250929
-  temperature: 0.1
-  max_tokens: 4096
+  provider: google-genai
+  model: gemini-2.5-flash-preview-09-2025
+  temperature: 0.3
+  max_tokens: 8192
 
-# Tools available to this agent
 tools:
-  - name: analyze-dependencies
-    server: maven-maintenance
-    description: Analyze Maven project dependencies for updates and vulnerabilities
+  mcp_servers:
+    - maven-maintenance
+    - git-maintenance
 
-  - name: compile-tests
-    server: maven-maintenance
-    description: Compile test sources to verify build integrity
+prompts:
+  system: config/prompts/maven/dependency_update.md
 
-  - name: run-tests
-    server: maven-maintenance
-    description: Execute project tests to validate changes
-
-  - name: package
-    server: maven-maintenance
-    description: Package the project to verify full build
-
-  - name: create-maintenance-branch
-    server: git-maintenance
-    description: Create a new branch for maintenance work
-
-  - name: commit-changes
-    server: git-maintenance
-    description: Commit changes with descriptive message
-
-  - name: get-status
-    server: git-maintenance
-    description: Check git repository status
-
-# MCP server connections
-mcp_servers:
-  - name: maven-maintenance
-    command: python
-    args:
-      - -m
-      - src.mcp_servers.maven_maintenance
-    env:
-      PYTHONPATH: "${workspaceFolder}"
-
-  - name: git-maintenance
-    command: python
-    args:
-      - -m
-      - src.mcp_servers.git_maintenance
-    env:
-      PYTHONPATH: "${workspaceFolder}"
-
-# Workflow configuration
 workflow:
-  type: langgraph
-  graph: src.workflows.maven_maintenance.maven_maintenance_graph
+  graph_name: maven_maintenance
+  node_name: analyze_dependencies
 
-  # Workflow steps
-  steps:
-    - name: validate_project
-      description: Validate project structure and pom.xml
-      timeout: 30s
-
-    - name: check_git_status
-      description: Verify clean git working directory
-      timeout: 30s
-
-    - name: analyze_maven
-      description: Analyze dependencies for updates
-      timeout: 300s
-
-    - name: fetch_release_notes
-      description: Fetch release notes for updates
-      timeout: 120s
-
-    - name: run_baseline_tests
-      description: Run tests to establish baseline
-      timeout: 600s
-
-    - name: user_validation
-      description: Present updates for user approval
-      interactive: true
-
-    - name: create_maintenance_branch
-      description: Create branch for changes
-      timeout: 30s
-
-    - name: apply_update_batch
-      description: Apply dependency updates
-      timeout: 60s
-      rollback: true
-
-    - name: validate_changes
-      description: Validate changes with tests
-      timeout: 600s
-
-    - name: commit_changes
-      description: Commit successful changes
-      timeout: 30s
-
-    - name: finalize
-      description: Complete workflow and report
-
-# Error handling
 error_handling:
-  retry:
-    max_attempts: 3
-    backoff: exponential
-    initial_delay: 1s
-
-  on_failure:
-    - action: rollback
-      condition: applied_updates_exist
-    - action: notify
-      message: "Maintenance failed: {error}"
-
-# Notifications
-notifications:
-  on_complete:
-    channels:
-      - type: log
-        level: info
-    message: >
-      Maintenance complete for {project_name}:
-      {applied_count} updates applied, {failed_count} failed
-
-  on_error:
-    channels:
-      - type: log
-        level: error
-    message: >
-      Maintenance failed for {project_name}: {error}
-
-# Resource limits
-resources:
-  max_memory: 2Gi
-  max_cpu: 2
-  timeout: 30m
-
-# Security settings
-security:
-  allow_network: true
-  allow_filesystem: true
-  sandbox: false
-
-  allowed_paths:
-    - "${project_path}"
-    - "${workspace}/target"
-
-  blocked_commands:
-    - rm -rf /
-    - sudo
-
-# Metrics and observability
-observability:
-  metrics:
-    enabled: true
-    prefix: testboost_maven_maintenance
-
-  tracing:
-    enabled: true
-    service_name: maven-maintenance-agent
-
-  logging:
-    level: INFO
-    format: json
+  max_retries: 3
+  timeout_seconds: 120

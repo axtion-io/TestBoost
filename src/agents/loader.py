@@ -11,26 +11,59 @@ from src.lib.logging import get_logger
 logger = get_logger(__name__)
 
 
-class ToolConfig(BaseModel):
-    """Configuration for an MCP tool."""
+class IdentityConfig(BaseModel):
+    """Agent identity configuration."""
 
-    name: str
-    description: str | None = None
-    parameters: dict[str, Any] = Field(default_factory=dict)
+    role: str
+    persona: str
+
+
+class LLMConfig(BaseModel):
+    """LLM provider configuration."""
+
+    provider: str  # google-genai | anthropic | openai
+    model: str
+    temperature: float = 0.0
+    max_tokens: int | None = None
+
+
+class ToolsConfig(BaseModel):
+    """Tools configuration."""
+
+    mcp_servers: list[str] = Field(default_factory=list)
+
+
+class PromptsConfig(BaseModel):
+    """Prompts configuration."""
+
+    system: str  # Path to system prompt markdown file
+
+
+class WorkflowConfig(BaseModel):
+    """Workflow configuration."""
+
+    graph_name: str
+    node_name: str
+
+
+class ErrorHandlingConfig(BaseModel):
+    """Error handling configuration."""
+
+    max_retries: int = 3
+    timeout_seconds: int = 120
 
 
 class AgentConfig(BaseModel):
-    """Configuration for a DeepAgents agent."""
+    """Configuration for a DeepAgents agent (spec.md schema)."""
 
     name: str
     description: str
-    system_prompt: str = Field(alias="system-prompt")
-    model: str | None = None
-    temperature: float = 0.0
-    max_tokens: int | None = None
-    tools: list[ToolConfig] = Field(default_factory=list)
-    mcp_servers: list[str] = Field(default_factory=list, alias="mcp-servers")
-    retry_config: dict[str, Any] = Field(default_factory=dict, alias="retry-config")
+    identity: IdentityConfig
+    llm: LLMConfig
+    tools: ToolsConfig
+    prompts: PromptsConfig
+    workflow: WorkflowConfig
+    error_handling: ErrorHandlingConfig
 
     model_config = {"populate_by_name": True}
 
@@ -48,8 +81,8 @@ class WorkflowNodeConfig(BaseModel):
     model_config = {"populate_by_name": True}
 
 
-class WorkflowConfig(BaseModel):
-    """Configuration for a complete workflow."""
+class WorkflowGraphConfig(BaseModel):
+    """Configuration for a complete workflow graph."""
 
     name: str
     description: str
@@ -99,14 +132,14 @@ class AgentLoader:
             logger.error("agent_validation_error", name=name, error=str(e))
             raise
 
-    def load_workflow(self, name: str) -> WorkflowConfig:
+    def load_workflow(self, name: str) -> WorkflowGraphConfig:
         """Load a workflow configuration with all its agents.
 
         Args:
             name: Workflow name (without .yaml extension)
 
         Returns:
-            Validated WorkflowConfig with embedded agents
+            Validated WorkflowGraphConfig with embedded agents
 
         Raises:
             FileNotFoundError: If workflow file not found
@@ -135,7 +168,7 @@ class AgentLoader:
                 agents[agent_name] = AgentConfig(**agent_data)
 
         try:
-            config = WorkflowConfig(
+            config = WorkflowGraphConfig(
                 name=data["name"],
                 description=data.get("description", ""),
                 nodes=[WorkflowNodeConfig(**node) for node in data.get("nodes", [])],
@@ -179,7 +212,12 @@ class AgentLoader:
 __all__ = [
     "AgentLoader",
     "AgentConfig",
-    "ToolConfig",
+    "IdentityConfig",
+    "LLMConfig",
+    "ToolsConfig",
+    "PromptsConfig",
     "WorkflowConfig",
+    "ErrorHandlingConfig",
+    "WorkflowGraphConfig",
     "WorkflowNodeConfig",
 ]

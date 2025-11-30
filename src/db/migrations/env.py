@@ -5,16 +5,6 @@ from sqlalchemy import engine_from_config, pool
 from alembic import context
 
 from src.db.base import Base
-from src.db.models import (
-    Project,
-    ProjectLock,
-    Session,
-    Step,
-    Event,
-    Artifact,
-    Dependency,
-    Modification,
-)
 from src.lib.config import get_settings
 
 # this is the Alembic Config object, which provides

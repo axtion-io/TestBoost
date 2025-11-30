@@ -5,7 +5,6 @@ from pathlib import Path
 
 import typer
 from rich.console import Console
-from rich.progress import Progress, TextColumn
 from rich.table import Table
 from src.cli.progress import create_progress
 
@@ -309,7 +308,6 @@ async def _run_test_generation(
     verbose: bool,
 ) -> None:
     """Run test generation workflow with LLM agent (T063)."""
-    import uuid
     from src.db import SessionLocal
     from src.workflows.test_generation_agent import run_test_generation_with_agent
     from src.db.repository import SessionRepository

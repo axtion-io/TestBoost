@@ -1,8 +1,7 @@
 """DeepAgents YAML configuration loader with hot-reload support."""
 
-import os
 import shutil
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -474,7 +473,7 @@ class AgentLoader:
         backups_dir.mkdir(exist_ok=True)
 
         # Create timestamped backup filename
-        timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+        timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
         backup_path = backups_dir / f"{name}_{timestamp}.yaml"
 
         # Copy file to backup location

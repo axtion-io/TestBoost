@@ -14,12 +14,6 @@ from pathlib import Path
 
 from deepagents import create_deep_agent
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
-from tenacity import (
-    retry,
-    retry_if_exception_type,
-    stop_after_attempt,
-    wait_exponential,
-)
 
 from src.agents.loader import AgentLoader
 from src.lib.config import get_settings
@@ -213,7 +207,6 @@ async def run_maven_maintenance_with_agent(
         MavenAgentError: If workflow fails
         LLMError: If LLM invocation fails
     """
-    import asyncio
 
     logger.info(
         "maven_agent_workflow_start",

@@ -13,6 +13,10 @@ env_path = Path(__file__).parent.parent / ".env"
 if env_path.exists():
     load_dotenv(env_path, override=True)
 
+# Configure logging for tests
+from src.lib.logging import configure_logging
+configure_logging()
+
 
 # MONKEY PATCH: Disable Windows path validation in DeepAgents filesystem middleware
 # This MUST be done before any test imports DeepAgents

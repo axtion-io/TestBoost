@@ -39,6 +39,12 @@ class LLMConnectionError(StartupCheckError):
     pass
 
 
+class AgentConfigError(StartupCheckError):
+    """Raised when agent configuration validation fails."""
+
+    pass
+
+
 def _is_retryable_error(exception: Exception) -> bool:
     """
     Determine if an error is retryable.
@@ -231,6 +237,112 @@ async def check_llm_connection(model: str | None = None) -> None:
         raise LLMError(f"LLM connection check failed: {e}") from e
 
 
+def validate_agent_infrastructure() -> None:
+    """
+    Validate agent configuration infrastructure at startup.
+
+    Implements US3: Agent Configuration Management
+    - T084-T093: Validate all agent YAML configs exist and are valid
+    - Validate referenced prompts exist
+    - Validate MCP servers are registered
+
+    Raises:
+        AgentConfigError: If any agent config is invalid or missing
+    """
+    from pathlib import Path
+    from pydantic import ValidationError
+
+    from src.agents.loader import AgentLoader
+    from src.mcp_servers.registry import TOOL_REGISTRY
+
+    logger.info("agent_infrastructure_check_start")
+
+    # List of critical agents that MUST be valid at startup
+    REQUIRED_AGENTS = [
+        "maven_maintenance_agent",
+        "test_gen_agent",
+        "deployment_agent",
+    ]
+
+    loader = AgentLoader("config/agents")
+    validated_agents = []
+    errors = []
+
+    for agent_name in REQUIRED_AGENTS:
+        try:
+            logger.info("validating_agent_config", agent=agent_name)
+
+            # T084: Load and validate agent YAML
+            config = loader.load_agent(agent_name)
+
+            logger.info(
+                "agent_config_valid",
+                agent=config.name,
+                llm_provider=config.llm.provider,
+                llm_model=config.llm.model,
+                mcp_servers=config.tools.mcp_servers,
+            )
+
+            # T085: Validate system prompt exists
+            prompt_path = Path(config.prompts.system)
+            if not prompt_path.exists():
+                error_msg = f"Agent '{agent_name}' references missing prompt: {config.prompts.system}"
+                logger.error("agent_prompt_missing", agent=agent_name, prompt=config.prompts.system)
+                errors.append(error_msg)
+                continue
+
+            logger.info("agent_prompt_valid", agent=agent_name, prompt=config.prompts.system)
+
+            # T086: Validate MCP servers are registered
+            for server_name in config.tools.mcp_servers:
+                if server_name not in TOOL_REGISTRY:
+                    error_msg = f"Agent '{agent_name}' references unregistered MCP server: {server_name}"
+                    logger.error(
+                        "agent_mcp_server_missing",
+                        agent=agent_name,
+                        server=server_name,
+                        registered_servers=list(TOOL_REGISTRY.keys()),
+                    )
+                    errors.append(error_msg)
+                    continue
+
+            validated_agents.append(agent_name)
+
+        except FileNotFoundError as e:
+            error_msg = f"Agent configuration file not found: {agent_name}.yaml"
+            logger.error("agent_config_not_found", agent=agent_name, error=str(e))
+            errors.append(error_msg)
+
+        except ValidationError as e:
+            error_msg = f"Agent configuration invalid: {agent_name} - {str(e)}"
+            logger.error("agent_config_invalid", agent=agent_name, error=str(e))
+            errors.append(error_msg)
+
+        except Exception as e:
+            error_msg = f"Agent validation failed: {agent_name} - {str(e)}"
+            logger.error("agent_validation_error", agent=agent_name, error=str(e), error_type=type(e).__name__)
+            errors.append(error_msg)
+
+    # Report results
+    if errors:
+        logger.error(
+            "agent_infrastructure_check_failed",
+            validated=len(validated_agents),
+            failed=len(errors),
+            errors=errors,
+        )
+        error_summary = "\n".join(f"  - {err}" for err in errors)
+        raise AgentConfigError(
+            f"Agent infrastructure validation failed ({len(errors)} errors):\n{error_summary}"
+        )
+
+    logger.info(
+        "agent_infrastructure_check_complete",
+        validated_agents=validated_agents,
+        count=len(validated_agents),
+    )
+
+
 async def run_all_startup_checks() -> None:
     """
     Run all startup validation checks.
@@ -244,12 +356,14 @@ async def run_all_startup_checks() -> None:
         # Check 1: LLM connectivity (US1)
         await check_llm_connection()
 
-        # Future checks will be added here:
-        # - Check 2: Database connectivity
-        # - Check 3: MCP tool registry validation
-        # - Check 4: Agent config validation
+        # Check 2: Agent configuration validation (US3)
+        validate_agent_infrastructure()
 
-        logger.info("startup_checks_complete", checks_passed=1)
+        # Future checks will be added here:
+        # - Check 3: Database connectivity
+        # - Check 4: MCP tool registry validation
+
+        logger.info("startup_checks_complete", checks_passed=2)
 
     except Exception as e:
         logger.error("startup_checks_failed", error=str(e))
@@ -258,7 +372,9 @@ async def run_all_startup_checks() -> None:
 
 __all__ = [
     "check_llm_connection",
+    "validate_agent_infrastructure",
     "run_all_startup_checks",
     "StartupCheckError",
     "LLMConnectionError",
+    "AgentConfigError",
 ]

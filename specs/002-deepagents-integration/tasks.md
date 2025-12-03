@@ -32,6 +32,7 @@ Single Python backend project (from plan.md):
 - [ ] T004 [P] Verify PostgreSQL 15 running on port 5433 with sessions/artifacts tables
 - [ ] T005 [P] Verify tenacity library already installed (from 001-testboost-core) for retry logic (U1)
 - [ ] T006 [P] Verify MCP servers expose get_tools() functions (check src/mcp_servers/*/\_\_init\_\_.py) (U2)
+- [ ] T006a [P] Verify backup strategy: check if existing backup utility exists or plan to create new one (Constitution Principle 6)
 
 **Checkpoint**: Environment validated - ready for implementation
 
@@ -48,6 +49,7 @@ Single Python backend project (from plan.md):
 - [ ] T009 [P] Modify src/cli/main.py to add callback calling check_llm_connection()
 - [ ] T010 Create src/mcp_servers/registry.py with get_mcp_tool_registry() function
 - [ ] T011 [P] Add retry logic to src/lib/llm.py if not present (check T005 verification first)
+- [ ] T011a [P] Implement API key security validation in src/lib/startup_checks.py: validate_api_key_security() function that verifies (1) keys loaded from .env only, (2) keys never logged in plaintext, (3) keys never transmitted in URLs, (4) add test in tests/integration/test_llm_connectivity.py::test_api_keys_not_logged (Constitution Principle 7 - Isolation et Sécurité)
 
 **Checkpoint**: Foundation ready - LLM connectivity check implemented, MCP registry created. User story implementation can now begin.
 
@@ -76,7 +78,7 @@ Single Python backend project (from plan.md):
 - [ ] T017 [US1] Add error handling in check_llm_connection() for invalid API keys (raise AuthenticationError)
 - [ ] T018 [US1] Add timeout handling in check_llm_connection() (5 second max, raise TimeoutError)
 - [ ] T019 [US1] Add retry logic with exponential backoff for intermittent connectivity (A4: 3 attempts, 1s-10s wait)
-- [ ] T020 [US1] Add rate limit error detection (catch 429, extract retry-after, fail with clear message) (A1)
+- [ ] T020 [US1] Add rate limit error detection (catch 429, extract retry-after header, fail with EXPLICIT message format: "LLM rate limit exceeded by {provider}. Retry after {duration} seconds. Workflow aborted. Zero results generated.") (A1, Constitution Principle 1)
 - [ ] T021 [US1] Implement startup event in src/api/main.py calling check_llm_connection() with error logging
 - [ ] T022 [US1] Implement CLI callback in src/cli/main.py calling check_llm_connection() with error exit
 - [ ] T023 [US1] Add structured logging for "llm_connection_ok" and "llm_connection_failed" events
@@ -122,12 +124,14 @@ pytest tests/integration/test_llm_connectivity.py -v
 
 ### Implementation for User Story 2
 
-- [ ] T029 [US2] Implement get_mcp_tool_registry() in src/mcp_servers/registry.py returning all 4 MCP servers
+- [ ] T029 [US2] Implement get_mcp_tool_registry() in src/mcp_servers/registry.py returning 4 required MCP servers: maven_maintenance, git_maintenance, docker, test_generator (NOTE: pit_recommendations and container_runtime exist in codebase but not needed for this feature - agents don't use them)
 - [ ] T030 [P] [US2] Add or verify get_tools() function in src/mcp_servers/maven_maintenance/__init__.py (check T006)
 - [ ] T031 [P] [US2] Add or verify get_tools() function in src/mcp_servers/git_maintenance/__init__.py (check T006)
 - [ ] T032 [P] [US2] Add or verify get_tools() function in src/mcp_servers/docker/__init__.py (check T006)
 - [ ] T033 [P] [US2] Add or verify get_tools() function in src/mcp_servers/test_generator/__init__.py (check T006)
+- [ ] T033a [US2] Create backup utility in src/workflows/backup.py with create_backup(file_path) function returning backup path (Constitution Principle 6)
 - [ ] T034 [US2] Create src/workflows/maven_maintenance_agent.py with run_maven_maintenance_with_agent() function
+- [ ] T034a [US2] Implement backup creation in maven_maintenance_agent.py before pom.xml modifications (call backup.create_backup() before tool invocations that modify files, store backup_path in artifacts) (Constitution Principle 6)
 - [ ] T035 [US2] Implement agent creation in maven_maintenance_agent.py using create_deep_agent() with MCP tools
 - [ ] T036 [US2] Load agent config from config/agents/maven_maintenance_agent.yaml in maven_maintenance_agent.py
 - [ ] T037 [US2] Implement config reload on workflow resume (A3: reload YAML if workflow paused)
@@ -186,6 +190,7 @@ pytest tests/e2e/test_real_llm_invocation.py::test_maven_workflow_llm_calls -v -
 ### Implementation for User Story 4
 
 - [ ] T054 [US4] Create src/workflows/test_generation_agent.py with run_test_generation_with_agent() function
+- [ ] T054a [US4] Implement backup creation in test_generation_agent.py before test file generation (call backup.create_backup() on target test directory before writing test files) (Constitution Principle 6)
 - [ ] T055 [US4] Implement agent creation in test_generation_agent.py using create_deep_agent() with test gen MCP tools
 - [ ] T056 [US4] Load agent config from config/agents/test_gen_agent.yaml in test_generation_agent.py
 - [ ] T057 [US4] Load system prompt from config/prompts/test_generation/class_analysis.md (or similar)
@@ -228,6 +233,7 @@ pytest tests/e2e/test_real_llm_invocation.py::test_maven_workflow_llm_calls -v -
 ### Implementation for User Story 5
 
 - [ ] T069 [US5] Create src/workflows/docker_deployment_agent.py with run_docker_deployment_with_agent() function
+- [ ] T069a [US5] Implement backup creation in docker_deployment_agent.py before Dockerfile/docker-compose generation (call backup.create_backup() before writing Docker configuration files) (Constitution Principle 6)
 - [ ] T070 [US5] Implement agent creation in docker_deployment_agent.py using create_deep_agent() with Docker MCP tools
 - [ ] T071 [US5] Load agent config from config/agents/deployment_agent.yaml in docker_deployment_agent.py
 - [ ] T072 [US5] Load system prompt from config/prompts/docker/project_analysis.md (or similar)
@@ -313,6 +319,7 @@ pytest tests/integration/test_agent_config_loading.py -v
 - [ ] T099 [P] Cost analysis: Log LLM token usage and estimate costs for Gemini/Claude/GPT-4o across all workflows
 - [ ] T100 Add migration guide to quickstart.md for transitioning from old workflows to agent-based workflows
 - [ ] T101 [P] Code review: Ensure no direct system calls (all via MCP tools per Constitution Principle 2)
+- [ ] T101a [P] Security audit: Grep logs/testboost.log and test output for API key patterns (regex: 'sk-[A-Za-z0-9]{32,}', 'AIza[A-Za-z0-9]{35}'), verify zero matches (Constitution Principle 7)
 - [ ] T102 Validate LangSmith tracing works for all 3 providers (Gemini, Claude, GPT-4o) across all 3 workflows
 - [ ] T103 Run quickstart.md validation: Test all 4 scenarios (Developer, CLI User, Administrator, Tester)
 - [ ] T104 [P] Document edge case handling in README.md (A1-A6: rate limits, missing tools, config reload, retry, JSON validation)

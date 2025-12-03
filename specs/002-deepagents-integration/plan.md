@@ -17,9 +17,14 @@ Integrate DeepAgents LLM framework into TestBoost workflows to enable real AI ag
 **Testing**: pytest 8.2 with real LLM API calls (no mocks), LangSmith tracing validation
 **Target Platform**: Windows 11 (primary), Linux server (secondary)
 **Project Type**: Single backend application (CLI + REST API)
+**Environment Variables**:
+- LLM Provider: `LLM_PROVIDER=google|anthropic|openai` (default: google)
+- API Keys: `GOOGLE_API_KEY`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY` (at least one required)
+- LangSmith (optional): `LANGSMITH_API_KEY`, `LANGSMITH_TRACING=true`
+- Database: `DATABASE_URL=postgresql://user:pass@localhost:5433/testboost` (default from .env)
 **Performance Goals**: LLM connectivity check <5s, Maven workflow with agents <2min for simple projects
 **Constraints**: No breaking changes to existing API/CLI interfaces, must coexist with StateGraph during migration
-**Scale/Scope**: 3 workflows to migrate (Maven, test gen, deployment), 3 agent YAML configs, 6 Markdown prompt templates
+**Scale/Scope**: 3 workflows to migrate (Maven, test gen, deployment), 3 agent YAML configs, 4 MCP servers (maven_maintenance, git_maintenance, docker, test_generator), 1 Markdown prompt template (Maven dependency_update.md - test gen and deployment prompts deferred to future work)
 
 ## Constitution Check
 
@@ -103,10 +108,12 @@ src/
 │   └── __init__.py             # EXISTS
 │
 └── mcp_servers/
-    ├── maven_maintenance/      # EXISTS - No changes, used as tools
-    ├── git_maintenance/        # EXISTS - No changes
-    ├── docker/                 # EXISTS - No changes
-    └── test_generator/         # EXISTS - No changes
+    ├── maven_maintenance/      # EXISTS - Used as tools (REQUIRED)
+    ├── git_maintenance/        # EXISTS - Used as tools (REQUIRED)
+    ├── docker/                 # EXISTS - Used as tools (REQUIRED)
+    ├── test_generator/         # EXISTS - Used as tools (REQUIRED)
+    ├── pit_recommendations/    # EXISTS - Not used in this feature
+    └── container_runtime/      # EXISTS - Not used in this feature
 
 config/
 ├── agents/

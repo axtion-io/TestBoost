@@ -93,7 +93,7 @@ As a developer, when I deploy my application to Docker, I want an LLM agent to a
 
 ### Edge Cases
 
-- **LLM API rate limits exceeded**: Workflow fails immediately with clear error message indicating rate limit and retry-after duration. No silent degradation (respects "Zéro Complaisance").
+- **LLM API rate limits exceeded**: Workflow MUST abort immediately with explicit error message: "LLM rate limit exceeded by {provider_name}. Retry after {seconds} seconds. Workflow aborted. Zero results generated." No silent degradation, no vague "failed" messages (respects "Zéro Complaisance" - principle of zero tolerance for misleading outputs).
 - **LLM doesn't call expected MCP tools**: Agent invocation retries with modified prompt instructing tool use (max 3 attempts). If tools still not called, workflow fails with error listing expected vs actual tool calls.
 - **YAML config changes during paused workflow**: Workflows reload configuration on resume. Changes take effect mid-execution. Config snapshot not preserved.
 - **Intermittent LLM connectivity**: Agent invocations use retry logic with exponential backoff (3 attempts, 1s-10s wait). Network errors trigger automatic retry. Persistent failures abort workflow.
@@ -116,7 +116,7 @@ As a developer, when I deploy my application to Docker, I want an LLM agent to a
 - **FR-010**: Application MUST NOT execute workflows if LLM connectivity check fails
 - **FR-011**: CLI and API MUST log LLM metrics (duration, tokens, model)
 - **FR-012**: Test generation and deployment workflows MUST follow same agent integration pattern
-- **FR-013**: Application MUST support switching between Google/Anthropic/OpenAI via environment config
+- **FR-013**: Application MUST support switching between Google Gemini/Anthropic Claude/OpenAI GPT-4o via environment variables: `LLM_PROVIDER=google|anthropic|openai` (default: google) and corresponding API key `GOOGLE_API_KEY`, `ANTHROPIC_API_KEY`, or `OPENAI_API_KEY`. Switching requires only env var change and application restart (zero code changes).
 - **FR-014**: Workflows MUST use existing MCP servers as tools for agents
 - **FR-015**: Agent tool calls MUST be traced with input arguments and output results
 

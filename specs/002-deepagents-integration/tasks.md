@@ -53,6 +53,7 @@ The following patterns are intentionally repeated across workflows to ensure con
 
 - [ ] T001 Verify Python 3.11+ environment and DeepAgents 0.2.7 installed
 - [ ] T002 [P] Verify existing agent infrastructure (src/agents/loader.py, config/agents/*.yaml)
+- [ ] T002a [P] Verify src/agents/adapter.py compatibility with DeepAgents 0.2.7 (may need adjustments per plan.md - check if used or deprecated)
 - [ ] T003 [P] Verify existing MCP servers (src/mcp_servers/maven_maintenance/, git_maintenance/, docker/, test_generator/)
 - [ ] T004 [P] Verify PostgreSQL 15 running on port 5433 with sessions/artifacts tables
 - [ ] T005 [P] Verify tenacity library already installed (from 001-testboost-core) for retry logic (U1)
@@ -143,7 +144,7 @@ pytest tests/integration/test_llm_connectivity.py -v
 
 - [ ] T024 [P] [US2] Create tests/integration/test_maven_agent_workflow.py with test_maven_workflow_uses_agent()
 - [ ] T025 [P] [US2] Add test_maven_workflow_stores_artifacts() to tests/integration/test_maven_agent_workflow.py
-- [ ] T026 [P] [US2] Create tests/e2e/test_real_llm_invocation.py with test_maven_workflow_llm_calls()
+- [ ] T026 [P] [US2] Create tests/e2e/test_real_llm_invocation.py with test_maven_workflow_llm_calls() - assert llm_call_count >= 3 (SC-002)
 - [ ] T027 [P] [US2] Add test_langsmith_trace_validation() to tests/e2e/test_real_llm_invocation.py
 - [ ] T028 [P] [US2] Add test_maven_agent_tool_call_retry() to verify A2 (agent retries if no tools called)
 - [ ] T028a [P] [US2] Add test_maven_agent_reasoning_validation() to verify SC-003 (agent responses contain reasoning keywords from prompt template dependency_update.md)
@@ -209,7 +210,7 @@ pytest tests/e2e/test_real_llm_invocation.py::test_maven_workflow_llm_calls -v -
 
 - [ ] T050 [P] [US4] Create tests/integration/test_test_gen_agent_workflow.py with test_test_gen_workflow_uses_agent()
 - [ ] T051 [P] [US4] Add test_test_gen_workflow_stores_artifacts() to tests/integration/test_test_gen_agent_workflow.py
-- [ ] T052 [P] [US4] Add test_test_gen_workflow_llm_calls() to tests/e2e/test_real_llm_invocation.py
+- [ ] T052 [P] [US4] Add test_test_gen_workflow_llm_calls() to tests/e2e/test_real_llm_invocation.py - assert llm_call_count >= 3 (SC-002)
 - [ ] T053 [P] [US4] Add test_test_gen_agent_tool_call_retry() to verify error correction retry logic
 - [ ] T053a [P] [US4] Add test_test_gen_agent_reasoning_validation() to verify SC-003 (agent responses contain reasoning about class types and test patterns)
 
@@ -253,7 +254,7 @@ pytest tests/e2e/test_real_llm_invocation.py::test_maven_workflow_llm_calls -v -
 
 - [ ] T065 [P] [US5] Create tests/integration/test_docker_agent_workflow.py with test_docker_workflow_uses_agent()
 - [ ] T066 [P] [US5] Add test_docker_workflow_stores_artifacts() to tests/integration/test_docker_agent_workflow.py
-- [ ] T067 [P] [US5] Add test_docker_workflow_llm_calls() to tests/e2e/test_real_llm_invocation.py
+- [ ] T067 [P] [US5] Add test_docker_workflow_llm_calls() to tests/e2e/test_real_llm_invocation.py - assert llm_call_count >= 3 (SC-002)
 - [ ] T068 [P] [US5] Add test_docker_agent_health_check_monitoring() to verify agent waits for health OK
 - [ ] T068a [P] [US5] Add test_docker_agent_reasoning_validation() to verify SC-003 (agent responses contain reasoning about project type detection and dependencies)
 
@@ -352,6 +353,7 @@ pytest tests/integration/test_agent_config_loading.py -v
 - [ ] T103 Run quickstart.md validation: Test all 4 scenarios (Developer, CLI User, Administrator, Tester)
 - [ ] T104 [P] Document edge case handling in README.md (A1-A5: rate limits, missing tools, retry with backoff, JSON validation, malformed tool calls)
 - [ ] T105 Validate all 3 workflows respect "Zéro Complaisance" (fail-fast, no silent degradation, real LLM calls)
+- [ ] T105a Test Maven workflow with large project (>170k tokens) to verify DeepAgents automatic summarization handles context window per spec.md Edge Case
 
 **Validation**:
 ```bash

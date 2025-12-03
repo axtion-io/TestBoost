@@ -51,7 +51,7 @@ As a TestBoost administrator, I want to configure agent behavior through YAML fi
 **Acceptance Scenarios**:
 
 1. **Given** I update YAML temperature, **When** workflow runs, **Then** LLM uses new temperature
-2. **Given** I modify prompt template, **When** agent runs, **Then** it follows new validation rules
+2. **Given** I modify Maven prompt template (dependency_update.md), **When** Maven workflow runs, **Then** it follows new validation rules
 3. **Given** I add new MCP tool, **When** agent loads, **Then** tool is bound and available
 4. **Given** YAML has error, **When** app starts, **Then** it fails with clear error message
 
@@ -108,10 +108,10 @@ As a developer, when I deploy my application to Docker, I want an LLM agent to a
 - **FR-002**: Application MUST fail immediately with clear errors if LLM provider is not accessible. Error messages MUST include: (1) root cause, (2) specific action required, (3) context (e.g., "LLM provider: google, API key: missing"). Format: "{Action failed}: {Root cause}. Action: {What user must do}."
 - **FR-003**: Maven maintenance workflow MUST use create_deep_agent() to create LLM-powered agent nodes
 - **FR-004**: Agent workflows MUST load configuration from config/agents/*.yaml files
-- **FR-005**: Agent workflows MUST load system prompts from config/prompts/**/*.md templates
+- **FR-005**: Agent workflows MUST load system prompts from config/prompts/**/*.md templates (Maven workflow uses dependency_update.md; test gen and deployment use inline prompts - templates deferred to future work per plan.md)
 - **FR-006**: Agent nodes MUST invoke LLMs with MCP tools bound
 - **FR-007**: Agent decisions MUST be logged to LangSmith when enabled
-- **FR-008**: Agent responses MUST be stored in session artifacts table
+- **FR-008**: Agent responses MUST be stored in session artifacts table with schema: artifact_type (enum: 'agent_reasoning', 'llm_tool_call', 'llm_response', 'llm_metrics'), content (jsonb), session_id (uuid FK), user_id (text), timestamp (timestamptz), metadata (jsonb: {model, tokens, duration_ms, cost_usd})
 - **FR-009**: Workflows MUST handle LLM errors with retry logic and graceful degradation
 - **FR-010**: Application MUST NOT execute workflows if LLM connectivity check fails
 - **FR-011**: CLI and API MUST log LLM metrics (duration, tokens, model)

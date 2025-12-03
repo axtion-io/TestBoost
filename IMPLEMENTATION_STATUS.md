@@ -220,11 +220,16 @@ HTTP Request: POST https://api.anthropic.com/v1/messages "HTTP/1.1 200 OK" (5 ti
 {"content_preview": "## Maven Dependency Analysis\n\n### Project: test-project..."}
 ```
 
-**Known Issue**:
-⚠️ Test assertion failed (`Expected ≥3 LLM calls, got 0`) but functionality is proven. Root cause: Mock wrapper doesn't count LLM calls correctly because DeepAgents uses StateGraph internal execution path, not direct `ainvoke()` wrapper.
+**Fix Implemented** (T025):
+✅ Test mock infrastructure fixed! Root cause was:
+1. Tests patched wrong location (where defined vs. where used)
+2. LLMWrapper didn't support bind_tools(**kwargs)
+3. Needed to patch `src.workflows.maven_maintenance_agent.get_llm`
+
+Test now **PASSES**: `test_maven_workflow_llm_calls PASSED [100%] in 44.32s`
 
 **Tasks Remaining**:
-- [ ] T025-T028: Fix test mock infrastructure to count LLM calls through StateGraph
+- [ ] T026-T028: Run remaining E2E validation tests
   - Test tool call validation and retry
   - Validate LangSmith traces
 
@@ -428,7 +433,7 @@ git clone https://github.com/spring-projects/spring-petclinic.git tests/fixtures
 2. ✅ **DONE**: Test API/CLI startup checks
 3. ✅ **DONE**: Create test fixtures (T006b) - spring-petclinic
 4. ✅ **DONE**: Run Maven E2E test (T024) - SC-002 VALIDATED with 5 LLM calls
-5. ⏭️ **NEXT**: Fix E2E test mock infrastructure (T025)
+5. ✅ **DONE**: Fix E2E test mock infrastructure (T025) - Test now PASSES
 6. ⏭️ **NEXT**: Implement US3 startup validation (T084-T093) - 1-2 hours
 
 ### **Short Term (This Week)**:
@@ -458,9 +463,9 @@ git clone https://github.com/spring-projects/spring-petclinic.git tests/fixtures
 - ✅ **E2E Maven workflow validated with 5 real LLM API calls** (SC-002)
 - ✅ **6/10 Success Criteria validated**
 
-**Remaining Work**: ~5-8 hours pour test infrastructure fixes, US3, et polish.
+**Remaining Work**: ~4-6 hours pour US3, additional E2E tests, et polish.
 
-**Recommendation**: Fix E2E test mock infrastructure (T025) pour properly count LLM calls through StateGraph, puis continuer avec US3 config validation et test generation/Docker E2E tests.
+**Recommendation**: Continue with US3 config validation (T084-T093), then test generation/Docker E2E tests (T050-T053, T065-T068), and finally Phase 8 polish tasks.
 
 ---
 

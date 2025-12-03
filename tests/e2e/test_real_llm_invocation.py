@@ -52,49 +52,61 @@ class TestMavenWorkflowLLMCalls:
 </project>
 """)
 
-        # Track LLM invocations
-        llm_call_count = 0
-        original_ainvoke = None
+        # Track LLM invocations using a shared counter
+        class LLMCallCounter:
+            def __init__(self):
+                self.count = 0
 
-        def count_llm_calls(original_method):
-            """Wrapper to count LLM calls."""
-            async def wrapper(*args, **kwargs):
-                nonlocal llm_call_count
-                llm_call_count += 1
-                return await original_method(*args, **kwargs)
-            return wrapper
+        counter = LLMCallCounter()
 
-        # Patch LLM to count calls (while still making real calls)
-        with patch("src.lib.llm.get_llm") as mock_get_llm:
-            # Get real LLM but wrap it to count calls
-            from src.lib.llm import get_llm
-            real_llm = get_llm()
+        class LLMWrapper:
+            """Wrapper that counts LLM calls and delegates to real LLM."""
+            def __init__(self, real_llm, counter):
+                self._real_llm = real_llm
+                self._counter = counter
 
-            # Wrap ainvoke to count calls
-            original_ainvoke = real_llm.ainvoke
-            real_llm.ainvoke = count_llm_calls(original_ainvoke)
+            async def ainvoke(self, *args, **kwargs):
+                """Count call and delegate to real LLM."""
+                self._counter.count += 1
+                return await self._real_llm.ainvoke(*args, **kwargs)
 
-            mock_get_llm.return_value = real_llm
+            def bind_tools(self, tools, **kwargs):
+                """Return a new wrapper with tools bound to the real LLM."""
+                bound_llm = self._real_llm.bind_tools(tools, **kwargs)
+                return LLMWrapper(bound_llm, self._counter)
 
-            try:
-                # Execute workflow with real LLM
-                result = await run_maven_maintenance_with_agent(
-                    project_path=str(project_path),
-                    session_id="e2e-test-maven-llm"
-                )
+            def __getattr__(self, name):
+                """Delegate all other attributes to real LLM."""
+                return getattr(self._real_llm, name)
 
-                # Verify at least 3 LLM calls (SC-002)
-                assert llm_call_count >= 3, f"Expected ≥3 LLM calls, got {llm_call_count}"
+        # Patch get_llm WHERE IT IS USED (not where it's defined)
+        # maven_maintenance_agent imports: from src.lib.llm import get_llm
+        with patch("src.workflows.maven_maintenance_agent.get_llm") as mock_get_llm:
+            # Import original get_llm
+            from src.lib import llm as llm_module
+            original_get_llm = llm_module.get_llm
 
-                # Verify result contains analysis
-                assert result is not None
-                # Result should mention dependencies or analysis
-                assert "dependencies" in result.lower() or "spring" in result.lower()
+            def get_llm_with_counter(*args, **kwargs):
+                """Get real LLM and wrap it with counter."""
+                real_llm = original_get_llm(*args, **kwargs)
+                return LLMWrapper(real_llm, counter)
 
-            finally:
-                # Restore original method
-                if original_ainvoke:
-                    real_llm.ainvoke = original_ainvoke
+            # Make the patch return our wrapper
+            mock_get_llm.side_effect = get_llm_with_counter
+
+            # Execute workflow with real LLM (wrapped with counter)
+            result = await run_maven_maintenance_with_agent(
+                project_path=str(project_path),
+                session_id="e2e-test-maven-llm"
+            )
+
+            # Verify at least 3 LLM calls (SC-002)
+            assert counter.count >= 3, f"Expected ≥3 LLM calls, got {counter.count}"
+
+            # Verify result contains analysis
+            assert result is not None
+            # Result should mention dependencies or analysis
+            assert "dependencies" in result.lower() or "spring" in result.lower()
 
     @pytest.mark.asyncio
     @pytest.mark.e2e
@@ -364,52 +376,64 @@ class TestDockerWorkflowLLMCalls:
 </project>
 """)
 
-        # Track LLM invocations
-        llm_call_count = 0
-        original_ainvoke = None
+        # Track LLM invocations using a shared counter
+        class LLMCallCounter:
+            def __init__(self):
+                self.count = 0
 
-        def count_llm_calls(original_method):
-            """Wrapper to count LLM calls."""
-            async def wrapper(*args, **kwargs):
-                nonlocal llm_call_count
-                llm_call_count += 1
-                return await original_method(*args, **kwargs)
-            return wrapper
+        counter = LLMCallCounter()
 
-        # Patch LLM to count calls (while still making real calls)
-        with patch("src.lib.llm.get_llm") as mock_get_llm:
-            # Get real LLM but wrap it to count calls
-            from src.lib.llm import get_llm
-            real_llm = get_llm()
+        class LLMWrapper:
+            """Wrapper that counts LLM calls and delegates to real LLM."""
+            def __init__(self, real_llm, counter):
+                self._real_llm = real_llm
+                self._counter = counter
 
-            # Wrap ainvoke to count calls
-            original_ainvoke = real_llm.ainvoke
-            real_llm.ainvoke = count_llm_calls(original_ainvoke)
+            async def ainvoke(self, *args, **kwargs):
+                """Count call and delegate to real LLM."""
+                self._counter.count += 1
+                return await self._real_llm.ainvoke(*args, **kwargs)
 
-            mock_get_llm.return_value = real_llm
+            def bind_tools(self, tools, **kwargs):
+                """Return a new wrapper with tools bound to the real LLM."""
+                bound_llm = self._real_llm.bind_tools(tools, **kwargs)
+                return LLMWrapper(bound_llm, self._counter)
 
-            try:
-                # Execute workflow with real LLM
-                result = await run_docker_deployment_with_agent(
-                    project_path=str(project_path),
-                    service_dependencies=["postgres"],
-                    session_id="e2e-test-docker-llm"
-                )
+            def __getattr__(self, name):
+                """Delegate all other attributes to real LLM."""
+                return getattr(self._real_llm, name)
 
-                # Verify at least 3 LLM calls (SC-002)
-                assert llm_call_count >= 3, f"Expected ≥3 LLM calls, got {llm_call_count}"
+        # Patch get_llm WHERE IT IS USED (not where it's defined)
+        # docker_deployment_agent imports: from src.lib.llm import get_llm
+        with patch("src.workflows.docker_deployment_agent.get_llm") as mock_get_llm:
+            # Import original get_llm
+            from src.lib import llm as llm_module
+            original_get_llm = llm_module.get_llm
 
-                # Verify result contains Docker deployment information
-                assert result is not None
-                assert result["success"] is True or "agent_response" in result
-                # Response should mention Java version detection or Docker
-                response_text = result.get("agent_response", "").lower()
-                assert any(keyword in response_text for keyword in ["java", "docker", "17", "postgres"])
+            def get_llm_with_counter(*args, **kwargs):
+                """Get real LLM and wrap it with counter."""
+                real_llm = original_get_llm(*args, **kwargs)
+                return LLMWrapper(real_llm, counter)
 
-            finally:
-                # Restore original method
-                if original_ainvoke:
-                    real_llm.ainvoke = original_ainvoke
+            # Make the patch return our wrapper
+            mock_get_llm.side_effect = get_llm_with_counter
+
+            # Execute workflow with real LLM (wrapped with counter)
+            result = await run_docker_deployment_with_agent(
+                project_path=str(project_path),
+                service_dependencies=["postgres"],
+                session_id="e2e-test-docker-llm"
+            )
+
+            # Verify at least 3 LLM calls (SC-002)
+            assert counter.count >= 3, f"Expected ≥3 LLM calls, got {counter.count}"
+
+            # Verify result contains Docker deployment information
+            assert result is not None
+            assert result["success"] is True or "agent_response" in result
+            # Response should mention Java version detection or Docker
+            response_text = result.get("agent_response", "").lower()
+            assert any(keyword in response_text for keyword in ["java", "docker", "17", "postgres"])
 
     @pytest.mark.asyncio
     @pytest.mark.e2e

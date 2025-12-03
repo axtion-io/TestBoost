@@ -112,7 +112,7 @@ As a developer, when I deploy my application to Docker, I want an LLM agent to a
 - **FR-006**: Agent nodes MUST invoke LLMs with MCP tools bound
 - **FR-007**: Agent decisions MUST be logged to LangSmith when enabled
 - **FR-008**: Agent responses MUST be stored in session artifacts table with schema: artifact_type (enum: 'agent_reasoning', 'llm_tool_call', 'llm_response', 'llm_metrics'), content (jsonb), session_id (uuid FK), user_id (text), timestamp (timestamptz), metadata (jsonb: {model, tokens, duration_ms, cost_usd})
-- **FR-009**: Workflows MUST handle LLM errors with retry logic and graceful degradation
+- **FR-009**: Workflows MUST handle LLM errors with retry logic and graceful degradation (graceful degradation = retry with exponential backoff, never fallback to deterministic logic - respects FR-010)
 - **FR-010**: Application MUST NOT execute workflows if LLM connectivity check fails
 - **FR-011**: CLI and API MUST log LLM metrics (duration, tokens, model)
 - **FR-012**: Test generation and deployment workflows MUST follow same agent integration pattern
@@ -141,7 +141,7 @@ As a developer, when I deploy my application to Docker, I want an LLM agent to a
 - **SC-007**: All three workflows (Maven maintenance, test generation, Docker deployment) use LLM agents
 - **SC-008**: Zero workflows execute without LLM invocation
 - **SC-009**: LLM metrics logged for every workflow execution
-- **SC-010**: Agent failure rate under 5% with retry logic
+- **SC-010**: Agent failure rate under 5% with retry logic (measured over minimum 100 workflow executions in E2E tests, failure = workflow aborted after all retries exhausted)
 
 ## Scope
 

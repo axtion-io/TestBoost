@@ -24,7 +24,7 @@ Single Python backend project (from plan.md):
 
 The following patterns are intentionally repeated across workflows to ensure consistency:
 
-**Retry Logic Pattern** (T011, T019, T041, T059, T074):
+**Retry Logic Pattern** (T019, T041, T059, T074):
 - Exponential backoff: 3 attempts, 1s-10s wait
 - Network error retry (A4)
 - Missing tool call retry (A2)
@@ -76,6 +76,7 @@ The following patterns are intentionally repeated across workflows to ensure con
 - [ ] T010 Create src/mcp_servers/registry.py with get_mcp_tool_registry() function
 - [ ] T011 [P] Add retry logic to src/lib/llm.py if not present (check T005 verification first)
 - [ ] T011a [P] Implement API key security validation in src/lib/startup_checks.py: validate_api_key_security() function that verifies (1) keys loaded from .env only, (2) keys never logged in plaintext, (3) keys never transmitted in URLs, (4) add test in tests/integration/test_llm_connectivity.py::test_api_keys_not_logged (Constitution Principle 7 - Isolation et Sécurité)
+- [ ] T011b [P] Verify .env file is in .gitignore to prevent committing API keys (Constitution Principle 7 - Isolation et Sécurité)
 
 **Checkpoint**: Foundation ready - LLM connectivity check implemented, MCP registry created. User story implementation can now begin.
 
@@ -156,7 +157,7 @@ pytest tests/integration/test_llm_connectivity.py -v
 - [ ] T031 [P] [US2] Add or verify get_tools() function in src/mcp_servers/git_maintenance/__init__.py (check T006)
 - [ ] T032 [P] [US2] Add or verify get_tools() function in src/mcp_servers/docker/__init__.py (check T006)
 - [ ] T033 [P] [US2] Add or verify get_tools() function in src/mcp_servers/test_generator/__init__.py (check T006)
-- [ ] T033a [US2] Create backup utility in src/workflows/backup.py with create_backup(file_path) function returning backup path (Constitution Principle 6)
+- [ ] T033a [US2] Create backup utility in src/workflows/backup.py with create_backup(file_path) function: creates timestamped backups in .testboost/backups/, returns backup path, maintains max 10 backups per file (oldest deleted) (Constitution Principle 6)
 - [ ] T034 [US2] Create src/workflows/maven_maintenance_agent.py with run_maven_maintenance_with_agent() function
 - [ ] T034a [US2] Implement backup creation in maven_maintenance_agent.py before pom.xml modifications (call backup.create_backup() before tool invocations that modify files, store backup_path in artifacts) (Constitution Principle 6)
 - [ ] T035 [US2] Implement agent creation in maven_maintenance_agent.py using create_deep_agent() with MCP tools
@@ -339,18 +340,20 @@ pytest tests/integration/test_agent_config_loading.py -v
 **Purpose**: Improvements that affect multiple user stories and final validation
 
 - [ ] T094 [P] Update README.md with agent requirements section (Python 3.11+, DeepAgents 0.2.7, LLM API keys)
+- [ ] T094a [P] Verify README.md exists at repo root before updating
 - [ ] T095 [P] Add troubleshooting section to README.md for LLM connection errors and edge cases
 - [ ] T096 [P] Update 001-testboost-core/checklists/e2e-acceptance.md to mark unblocked checks as passing
 - [ ] T097 Run full E2E test suite from 001-testboost-core checklist to validate all 9 unblocked checks
 - [ ] T098 [P] Performance testing: Measure all 3 workflows duration with agents vs without (target <2min for Maven)
-- [ ] T099 [P] Cost analysis: Log LLM token usage and estimate costs for Gemini/Claude/GPT-4o across all workflows
+- [ ] T099 [P] Cost analysis: Log LLM token usage and estimate costs for Gemini/Claude/GPT-4o across all workflows (rates: Gemini Flash $0.075/1M input + $0.30/1M output, Claude Sonnet $3/1M input + $15/1M output, GPT-4o $2.50/1M input + $10/1M output)
 - [ ] T100 Add migration guide to quickstart.md for transitioning from old workflows to agent-based workflows
 - [ ] T101 [P] Code review: Ensure no direct system calls (all via MCP tools per Constitution Principle 2)
 - [ ] T101a [P] Security audit: Grep logs/testboost.log and test output for API key patterns (regex: 'sk-[A-Za-z0-9]{32,}', 'AIza[A-Za-z0-9]{35}'), verify zero matches (Constitution Principle 7)
 - [ ] T102 Validate LangSmith tracing works for all 3 providers (Gemini, Claude, GPT-4o) across all 3 workflows
-- [ ] T102a Test Maven workflow execution with Gemini, Claude, and GPT-4o sequentially (verify SC-004: provider switching works)
+- [ ] T102a Test Maven workflow execution with Gemini, Claude, and GPT-4o sequentially with app restart between providers (verify SC-004: provider switching works)
 - [ ] T102b Verify switching from Gemini to Claude requires only env var changes (export LLM_PROVIDER=anthropic; export ANTHROPIC_API_KEY=...) with zero code changes (SC-004)
 - [ ] T103 Run quickstart.md validation: Test all 4 scenarios (Developer, CLI User, Administrator, Tester)
+- [ ] T103a [P] Verify quickstart.md exists and documents all 4 scenarios before validation
 - [ ] T104 [P] Document edge case handling in README.md (A1-A5: rate limits, missing tools, retry with backoff, JSON validation, malformed tool calls)
 - [ ] T105 Validate all 3 workflows respect "Zéro Complaisance" (fail-fast, no silent degradation, real LLM calls)
 - [ ] T105a Test Maven workflow with large project (>170k tokens) to verify DeepAgents automatic summarization handles context window per spec.md Edge Case
@@ -401,11 +404,11 @@ cat specs/001-testboost-core/checklists/e2e-acceptance.md | grep "CHK\(003\|020\
 - **Phase 1**: T002-T006 can run in parallel (verification tasks)
 - **Phase 2**: T009, T011 can run in parallel (different files)
 - **User Story 1 Tests**: T012-T014 can run in parallel
-- **User Story 2 Tests**: T024-T028 can run in parallel
+- **User Story 2 Tests**: T024-T028a can run in parallel (includes sub-tasks)
 - **User Story 2 MCP Tools**: T030-T033 can run in parallel (different MCP servers)
 - **User Story 4 Tests**: T050-T053 can run in parallel
 - **User Story 5 Tests**: T065-T068 can run in parallel
-- **User Story 3 Tests**: T079-T083 can run in parallel
+- **User Story 3 Tests**: T079-T082 can run in parallel
 - **Workflows US2/US4/US5**: Can be implemented in parallel after US1 (different files)
 - **Phase 8 Polish**: T094-T096, T098-T099, T101, T104 can run in parallel
 

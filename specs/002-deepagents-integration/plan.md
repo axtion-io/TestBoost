@@ -24,7 +24,7 @@ Integrate DeepAgents LLM framework into TestBoost workflows to enable real AI ag
 - Database: `DATABASE_URL=postgresql://user:pass@localhost:5433/testboost` (default from .env)
 **Performance Goals**: LLM connectivity check <5s, Maven workflow with agents <2min for simple projects
 **Constraints**: No breaking changes to existing API/CLI interfaces, must coexist with StateGraph during migration
-**Scale/Scope**: 3 workflows to migrate (Maven, test gen, deployment), 3 agent YAML configs, 4 MCP servers (maven_maintenance, git_maintenance, docker, test_generator), 1 Markdown prompt template (Maven dependency_update.md - test gen and deployment prompts deferred to future work)
+**Scale/Scope**: 3 workflows to migrate (Maven, test gen, deployment), 3 agent YAML configs (all 3 exist and will be loaded/validated, Maven config actively used in US2, test_gen and deployment configs used in US4/US5), 4 MCP servers (maven_maintenance, git_maintenance, docker, test_generator), 1 Markdown prompt template (Maven dependency_update.md - test gen and deployment prompts deferred to future work)
 
 ## Constitution Check
 

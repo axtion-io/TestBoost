@@ -186,7 +186,8 @@ As a developer, when I deploy my application to Docker, I want an LLM agent to a
 
 ## Dependencies
 
-- DeepAgents 0.2.7+ (Python 3.11+)
+- DeepAgents 0.2.7 (pinned - tested and validated with this version. Future work: test compatibility with 0.2.8+)
+- Python 3.11+ (required by DeepAgents 0.2.7)
 - LangChain Core 1.1+
 - LangGraph 1.0+
 - MCP 1.22+

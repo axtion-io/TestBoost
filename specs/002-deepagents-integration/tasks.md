@@ -20,6 +20,31 @@ Single Python backend project (from plan.md):
 - Tests: `tests/`
 - Config: `config/`
 
+## Reusable Patterns
+
+The following patterns are intentionally repeated across workflows to ensure consistency:
+
+**Retry Logic Pattern** (T011, T019, T041, T059, T074):
+- Exponential backoff: 3 attempts, 1s-10s wait
+- Network error retry (A4)
+- Missing tool call retry (A2)
+- JSON validation retry (A5)
+
+**Artifact Storage Pattern** (T044-T046, T061, T075):
+- `agent_reasoning`: LLM reasoning output
+- `llm_tool_call`: Tool invocations with args/results
+- `llm_metrics`: Tokens, duration, cost
+
+**LangSmith Validation Pattern** (T049, T064, T078, T102):
+- Verify LANGSMITH_TRACING env var
+- Check trace count ≥3 per workflow
+- Validate tool calls appear in traces
+
+**MCP Tool Verification Pattern** (T030-T033):
+- Verify get_tools() function exists
+- Return list of LangChain BaseTool instances
+- Tools discoverable by agents
+
 ---
 
 ## Phase 1: Setup (Shared Infrastructure)

@@ -103,7 +103,7 @@ src/
 │   └── docker_deployment.py            # KEEP (may migrate in P2)
 │
 ├── agents/
-│   ├── loader.py               # EXISTS - Already implemented, use as-is
+│   ├── loader.py               # EXISTS - Load agent configs from YAML (call load_agent() in workflows)
 │   ├── adapter.py              # EXISTS - May need adjustments
 │   └── __init__.py             # EXISTS
 │
@@ -121,8 +121,10 @@ config/
 │   ├── test_gen_agent.yaml            # EXISTS
 │   └── deployment_agent.yaml          # EXISTS
 └── prompts/
-    └── maven/
-        └── dependency_update.md        # EXISTS - Use as-is
+    ├── maven/
+    │   └── dependency_update.md        # EXISTS - Use for Maven workflow
+    ├── test_generation/                 # FUTURE - Prompts deferred (use inline prompts in tasks for now)
+    └── docker/                          # FUTURE - Prompts deferred (use inline prompts in tasks for now)
 
 tests/
 ├── integration/

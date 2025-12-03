@@ -95,7 +95,7 @@ As a developer, when I deploy my application to Docker, I want an LLM agent to a
 
 - **LLM API rate limits exceeded**: Workflow MUST abort immediately with explicit error message: "LLM rate limit exceeded by {provider_name}. Retry after {seconds} seconds. Workflow aborted. Zero results generated." No silent degradation, no vague "failed" messages (respects "Zéro Complaisance" - principle of zero tolerance for misleading outputs).
 - **LLM doesn't call expected MCP tools**: Agent invocation retries with modified prompt instructing tool use (max 3 attempts). If tools still not called, workflow fails with error listing expected vs actual tool calls.
-- **YAML config changes during paused workflow**: Workflows reload configuration on resume. Changes take effect mid-execution. Config snapshot not preserved.
+- **YAML config changes during paused workflow**: OUT OF SCOPE for this feature. Workflow pause/resume functionality deferred to future work. Current implementation: workflows execute atomically without pause capability.
 - **Intermittent LLM connectivity**: Agent invocations use retry logic with exponential backoff (3 attempts, 1s-10s wait). Network errors trigger automatic retry. Persistent failures abort workflow.
 - **Malformed tool calls or invalid JSON**: Agent invocation validates JSON responses. JSONDecodeError or ToolCallError triggers retry (max 3 attempts). Malformed responses logged to artifacts. All retries exhausted → workflow fails.
 - **Prompts exceeding context windows**: DeepAgents automatic summarization handles this (170k token threshold). No explicit validation needed. Token counts monitored in cost analysis.
@@ -105,7 +105,7 @@ As a developer, when I deploy my application to Docker, I want an LLM agent to a
 ### Functional Requirements
 
 - **FR-001**: Application MUST verify LLM provider connectivity at startup before accepting commands
-- **FR-002**: Application MUST fail immediately with clear errors if LLM provider is not accessible
+- **FR-002**: Application MUST fail immediately with clear errors if LLM provider is not accessible. Error messages MUST include: (1) root cause, (2) specific action required, (3) context (e.g., "LLM provider: google, API key: missing"). Format: "{Action failed}: {Root cause}. Action: {What user must do}."
 - **FR-003**: Maven maintenance workflow MUST use create_deep_agent() to create LLM-powered agent nodes
 - **FR-004**: Agent workflows MUST load configuration from config/agents/*.yaml files
 - **FR-005**: Agent workflows MUST load system prompts from config/prompts/**/*.md templates

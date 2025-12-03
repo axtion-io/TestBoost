@@ -121,6 +121,7 @@ pytest tests/integration/test_llm_connectivity.py -v
 - [ ] T026 [P] [US2] Create tests/e2e/test_real_llm_invocation.py with test_maven_workflow_llm_calls()
 - [ ] T027 [P] [US2] Add test_langsmith_trace_validation() to tests/e2e/test_real_llm_invocation.py
 - [ ] T028 [P] [US2] Add test_maven_agent_tool_call_retry() to verify A2 (agent retries if no tools called)
+- [ ] T028a [P] [US2] Add test_maven_agent_reasoning_validation() to verify SC-003 (agent responses contain reasoning keywords from prompt template dependency_update.md)
 
 ### Implementation for User Story 2
 
@@ -134,7 +135,6 @@ pytest tests/integration/test_llm_connectivity.py -v
 - [ ] T034a [US2] Implement backup creation in maven_maintenance_agent.py before pom.xml modifications (call backup.create_backup() before tool invocations that modify files, store backup_path in artifacts) (Constitution Principle 6)
 - [ ] T035 [US2] Implement agent creation in maven_maintenance_agent.py using create_deep_agent() with MCP tools
 - [ ] T036 [US2] Load agent config from config/agents/maven_maintenance_agent.yaml in maven_maintenance_agent.py
-- [ ] T037 [US2] Implement config reload on workflow resume (A3: reload YAML if workflow paused)
 - [ ] T038 [US2] Load system prompt from config/prompts/maven/dependency_update.md in maven_maintenance_agent.py
 - [ ] T039 [US2] Bind MCP tools to LLM using llm.bind_tools(maven_tools) in maven_maintenance_agent.py
 - [ ] T040 [US2] Implement agent invocation with ainvoke() in maven_maintenance_agent.py
@@ -186,6 +186,7 @@ pytest tests/e2e/test_real_llm_invocation.py::test_maven_workflow_llm_calls -v -
 - [ ] T051 [P] [US4] Add test_test_gen_workflow_stores_artifacts() to tests/integration/test_test_gen_agent_workflow.py
 - [ ] T052 [P] [US4] Add test_test_gen_workflow_llm_calls() to tests/e2e/test_real_llm_invocation.py
 - [ ] T053 [P] [US4] Add test_test_gen_agent_tool_call_retry() to verify error correction retry logic
+- [ ] T053a [P] [US4] Add test_test_gen_agent_reasoning_validation() to verify SC-003 (agent responses contain reasoning about class types and test patterns)
 
 ### Implementation for User Story 4
 
@@ -193,7 +194,7 @@ pytest tests/e2e/test_real_llm_invocation.py::test_maven_workflow_llm_calls -v -
 - [ ] T054a [US4] Implement backup creation in test_generation_agent.py before test file generation (call backup.create_backup() on target test directory before writing test files) (Constitution Principle 6)
 - [ ] T055 [US4] Implement agent creation in test_generation_agent.py using create_deep_agent() with test gen MCP tools
 - [ ] T056 [US4] Load agent config from config/agents/test_gen_agent.yaml in test_generation_agent.py
-- [ ] T057 [US4] Load system prompt from config/prompts/test_generation/class_analysis.md (or similar)
+- [ ] T057 [US4] Load system prompt (inline string for now - test_generation prompt template deferred to future work, see plan.md)
 - [ ] T058 [US4] Bind test generator MCP tools to LLM using llm.bind_tools(test_gen_tools)
 - [ ] T059 [US4] Implement agent invocation with retry logic (same as T041-T043: backoff, tool validation, JSON check)
 - [ ] T060 [US4] Add auto-correction retry logic (spec: max 3 attempts if compilation errors)
@@ -229,6 +230,7 @@ pytest tests/e2e/test_real_llm_invocation.py::test_maven_workflow_llm_calls -v -
 - [ ] T066 [P] [US5] Add test_docker_workflow_stores_artifacts() to tests/integration/test_docker_agent_workflow.py
 - [ ] T067 [P] [US5] Add test_docker_workflow_llm_calls() to tests/e2e/test_real_llm_invocation.py
 - [ ] T068 [P] [US5] Add test_docker_agent_health_check_monitoring() to verify agent waits for health OK
+- [ ] T068a [P] [US5] Add test_docker_agent_reasoning_validation() to verify SC-003 (agent responses contain reasoning about project type detection and dependencies)
 
 ### Implementation for User Story 5
 
@@ -236,7 +238,7 @@ pytest tests/e2e/test_real_llm_invocation.py::test_maven_workflow_llm_calls -v -
 - [ ] T069a [US5] Implement backup creation in docker_deployment_agent.py before Dockerfile/docker-compose generation (call backup.create_backup() before writing Docker configuration files) (Constitution Principle 6)
 - [ ] T070 [US5] Implement agent creation in docker_deployment_agent.py using create_deep_agent() with Docker MCP tools
 - [ ] T071 [US5] Load agent config from config/agents/deployment_agent.yaml in docker_deployment_agent.py
-- [ ] T072 [US5] Load system prompt from config/prompts/docker/project_analysis.md (or similar)
+- [ ] T072 [US5] Load system prompt (inline string for now - docker prompt template deferred to future work, see plan.md)
 - [ ] T073 [US5] Bind Docker MCP tools to LLM using llm.bind_tools(docker_tools)
 - [ ] T074 [US5] Implement agent invocation with retry logic (same as T041-T043: backoff, tool validation, JSON check)
 - [ ] T075 [US5] Store agent reasoning and tool calls in artifacts (same pattern as T044-T046)
@@ -271,7 +273,6 @@ pytest tests/e2e/test_real_llm_invocation.py::test_maven_workflow_llm_calls -v -
 - [ ] T080 [P] [US3] Add test_yaml_changes_take_effect() to tests/integration/test_agent_config_loading.py
 - [ ] T081 [P] [US3] Add test_invalid_yaml_fails_startup() to tests/integration/test_agent_config_loading.py
 - [ ] T082 [P] [US3] Add test_prompt_template_loads() to tests/integration/test_agent_config_loading.py
-- [ ] T083 [P] [US3] Add test_config_reload_on_resume() to verify A3 (config reloaded if workflow resumed)
 
 ### Implementation for User Story 3
 
@@ -300,7 +301,7 @@ pytest tests/e2e/test_real_llm_invocation.py::test_maven_workflow_llm_calls -v -
 
 # Test 3: Run integration tests
 pytest tests/integration/test_agent_config_loading.py -v
-# Expected: All 5 tests pass (including config reload test)
+# Expected: All 4 tests pass (config load, changes take effect, invalid YAML fails, prompt loads)
 ```
 
 **Checkpoint**: Agent configs validated at startup, YAML changes take effect. CHK096, CHK101 now pass.
@@ -321,8 +322,10 @@ pytest tests/integration/test_agent_config_loading.py -v
 - [ ] T101 [P] Code review: Ensure no direct system calls (all via MCP tools per Constitution Principle 2)
 - [ ] T101a [P] Security audit: Grep logs/testboost.log and test output for API key patterns (regex: 'sk-[A-Za-z0-9]{32,}', 'AIza[A-Za-z0-9]{35}'), verify zero matches (Constitution Principle 7)
 - [ ] T102 Validate LangSmith tracing works for all 3 providers (Gemini, Claude, GPT-4o) across all 3 workflows
+- [ ] T102a Test Maven workflow execution with Gemini, Claude, and GPT-4o sequentially (verify SC-004: provider switching works)
+- [ ] T102b Verify switching from Gemini to Claude requires only env var changes (export LLM_PROVIDER=anthropic; export ANTHROPIC_API_KEY=...) with zero code changes (SC-004)
 - [ ] T103 Run quickstart.md validation: Test all 4 scenarios (Developer, CLI User, Administrator, Tester)
-- [ ] T104 [P] Document edge case handling in README.md (A1-A6: rate limits, missing tools, config reload, retry, JSON validation)
+- [ ] T104 [P] Document edge case handling in README.md (A1-A5: rate limits, missing tools, retry with backoff, JSON validation, malformed tool calls)
 - [ ] T105 Validate all 3 workflows respect "Zéro Complaisance" (fail-fast, no silent degradation, real LLM calls)
 
 **Validation**:

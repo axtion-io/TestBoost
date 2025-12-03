@@ -546,3 +546,149 @@ class TestDockerWorkflowLLMCalls:
             except Exception as e:
                 # If test fails, show what tools were called
                 pytest.fail(f"Test failed. Tools called: {tool_calls}. Error: {e}")
+
+
+class TestTestGenerationWorkflowLLMCalls:
+    """Test Test Generation workflow makes real LLM API calls (SC-002, T052)."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.e2e
+    async def test_test_gen_workflow_llm_calls(self, tmp_path):
+        """Test Test Generation workflow makes at least 3 real LLM API calls (T052, SC-002)."""
+        from uuid import uuid4
+        from unittest.mock import AsyncMock, MagicMock
+        from src.workflows.test_generation_agent import run_test_generation_with_agent
+
+        # Create a minimal Java project for test generation
+        project_path = tmp_path / "test-project"
+        project_path.mkdir()
+
+        # Create pom.xml
+        pom_xml = project_path / "pom.xml"
+        pom_xml.write_text("""<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0
+         http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <groupId>com.example</groupId>
+    <artifactId>test-project</artifactId>
+    <version>1.0.0</version>
+
+    <properties>
+        <java.version>17</java.version>
+    </properties>
+
+    <dependencies>
+        <dependency>
+            <groupId>junit</groupId>
+            <artifactId>junit</artifactId>
+            <version>4.13.2</version>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+</project>
+""")
+
+        # Create a simple Java class to generate tests for
+        src_dir = project_path / "src" / "main" / "java" / "com" / "example"
+        src_dir.mkdir(parents=True)
+
+        java_file = src_dir / "Calculator.java"
+        java_file.write_text("""package com.example;
+
+public class Calculator {
+    public int add(int a, int b) {
+        return a + b;
+    }
+
+    public int subtract(int a, int b) {
+        return a - b;
+    }
+
+    public int multiply(int a, int b) {
+        return a * b;
+    }
+
+    public int divide(int a, int b) {
+        if (b == 0) {
+            throw new IllegalArgumentException("Cannot divide by zero");
+        }
+        return a / b;
+    }
+}
+""")
+
+        # Track LLM invocations using a shared counter
+        class LLMCallCounter:
+            def __init__(self):
+                self.count = 0
+
+        counter = LLMCallCounter()
+
+        class LLMWrapper:
+            """Wrapper that counts LLM calls and delegates to real LLM."""
+            def __init__(self, real_llm, counter):
+                self._real_llm = real_llm
+                self._counter = counter
+
+            async def ainvoke(self, *args, **kwargs):
+                """Count call and delegate to real LLM."""
+                self._counter.count += 1
+                return await self._real_llm.ainvoke(*args, **kwargs)
+
+            def bind_tools(self, tools, **kwargs):
+                """Return a new wrapper with tools bound to the real LLM."""
+                bound_llm = self._real_llm.bind_tools(tools, **kwargs)
+                return LLMWrapper(bound_llm, self._counter)
+
+            def __getattr__(self, name):
+                """Delegate all other attributes to real LLM."""
+                return getattr(self._real_llm, name)
+
+        # Create mock db_session and repositories
+        mock_db_session = AsyncMock()
+
+        # Mock repository methods to avoid database operations
+        mock_artifact_repo = MagicMock()
+        mock_artifact_repo.create = AsyncMock(return_value=None)
+
+        mock_session_repo = MagicMock()
+        mock_session_repo.update = AsyncMock(return_value=None)
+
+        # Patch get_llm WHERE IT IS USED (in test_generation_agent module)
+        with patch("src.workflows.test_generation_agent.get_llm") as mock_get_llm:
+            # Import original get_llm
+            from src.lib import llm as llm_module
+            original_get_llm = llm_module.get_llm
+
+            def get_llm_with_counter(*args, **kwargs):
+                """Get real LLM and wrap it with counter."""
+                real_llm = original_get_llm(*args, **kwargs)
+                return LLMWrapper(real_llm, counter)
+
+            # Make the patch return our wrapper
+            mock_get_llm.side_effect = get_llm_with_counter
+
+            # Patch repositories to avoid database operations
+            with patch("src.workflows.test_generation_agent.ArtifactRepository", return_value=mock_artifact_repo):
+                with patch("src.workflows.test_generation_agent.SessionRepository", return_value=mock_session_repo):
+
+                    # Execute workflow with real LLM (wrapped with counter)
+                    session_id = uuid4()
+                    result = await run_test_generation_with_agent(
+                        session_id=session_id,
+                        project_path=str(project_path),
+                        db_session=mock_db_session,
+                        coverage_target=80.0
+                    )
+
+                    # Verify at least 3 LLM calls (SC-002)
+                    assert counter.count >= 3, f"Expected ≥3 LLM calls, got {counter.count}"
+
+                    # Verify result contains expected data
+                    assert result is not None
+                    assert "success" in result or "generated_tests" in result
+                    # Result should have test generation information
+                    assert result.get("agent_name") == "test_gen_agent" or "metrics" in result

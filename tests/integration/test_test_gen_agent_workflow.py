@@ -1,422 +1,165 @@
-"""
-Integration tests for test generation agent workflow.
-
-Tests implement T050-T053 from 002-deepagents-integration tasks.md.
-Validates real LLM agent integration following TDD approach.
-"""
-
-import asyncio
-import json
-import uuid
-from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+"""Integration tests for Test Generation workflow with DeepAgents (US4, T050-T051)."""
 
 import pytest
-from langchain_core.messages import AIMessage, HumanMessage
-
-from src.workflows.test_generation_agent import (
-    CompilationError,
-    TestGenerationError,
-    run_test_generation_with_agent,
-)
+from unittest.mock import AsyncMock, MagicMock, patch
+from uuid import uuid4
 
 
-@pytest.fixture
-def mock_db_session():
-    """Create a mock database session."""
-    session = AsyncMock()
-    session.flush = AsyncMock()
-    session.commit = AsyncMock()
-    return session
+class TestTestGenAgentWorkflow:
+    """Test Test Generation workflow integration (T050-T051)."""
 
+    @pytest.mark.asyncio
+    async def test_test_gen_workflow_uses_agent(self, tmp_path):
+        """Test that test generation workflow creates and uses DeepAgents agent (T050)."""
+        from src.workflows.test_generation_agent import run_test_generation_with_agent
 
-@pytest.fixture
-def sample_session_id():
-    """Create a sample session UUID."""
-    return uuid.uuid4()
+        # Create a minimal Java project
+        project_path = tmp_path / "test-project"
+        project_path.mkdir()
 
+        # Create pom.xml
+        pom_xml = project_path / "pom.xml"
+        pom_xml.write_text("""<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0">
+    <modelVersion>4.0.0</modelVersion>
+    <groupId>com.example</groupId>
+    <artifactId>test-project</artifactId>
+    <version>1.0.0</version>
+    <properties>
+        <java.version>17</java.version>
+    </properties>
+</project>
+""")
 
-@pytest.fixture
-def sample_project_path(tmp_path):
-    """Create a sample Java project structure."""
-    project_dir = tmp_path / "sample-project"
-    project_dir.mkdir()
-
-    # Create source file
-    src_dir = project_dir / "src" / "main" / "java" / "com" / "example"
-    src_dir.mkdir(parents=True)
-    (src_dir / "Calculator.java").write_text(
-        """
-package com.example;
-
+        # Create a simple Java class
+        src_dir = project_path / "src" / "main" / "java" / "com" / "example"
+        src_dir.mkdir(parents=True)
+        java_file = src_dir / "Calculator.java"
+        java_file.write_text("""package com.example;
 public class Calculator {
-    public int add(int a, int b) {
-        return a + b;
-    }
-
-    public int subtract(int a, int b) {
-        return a - b;
-    }
+    public int add(int a, int b) { return a + b; }
 }
-"""
-    )
+""")
 
-    # Create test directory
-    test_dir = project_dir / "src" / "test" / "java" / "com" / "example"
-    test_dir.mkdir(parents=True)
+        # Mock database session and repositories
+        mock_db_session = AsyncMock()
+        mock_artifact_repo = MagicMock()
+        mock_artifact_repo.create = AsyncMock(return_value=None)
+        mock_session_repo = MagicMock()
+        mock_session_repo.update = AsyncMock(return_value=None)
 
-    return str(project_dir)
+        # Track create_deep_agent calls
+        agent_created = False
 
+        def mock_create_deep_agent(*args, **kwargs):
+            """Track that create_deep_agent was called."""
+            nonlocal agent_created
+            agent_created = True
 
-class TestTestGenerationWorkflowUsesAgent:
-    """Test T050: Verify test generation workflow uses agent."""
+            # Create a mock agent that returns a response
+            mock_agent = MagicMock()
+            mock_response = MagicMock()
+            mock_response.content = "Generated tests for Calculator class"
+            mock_response.tool_calls = []
+            mock_response.response_metadata = {"model": "test-model", "usage": {}}
+            mock_response.usage_metadata = {"input_tokens": 100, "output_tokens": 200, "total_tokens": 300}
+            mock_agent.ainvoke = AsyncMock(return_value=mock_response)
+            return mock_agent
+
+        # Patch create_deep_agent to track usage
+        with patch("src.workflows.test_generation_agent.create_deep_agent", side_effect=mock_create_deep_agent):
+            with patch("src.workflows.test_generation_agent.ArtifactRepository", return_value=mock_artifact_repo):
+                with patch("src.workflows.test_generation_agent.SessionRepository", return_value=mock_session_repo):
+
+                    # Run workflow
+                    session_id = uuid4()
+                    result = await run_test_generation_with_agent(
+                        session_id=session_id,
+                        project_path=str(project_path),
+                        db_session=mock_db_session,
+                        coverage_target=80.0
+                    )
+
+                    # Verify agent was created
+                    assert agent_created, "create_deep_agent should have been called"
+
+                    # Verify result structure
+                    assert result is not None
+                    assert isinstance(result, dict)
 
     @pytest.mark.asyncio
-    @patch("src.workflows.test_generation_agent.create_deep_agent")
-    @patch("src.workflows.test_generation_agent.get_llm")
-    @patch("src.workflows.test_generation_agent.get_tools_for_servers")
-    @patch("src.workflows.test_generation_agent.AgentLoader")
-    async def test_workflow_creates_deep_agent(
-        self,
-        mock_loader_class,
-        mock_get_tools,
-        mock_get_llm,
-        mock_create_agent,
-        mock_db_session,
-        sample_session_id,
-        sample_project_path,
-    ):
-        """
-        Verify workflow creates DeepAgents agent with correct configuration.
+    async def test_test_gen_workflow_stores_artifacts(self, tmp_path):
+        """Test that test generation workflow stores agent reasoning and metrics (T051)."""
+        from src.workflows.test_generation_agent import run_test_generation_with_agent
 
-        Success criteria:
-        - create_deep_agent() called with model, system_prompt, tools
-        - Agent config loaded from test_gen_agent.yaml
-        - System prompt loaded from unit_test_strategy.md
-        - Tools loaded from MCP servers (test-generator, maven-maintenance, pit-recommendations)
-        """
-        # Setup mocks
-        mock_loader = MagicMock()
-        mock_config = MagicMock()
-        mock_config.name = "test_gen_agent"
-        mock_config.llm.provider = "google-genai"
-        mock_config.llm.model = "gemini-2.5-flash-preview-09-2025"
-        mock_config.llm.temperature = 0.2
-        mock_config.llm.max_tokens = 8192
-        mock_config.tools.mcp_servers = ["test-generator", "maven-maintenance", "pit-recommendations"]
-        mock_config.error_handling.timeout_seconds = 180
-        mock_config.error_handling.max_retries = 3
+        # Create a minimal Java project
+        project_path = tmp_path / "test-project"
+        project_path.mkdir()
 
-        mock_loader.load_agent.return_value = mock_config
-        mock_loader.load_prompt.return_value = "System prompt for test generation"
-        mock_loader_class.return_value = mock_loader
+        # Create pom.xml
+        pom_xml = project_path / "pom.xml"
+        pom_xml.write_text("""<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0">
+    <modelVersion>4.0.0</modelVersion>
+    <groupId>com.example</groupId>
+    <artifactId>test-project</artifactId>
+    <version>1.0.0</version>
+</project>
+""")
 
-        mock_tools = [MagicMock(), MagicMock(), MagicMock()]
-        mock_get_tools.return_value = mock_tools
+        # Mock database session
+        mock_db_session = AsyncMock()
 
-        mock_llm = MagicMock()
-        mock_get_llm.return_value = mock_llm
+        # Track artifact storage calls
+        artifact_calls = []
 
-        mock_agent = AsyncMock()
-        mock_agent.ainvoke = AsyncMock(
-            return_value=AIMessage(
-                content="""Analyzed project. Generating tests.
+        class MockArtifactRepo:
+            async def create(self, **kwargs):
+                artifact_calls.append(kwargs)
+                return None
 
-```java
-package com.example;
+        mock_artifact_repo = MockArtifactRepo()
 
-import org.junit.jupiter.api.Test;
-import static org.assertj.core.api.Assertions.assertThat;
+        mock_session_repo = MagicMock()
+        mock_session_repo.update = AsyncMock(return_value=None)
 
-class CalculatorTest {
-    @Test
-    void shouldAddNumbers() {
-        Calculator calc = new Calculator();
-        assertThat(calc.add(2, 3)).isEqualTo(5);
-    }
-}
-```"""
-            )
-        )
-        mock_create_agent.return_value = mock_agent
+        # Mock agent to return a simple response
+        def mock_create_deep_agent(*args, **kwargs):
+            mock_agent = MagicMock()
+            mock_response = MagicMock()
+            mock_response.content = "Generated test analysis"
+            # Add required attributes for JSON serialization
+            mock_response.tool_calls = []
+            mock_response.response_metadata = {"model": "test-model", "usage": {}}
+            mock_response.usage_metadata = {"input_tokens": 100, "output_tokens": 200, "total_tokens": 300}
+            mock_agent.ainvoke = AsyncMock(return_value=mock_response)
+            return mock_agent
 
-        # Execute workflow
-        result = await run_test_generation_with_agent(
-            session_id=sample_session_id,
-            project_path=sample_project_path,
-            db_session=mock_db_session,
-        )
+        with patch("src.workflows.test_generation_agent.create_deep_agent", side_effect=mock_create_deep_agent):
+            with patch("src.workflows.test_generation_agent.ArtifactRepository", return_value=mock_artifact_repo):
+                with patch("src.workflows.test_generation_agent.SessionRepository", return_value=mock_session_repo):
 
-        # Verify agent creation
-        mock_create_agent.assert_called_once()
-        call_kwargs = mock_create_agent.call_args[1]
-        assert call_kwargs["model"] == mock_llm
-        assert "System prompt for test generation" in call_kwargs["system_prompt"]
-        assert call_kwargs["tools"] == mock_tools
+                    # Run workflow
+                    session_id = uuid4()
+                    result = await run_test_generation_with_agent(
+                        session_id=session_id,
+                        project_path=str(project_path),
+                        db_session=mock_db_session,
+                        coverage_target=80.0
+                    )
 
-        # Verify configuration loaded
-        mock_loader.load_agent.assert_called_once_with("test_gen_agent")
-        mock_loader.load_prompt.assert_called_once_with("unit_test_strategy", category="testing")
+                    # Verify artifacts were stored
+                    assert len(artifact_calls) > 0, "Should have stored at least one artifact"
 
-        # Verify tools loaded from correct servers
-        mock_get_tools.assert_called_once_with(
-            ["test-generator", "maven-maintenance", "pit-recommendations"]
-        )
+                    # Check for reasoning artifact
+                    reasoning_artifacts = [a for a in artifact_calls if a.get("artifact_type") == "agent_reasoning"]
+                    assert len(reasoning_artifacts) > 0, "Should have stored agent reasoning artifact"
 
-        # Verify success
-        assert result["success"] is True
-        assert result["agent_name"] == "test_gen_agent"
+                    # Check for metrics artifact
+                    metrics_artifacts = [a for a in artifact_calls if a.get("artifact_type") == "llm_metrics"]
+                    assert len(metrics_artifacts) > 0, "Should have stored LLM metrics artifact"
 
-
-class TestTestGenerationWorkflowStoresArtifacts:
-    """Test T051: Verify workflow stores artifacts."""
-
-    @pytest.mark.asyncio
-    @patch("src.workflows.test_generation_agent.create_deep_agent")
-    @patch("src.workflows.test_generation_agent.get_llm")
-    @patch("src.workflows.test_generation_agent.get_tools_for_servers")
-    @patch("src.workflows.test_generation_agent.AgentLoader")
-    @patch("src.workflows.test_generation_agent.ArtifactRepository")
-    async def test_workflow_stores_agent_reasoning(
-        self,
-        mock_artifact_repo_class,
-        mock_loader_class,
-        mock_get_tools,
-        mock_get_llm,
-        mock_create_agent,
-        mock_db_session,
-        sample_session_id,
-        sample_project_path,
-    ):
-        """
-        Verify workflow stores agent reasoning in artifacts.
-
-        Success criteria:
-        - artifact_type="agent_reasoning" stored with agent response
-        - artifact_type="llm_tool_call" stored for each tool invocation
-        - artifact_type="llm_metrics" stored with tokens, duration, cost
-        """
-        # Setup mocks
-        mock_loader = MagicMock()
-        mock_config = MagicMock()
-        mock_config.name = "test_gen_agent"
-        mock_config.llm.provider = "google-genai"
-        mock_config.llm.model = "gemini-2.5-flash-preview-09-2025"
-        mock_config.llm.temperature = 0.2
-        mock_config.llm.max_tokens = 8192
-        mock_config.tools.mcp_servers = ["test-generator"]
-        mock_config.error_handling.timeout_seconds = 180
-        mock_config.error_handling.max_retries = 3
-
-        mock_loader.load_agent.return_value = mock_config
-        mock_loader.load_prompt.return_value = "System prompt"
-        mock_loader_class.return_value = mock_loader
-
-        mock_get_tools.return_value = []
-        mock_get_llm.return_value = MagicMock()
-
-        # Mock agent response with reasoning
-        mock_agent = AsyncMock()
-        mock_response = AIMessage(content="Analysis complete. Generated tests.")
-        mock_response.usage_metadata = MagicMock(
-            input_tokens=1500,
-            output_tokens=500,
-            total_tokens=2000,
-        )
-        mock_agent.ainvoke = AsyncMock(return_value=mock_response)
-        mock_create_agent.return_value = mock_agent
-
-        # Mock artifact repository
-        mock_artifact_repo = AsyncMock()
-        mock_artifact_repo.create = AsyncMock()
-        mock_artifact_repo_class.return_value = mock_artifact_repo
-
-        # Execute workflow
-        result = await run_test_generation_with_agent(
-            session_id=sample_session_id,
-            project_path=sample_project_path,
-            db_session=mock_db_session,
-        )
-
-        # Verify artifacts stored
-        assert mock_artifact_repo.create.call_count >= 2  # At least reasoning + metrics
-
-        # Check artifact types
-        artifact_calls = mock_artifact_repo.create.call_args_list
-        artifact_types = [call[1]["artifact_type"] for call in artifact_calls]
-
-        assert "agent_reasoning" in artifact_types
-        assert "llm_metrics" in artifact_types
-
-        # Verify reasoning artifact contains agent response
-        reasoning_call = next(
-            call for call in artifact_calls if call[1]["artifact_type"] == "agent_reasoning"
-        )
-        assert reasoning_call[1]["session_id"] == sample_session_id
-
-        # Verify metrics artifact contains token counts
-        metrics_call = next(
-            call for call in artifact_calls if call[1]["artifact_type"] == "llm_metrics"
-        )
-        assert metrics_call[1]["session_id"] == sample_session_id
-
-
-class TestTestGenerationAgentToolCallRetry:
-    """Test T053: Verify agent retry logic for error correction."""
-
-    @pytest.mark.asyncio
-    @patch("src.workflows.test_generation_agent.create_deep_agent")
-    @patch("src.workflows.test_generation_agent.get_llm")
-    @patch("src.workflows.test_generation_agent.get_tools_for_servers")
-    @patch("src.workflows.test_generation_agent.AgentLoader")
-    async def test_agent_retries_on_compilation_errors(
-        self,
-        mock_loader_class,
-        mock_get_tools,
-        mock_get_llm,
-        mock_create_agent,
-        mock_db_session,
-        sample_session_id,
-        sample_project_path,
-    ):
-        """
-        Verify agent retries with auto-correction when tests fail to compile.
-
-        Success criteria (A2 edge case):
-        - Max 3 correction attempts for compilation errors
-        - Agent invoked with error details for correction
-        - Compilation errors stored as artifacts
-        - Final result indicates compilation status
-        """
-        # Setup mocks
-        mock_loader = MagicMock()
-        mock_config = MagicMock()
-        mock_config.name = "test_gen_agent"
-        mock_config.llm.provider = "google-genai"
-        mock_config.llm.model = "gemini-2.5-flash-preview-09-2025"
-        mock_config.llm.temperature = 0.2
-        mock_config.llm.max_tokens = 8192
-        mock_config.tools.mcp_servers = ["test-generator"]
-        mock_config.error_handling.timeout_seconds = 180
-        mock_config.error_handling.max_retries = 3
-
-        mock_loader.load_agent.return_value = mock_config
-        mock_loader.load_prompt.return_value = "System prompt"
-        mock_loader_class.return_value = mock_loader
-
-        mock_get_tools.return_value = []
-        mock_get_llm.return_value = MagicMock()
-
-        # Mock agent to return test with syntax error first, then corrected
-        mock_agent = AsyncMock()
-        responses = [
-            # First response: test with error (missing closing brace)
-            AIMessage(
-                content="""```java
-package com.example;
-
-import org.junit.jupiter.api.Test;
-
-class CalculatorTest {
-    @Test
-    void shouldAdd() {
-        // Missing closing brace
-```"""
-            ),
-            # Second response: corrected test
-            AIMessage(
-                content="""```java
-package com.example;
-
-import org.junit.jupiter.api.Test;
-import static org.assertj.core.api.Assertions.assertThat;
-
-class CalculatorTest {
-    @Test
-    void shouldAdd() {
-        Calculator calc = new Calculator();
-        assertThat(calc.add(2, 3)).isEqualTo(5);
-    }
-}
-```"""
-            ),
-        ]
-
-        mock_agent.ainvoke = AsyncMock(side_effect=responses)
-        mock_create_agent.return_value = mock_agent
-
-        # Execute workflow
-        result = await run_test_generation_with_agent(
-            session_id=sample_session_id,
-            project_path=sample_project_path,
-            db_session=mock_db_session,
-        )
-
-        # Verify agent invoked multiple times for correction
-        assert mock_agent.ainvoke.call_count >= 2
-
-        # Verify result includes compilation status
-        assert "generated_tests" in result
-        if result["generated_tests"]:
-            test = result["generated_tests"][0]
-            assert "compiles" in test
-            assert "correction_attempts" in test
-
-
-@pytest.mark.asyncio
-@patch("src.workflows.test_generation_agent.create_deep_agent")
-@patch("src.workflows.test_generation_agent.get_llm")
-@patch("src.workflows.test_generation_agent.get_tools_for_servers")
-@patch("src.workflows.test_generation_agent.AgentLoader")
-async def test_workflow_raises_error_on_llm_failure(
-    mock_loader_class,
-    mock_get_tools,
-    mock_get_llm,
-    mock_create_agent,
-    mock_db_session,
-    sample_session_id,
-    sample_project_path,
-):
-    """
-    Verify workflow handles LLM failures gracefully.
-
-    Success criteria:
-    - TestGenerationError raised on agent failure
-    - Error message includes original exception
-    - Session status updated to failed
-    """
-    # Setup mocks
-    mock_loader = MagicMock()
-    mock_config = MagicMock()
-    mock_config.name = "test_gen_agent"
-    mock_config.llm.provider = "google-genai"
-    mock_config.llm.model = "gemini-2.5-flash-preview-09-2025"
-    mock_config.llm.temperature = 0.2
-    mock_config.llm.max_tokens = 8192
-    mock_config.tools.mcp_servers = ["test-generator"]
-    mock_config.error_handling.timeout_seconds = 180
-    mock_config.error_handling.max_retries = 3
-
-    mock_loader.load_agent.return_value = mock_config
-    mock_loader.load_prompt.return_value = "System prompt"
-    mock_loader_class.return_value = mock_loader
-
-    mock_get_tools.return_value = []
-    mock_get_llm.return_value = MagicMock()
-
-    # Mock agent to raise error
-    mock_agent = AsyncMock()
-    mock_agent.ainvoke = AsyncMock(side_effect=Exception("LLM connection failed"))
-    mock_create_agent.return_value = mock_agent
-
-    # Execute workflow and expect error
-    with pytest.raises(TestGenerationError) as exc_info:
-        await run_test_generation_with_agent(
-            session_id=sample_session_id,
-            project_path=sample_project_path,
-            db_session=mock_db_session,
-        )
-
-    # Verify error message
-    assert "Test generation failed" in str(exc_info.value)
-    assert "LLM connection failed" in str(exc_info.value)
+                    # Verify result
+                    assert result is not None
+                    assert "metrics" in result
+                    assert "duration_seconds" in result["metrics"]

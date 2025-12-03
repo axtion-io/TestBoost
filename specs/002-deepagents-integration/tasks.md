@@ -60,7 +60,16 @@ The following patterns are intentionally repeated across workflows to ensure con
 - [ ] T006 [P] Verify MCP servers expose get_tools() functions (check src/mcp_servers/*/\_\_init\_\_.py) (U2)
 - [ ] T006a [P] Verify backup strategy: check if existing backup utility exists or plan to create new one (Constitution Principle 6)
 
-**Checkpoint**: Environment validated - ready for implementation
+### Test Data Setup
+
+**Purpose**: Prepare test projects and data for E2E validation
+
+- [ ] T006b Setup spring-petclinic test project: git clone https://github.com/spring-projects/spring-petclinic.git tests/fixtures/spring-petclinic
+- [ ] T006c Create test project with outdated dependencies: copy spring-petclinic, downgrade spring-boot to 2.x in pom.xml
+- [ ] T006d Create large test project (>170k tokens): aggregate 10+ Java files into tests/fixtures/large-project for T105a context window testing
+- [ ] T006e Document test data location in tests/README.md: fixture paths, how to regenerate, expected characteristics
+
+**Checkpoint**: Environment validated, test data prepared - ready for implementation
 
 ---
 
@@ -70,10 +79,10 @@ The following patterns are intentionally repeated across workflows to ensure con
 
 **⚠️ CRITICAL**: No user story work can begin until this phase is complete. This phase fixes the constitutional violation where workflows execute without LLM agents.
 
-- [ ] T007 Create src/lib/startup_checks.py with check_llm_connection() function
+- [ ] T007 Create src/lib/startup_checks.py with check_llm_connection() function. Unit tests required: tests/unit/test_startup_checks.py with test_check_llm_connection_success(), test_check_llm_connection_missing_api_key(), test_check_llm_connection_timeout(), test_validate_api_key_security()
 - [ ] T008 Modify src/api/main.py to add startup event calling check_llm_connection()
 - [ ] T009 [P] Modify src/cli/main.py to add callback calling check_llm_connection()
-- [ ] T010 Create src/mcp_servers/registry.py with get_mcp_tool_registry() function
+- [ ] T010 Create src/mcp_servers/registry.py with get_mcp_tool_registry() function. Unit tests required: tests/unit/test_registry.py with test_get_mcp_tool_registry_returns_4_servers(), test_get_mcp_tool_registry_verifies_get_tools_exists(), test_registry_fails_if_mcp_server_missing()
 - [ ] T011 [P] Add retry logic to src/lib/llm.py if not present (check T005 verification first)
 - [ ] T011a [P] Implement API key security validation in src/lib/startup_checks.py: validate_api_key_security() function that verifies (1) keys loaded from .env only, (2) keys never logged in plaintext, (3) keys never transmitted in URLs, (4) add test in tests/integration/test_llm_connectivity.py::test_api_keys_not_logged (Constitution Principle 7 - Isolation et Sécurité)
 - [ ] T011b [P] Verify .env file is in .gitignore to prevent committing API keys (Constitution Principle 7 - Isolation et Sécurité)
@@ -143,8 +152,8 @@ pytest tests/integration/test_llm_connectivity.py -v
 
 > **NOTE: Write these tests FIRST, ensure they FAIL before implementation**
 
-- [ ] T024 [P] [US2] Create tests/integration/test_maven_agent_workflow.py with test_maven_workflow_uses_agent()
-- [ ] T025 [P] [US2] Add test_maven_workflow_stores_artifacts() to tests/integration/test_maven_agent_workflow.py
+- [ ] T024 [P] [US2] Create tests/integration/test_maven_agent_workflow.py with test_maven_workflow_uses_agent() - assert agent created with create_deep_agent(), assert agent.ainvoke() called, assert workflow returns non-None result, assert no exceptions raised
+- [ ] T025 [P] [US2] Add test_maven_workflow_stores_artifacts() to tests/integration/test_maven_agent_workflow.py - assert artifacts table contains session_id, assert artifact_type in ['agent_reasoning', 'llm_tool_call', 'llm_metrics'], assert content is valid JSON, assert timestamp within last 60 seconds
 - [ ] T026 [P] [US2] Create tests/e2e/test_real_llm_invocation.py with test_maven_workflow_llm_calls() - assert llm_call_count >= 3 (SC-002)
 - [ ] T027 [P] [US2] Add test_langsmith_trace_validation() to tests/e2e/test_real_llm_invocation.py
 - [ ] T028 [P] [US2] Add test_maven_agent_tool_call_retry() to verify A2 (agent retries if no tools called)
@@ -158,6 +167,8 @@ pytest tests/integration/test_llm_connectivity.py -v
 - [ ] T032 [P] [US2] Add or verify get_tools() function in src/mcp_servers/docker/__init__.py (check T006)
 - [ ] T033 [P] [US2] Add or verify get_tools() function in src/mcp_servers/test_generator/__init__.py (check T006)
 - [ ] T033a [US2] Create backup utility in src/workflows/backup.py with create_backup(file_path) function: creates timestamped backups in .testboost/backups/, returns backup path, maintains max 10 backups per file (oldest deleted) (Constitution Principle 6)
+- [ ] T033b [P] [US2] Add restore_backup(backup_path) function to backup.py: restores file from backup, validates backup integrity before restore
+- [ ] T033c [P] [US2] Add unit tests for backup.py: test_create_backup(), test_restore_backup(), test_backup_cleanup_max_10(), test_backup_corruption_handling()
 - [ ] T034 [US2] Create src/workflows/maven_maintenance_agent.py with run_maven_maintenance_with_agent() function
 - [ ] T034a [US2] Implement backup creation in maven_maintenance_agent.py before pom.xml modifications (call backup.create_backup() before tool invocations that modify files, store backup_path in artifacts) (Constitution Principle 6)
 - [ ] T035 [US2] Implement agent creation in maven_maintenance_agent.py using create_deep_agent() with MCP tools
@@ -296,10 +307,10 @@ pytest tests/e2e/test_real_llm_invocation.py::test_maven_workflow_llm_calls -v -
 
 > **NOTE: Write these tests FIRST, ensure they FAIL before implementation**
 
-- [ ] T079 [P] [US3] Create tests/integration/test_agent_config_loading.py with test_yaml_config_loads()
-- [ ] T080 [P] [US3] Add test_yaml_changes_take_effect() to tests/integration/test_agent_config_loading.py
-- [ ] T081 [P] [US3] Add test_invalid_yaml_fails_startup() to tests/integration/test_agent_config_loading.py
-- [ ] T082 [P] [US3] Add test_prompt_template_loads() to tests/integration/test_agent_config_loading.py
+- [ ] T079 [P] [US3] Create tests/integration/test_agent_config_loading.py with test_yaml_config_loads() - assert 3 YAML configs loaded (maven_maintenance, test_gen, deployment), assert each config has 'model', 'temperature', 'max_tokens' keys, assert model names valid
+- [ ] T080 [P] [US3] Add test_yaml_changes_take_effect() to tests/integration/test_agent_config_loading.py - modify temperature in YAML, reload config, assert new temperature applied to agent, restore original YAML after test
+- [ ] T081 [P] [US3] Add test_invalid_yaml_fails_startup() to tests/integration/test_agent_config_loading.py - introduce YAML syntax error, assert startup raises ConfigurationError, assert error message contains line number, restore valid YAML after test
+- [ ] T082 [P] [US3] Add test_prompt_template_loads() to tests/integration/test_agent_config_loading.py - assert dependency_update.md exists and loads, assert prompt length > 100 chars, assert prompt contains expected keywords (e.g., 'dependency', 'Maven')
 
 ### Implementation for User Story 3
 
@@ -344,19 +355,35 @@ pytest tests/integration/test_agent_config_loading.py -v
 - [ ] T095 [P] Add troubleshooting section to README.md for LLM connection errors and edge cases
 - [ ] T096 [P] Update 001-testboost-core/checklists/e2e-acceptance.md to mark unblocked checks as passing
 - [ ] T097 Run full E2E test suite from 001-testboost-core checklist to validate all 9 unblocked checks
-- [ ] T098 [P] Performance testing: Measure all 3 workflows duration with agents vs without (target <2min for Maven)
+- [ ] T097a [P] Regression test suite: Create tests/regression/test_old_workflows.py with test_old_maven_maintenance_still_works(), test_old_test_generation_still_works(), test_old_docker_deployment_still_works() - verify old workflow functions callable, execute successfully, log deprecation warnings. Validates backward compatibility (per plan.md: "API/CLI interfaces stay the same initially")
+- [ ] T097b [P] Verify deprecation warnings logged: Check logs/testboost.log for "DEPRECATED: run_maven_maintenance()" messages when calling old functions (respects Constitution Principle 9 - Transparence des Décisions)
+- [ ] T097c [P] API interface regression: Test /api/maintenance/maven, /api/test/generate, /api/deploy/docker endpoints still accept same request payloads and return compatible responses (no breaking changes)
+- [ ] T098 [P] Performance testing: Measure all 3 workflows with metrics: (1) Total duration (target <2min Maven, <3min test gen, <90s deployment), (2) LLM call latency (p50, p95, p99), (3) Token processing rate (tokens/sec), (4) Memory usage delta (before/after workflow). Baseline: Run each workflow 10 times, compute averages, store in tests/performance/baseline_metrics.json. Validate: New agent workflows within 20% of baseline (SC-010)
 - [ ] T099 [P] Cost analysis: Log LLM token usage and estimate costs for Gemini/Claude/GPT-4o across all workflows (rates: Gemini Flash $0.075/1M input + $0.30/1M output, Claude Sonnet $3/1M input + $15/1M output, GPT-4o $2.50/1M input + $10/1M output)
 - [ ] T100 Add migration guide to quickstart.md for transitioning from old workflows to agent-based workflows
 - [ ] T101 [P] Code review: Ensure no direct system calls (all via MCP tools per Constitution Principle 2)
 - [ ] T101a [P] Security audit: Grep logs/testboost.log and test output for API key patterns (regex: 'sk-[A-Za-z0-9]{32,}', 'AIza[A-Za-z0-9]{35}'), verify zero matches (Constitution Principle 7)
+- [ ] T101b [NOTE] Additional security testing deferred: Comprehensive security audit (OWASP Top 10, prompt injection, LLM jailbreak attempts, MCP tool authorization) is OUT OF SCOPE for this feature. Future work: Create dedicated security testing feature specification with threat modeling, penetration testing scenarios, and security checklist.
 - [ ] T102 Validate LangSmith tracing works for all 3 providers (Gemini, Claude, GPT-4o) across all 3 workflows
 - [ ] T102a Test Maven workflow execution with Gemini, Claude, and GPT-4o sequentially with app restart between providers (verify SC-004: provider switching works)
 - [ ] T102b Verify switching from Gemini to Claude requires only env var changes (export LLM_PROVIDER=anthropic; export ANTHROPIC_API_KEY=...) with zero code changes (SC-004)
+- [ ] T102c [P] Provider switching edge cases: Create tests/integration/test_provider_switching.py with test_switch_provider_with_invalid_api_key() - change provider to anthropic with invalid key, assert startup fails with clear error
+- [ ] T102d [P] Add test_switch_provider_without_restart_no_effect() to test_provider_switching.py - verify env var changes during runtime have no effect until restart (validates: "Switching requires only env var change and application restart")
+- [ ] T102e [P] Add test_switch_provider_artifacts_compatible() to test_provider_switching.py - run workflow with Gemini, switch to Claude, verify old artifacts still readable and new artifacts use same schema
 - [ ] T103 Run quickstart.md validation: Test all 4 scenarios (Developer, CLI User, Administrator, Tester)
 - [ ] T103a [P] Verify quickstart.md exists and documents all 4 scenarios before validation
+- [ ] T103b [P] Documentation validation tests: Create tests/integration/test_documentation.py with test_readme_completeness() - assert README.md exists, contains sections: "Agent Requirements", "Troubleshooting", "Edge Case Handling", verify minimum 500 words
+- [ ] T103c [P] Add test_quickstart_scenarios_complete() to test_documentation.py - assert quickstart.md contains all 4 scenarios (Developer, CLI User, Administrator, Tester), verify each scenario has Given-When-Then format
+- [ ] T103d [P] Add test_migration_guide_exists() to test_documentation.py - assert quickstart.md has migration guide section explaining transition from old workflows to agent-based workflows
+- [ ] T103e [P] Add test_prompt_templates_documented() to test_documentation.py - verify config/prompts/maven/dependency_update.md has comment header explaining purpose, usage, and modification guidelines
 - [ ] T104 [P] Document edge case handling in README.md (A1-A5: rate limits, missing tools, retry with backoff, JSON validation, malformed tool calls)
 - [ ] T105 Validate all 3 workflows respect "Zéro Complaisance" (fail-fast, no silent degradation, real LLM calls)
 - [ ] T105a Test Maven workflow with large project (>170k tokens) to verify DeepAgents automatic summarization handles context window per spec.md Edge Case
+- [ ] T105b [P] Edge case test suite: Create tests/e2e/test_edge_cases.py with test_rate_limit_error_handling() - mock 429 response, assert error message format matches spec (A1)
+- [ ] T105c [P] Add test_missing_tool_calls_retry() to test_edge_cases.py - mock LLM response without tool calls, assert retry with modified prompt (max 3 attempts) (A2)
+- [ ] T105d [P] Add test_intermittent_connectivity_retry() to test_edge_cases.py - mock network timeout, assert exponential backoff retry (3 attempts, 1s-10s wait) (A4)
+- [ ] T105e [P] Add test_malformed_json_validation() to test_edge_cases.py - mock LLM response with invalid JSON tool call, assert JSONDecodeError caught, retry max 3 times (A5)
+- [ ] T105f [P] Add test_context_window_overflow() to test_edge_cases.py - use large project from T006d, assert no context window errors, verify DeepAgents auto-summarization (A6)
 
 **Validation**:
 ```bash

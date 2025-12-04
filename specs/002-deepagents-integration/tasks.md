@@ -51,23 +51,23 @@ The following patterns are intentionally repeated across workflows to ensure con
 
 **Purpose**: Project initialization and basic structure (no new files needed - feature modifies existing codebase)
 
-- [ ] T001 Verify Python 3.11+ environment and DeepAgents 0.2.7 installed
-- [ ] T002 [P] Verify existing agent infrastructure (src/agents/loader.py, config/agents/*.yaml)
-- [ ] T002a [P] Verify src/agents/adapter.py compatibility with DeepAgents 0.2.7 (may need adjustments per plan.md - check if used or deprecated)
-- [ ] T003 [P] Verify existing MCP servers (src/mcp_servers/maven_maintenance/, git_maintenance/, docker/, test_generator/)
-- [ ] T004 [P] Verify PostgreSQL 15 running on port 5433 with sessions/artifacts tables
-- [ ] T005 [P] Verify tenacity library already installed (from 001-testboost-core) for retry logic (U1)
-- [ ] T006 [P] Verify MCP servers expose get_tools() functions (check src/mcp_servers/*/\_\_init\_\_.py) (U2)
-- [ ] T006a [P] Verify backup strategy: check if existing backup utility exists or plan to create new one (Constitution Principle 6)
+- [X] T001 Verify Python 3.11+ environment and DeepAgents 0.2.7 installed
+- [X] T002 [P] Verify existing agent infrastructure (src/agents/loader.py, config/agents/*.yaml)
+- [X] T002a [P] Verify src/agents/adapter.py compatibility with DeepAgents 0.2.7 (may need adjustments per plan.md - check if used or deprecated)
+- [X] T003 [P] Verify existing MCP servers (src/mcp_servers/maven_maintenance/, git_maintenance/, docker/, test_generator/)
+- [X] T004 [P] Verify PostgreSQL 15 running on port 5433 with sessions/artifacts tables
+- [X] T005 [P] Verify tenacity library already installed (from 001-testboost-core) for retry logic (U1)
+- [X] T006 [P] Verify MCP servers expose get_tools() functions (check src/mcp_servers/*/\_\_init\_\_.py) (U2)
+- [X] T006a [P] Verify backup strategy: check if existing backup utility exists or plan to create new one (Constitution Principle 6)
 
 ### Test Data Setup
 
 **Purpose**: Prepare test projects and data for E2E validation
 
-- [ ] T006b Setup spring-petclinic test project: git clone https://github.com/spring-projects/spring-petclinic.git tests/fixtures/spring-petclinic
-- [ ] T006c Create test project with outdated dependencies: copy spring-petclinic, downgrade spring-boot to 2.x in pom.xml
-- [ ] T006d Create large test project (>170k tokens): aggregate 10+ Java files into tests/fixtures/large-project for T105a context window testing
-- [ ] T006e Document test data location in tests/README.md: fixture paths, how to regenerate, expected characteristics
+- [X] T006b Setup spring-petclinic test project: git clone https://github.com/spring-projects/spring-petclinic.git tests/fixtures/spring-petclinic
+- [X] T006c Create test project with outdated dependencies: copy spring-petclinic, downgrade spring-boot to 2.x in pom.xml
+- [X] T006d Create large test project (>170k tokens): aggregate 10+ Java files into tests/fixtures/large-project for T105a context window testing
+- [X] T006e Document test data location in tests/README.md: fixture paths, how to regenerate, expected characteristics
 
 **Checkpoint**: Environment validated, test data prepared - ready for implementation
 
@@ -79,13 +79,13 @@ The following patterns are intentionally repeated across workflows to ensure con
 
 **⚠️ CRITICAL**: No user story work can begin until this phase is complete. This phase fixes the constitutional violation where workflows execute without LLM agents.
 
-- [ ] T007 Create src/lib/startup_checks.py with check_llm_connection() function. Unit tests required: tests/unit/test_startup_checks.py with test_check_llm_connection_success(), test_check_llm_connection_missing_api_key(), test_check_llm_connection_timeout(), test_validate_api_key_security()
-- [ ] T008 Modify src/api/main.py to add startup event calling check_llm_connection()
-- [ ] T009 [P] Modify src/cli/main.py to add callback calling check_llm_connection()
-- [ ] T010 Create src/mcp_servers/registry.py with get_mcp_tool_registry() function. Unit tests required: tests/unit/test_registry.py with test_get_mcp_tool_registry_returns_4_servers(), test_get_mcp_tool_registry_verifies_get_tools_exists(), test_registry_fails_if_mcp_server_missing()
-- [ ] T011 [P] Add retry logic to src/lib/llm.py if not present (check T005 verification first)
-- [ ] T011a [P] Implement API key security validation in src/lib/startup_checks.py: validate_api_key_security() function that verifies (1) keys loaded from .env only, (2) keys never logged in plaintext, (3) keys never transmitted in URLs, (4) add test in tests/integration/test_llm_connectivity.py::test_api_keys_not_logged (Constitution Principle 7 - Isolation et Sécurité)
-- [ ] T011b [P] Verify .env file is in .gitignore to prevent committing API keys (Constitution Principle 7 - Isolation et Sécurité)
+- [X] T007 Create src/lib/startup_checks.py with check_llm_connection() function. Unit tests required: tests/unit/test_startup_checks.py with test_check_llm_connection_success(), test_check_llm_connection_missing_api_key(), test_check_llm_connection_timeout(), test_validate_api_key_security()
+- [X] T008 Modify src/api/main.py to add startup event calling check_llm_connection()
+- [X] T009 [P] Modify src/cli/main.py to add callback calling check_llm_connection()
+- [X] T010 Create src/mcp_servers/registry.py with get_mcp_tool_registry() function. Unit tests required: tests/unit/test_registry.py with test_get_mcp_tool_registry_returns_4_servers(), test_get_mcp_tool_registry_verifies_get_tools_exists(), test_registry_fails_if_mcp_server_missing()
+- [X] T011 [P] Add retry logic to src/lib/llm.py if not present (check T005 verification first)
+- [X] T011a [P] Implement API key security validation in src/lib/startup_checks.py: validate_api_key_security() function that verifies (1) keys loaded from .env only, (2) keys never logged in plaintext, (3) keys never transmitted in URLs, (4) add test in tests/integration/test_llm_connectivity.py::test_api_keys_not_logged (Constitution Principle 7 - Isolation et Sécurité)
+- [X] T011b [P] Verify .env file is in .gitignore to prevent committing API keys (Constitution Principle 7 - Isolation et Sécurité)
 
 **Checkpoint**: Foundation ready - LLM connectivity check implemented, MCP registry created. User story implementation can now begin.
 
@@ -103,21 +103,21 @@ The following patterns are intentionally repeated across workflows to ensure con
 
 > **NOTE: Write these tests FIRST, ensure they FAIL before implementation**
 
-- [ ] T012 [P] [US1] Create tests/integration/test_llm_connectivity.py with test_llm_connection_success()
-- [ ] T013 [P] [US1] Add test_llm_connection_failure() to tests/integration/test_llm_connectivity.py
-- [ ] T014 [P] [US1] Add test_llm_connection_timeout() to tests/integration/test_llm_connectivity.py
+- [X] T012 [P] [US1] Create tests/integration/test_llm_connectivity.py with test_llm_connection_success()
+- [X] T013 [P] [US1] Add test_llm_connection_failure() to tests/integration/test_llm_connectivity.py
+- [X] T014 [P] [US1] Add test_llm_connection_timeout() to tests/integration/test_llm_connectivity.py
 
 ### Implementation for User Story 1
 
-- [ ] T015 [US1] Implement check_llm_connection() in src/lib/startup_checks.py with ping to configured LLM
-- [ ] T016 [US1] Add error handling in check_llm_connection() for missing API keys (raise LLMProviderError)
-- [ ] T017 [US1] Add error handling in check_llm_connection() for invalid API keys (raise AuthenticationError)
-- [ ] T018 [US1] Add timeout handling in check_llm_connection() (5 second max, raise TimeoutError)
-- [ ] T019 [US1] Add retry logic with exponential backoff for intermittent connectivity (A4: 3 attempts, 1s-10s wait)
-- [ ] T020 [US1] Add rate limit error detection (catch 429, extract retry-after header, fail with EXPLICIT message format: "LLM rate limit exceeded by {provider}. Retry after {duration} seconds. Workflow aborted. Zero results generated.") (A1, Constitution Principle 1)
-- [ ] T021 [US1] Implement startup event in src/api/main.py calling check_llm_connection() with error logging
-- [ ] T022 [US1] Implement CLI callback in src/cli/main.py calling check_llm_connection() with error exit
-- [ ] T023 [US1] Add structured logging for "llm_connection_ok" and "llm_connection_failed" events
+- [X] T015 [US1] Implement check_llm_connection() in src/lib/startup_checks.py with ping to configured LLM
+- [X] T016 [US1] Add error handling in check_llm_connection() for missing API keys (raise LLMProviderError)
+- [X] T017 [US1] Add error handling in check_llm_connection() for invalid API keys (raise AuthenticationError)
+- [X] T018 [US1] Add timeout handling in check_llm_connection() (5 second max, raise TimeoutError)
+- [X] T019 [US1] Add retry logic with exponential backoff for intermittent connectivity (A4: 3 attempts, 1s-10s wait)
+- [X] T020 [US1] Add rate limit error detection (catch 429, extract retry-after header, fail with EXPLICIT message format: "LLM rate limit exceeded by {provider}. Retry after {duration} seconds. Workflow aborted. Zero results generated.") (A1, Constitution Principle 1)
+- [X] T021 [US1] Implement startup event in src/api/main.py calling check_llm_connection() with error logging
+- [X] T022 [US1] Implement CLI callback in src/cli/main.py calling check_llm_connection() with error exit
+- [X] T023 [US1] Add structured logging for "llm_connection_ok" and "llm_connection_failed" events
 
 **Validation**:
 ```bash
@@ -152,39 +152,39 @@ pytest tests/integration/test_llm_connectivity.py -v
 
 > **NOTE: Write these tests FIRST, ensure they FAIL before implementation**
 
-- [ ] T024 [P] [US2] Create tests/integration/test_maven_agent_workflow.py with test_maven_workflow_uses_agent() - assert agent created with create_deep_agent(), assert agent.ainvoke() called, assert workflow returns non-None result, assert no exceptions raised
-- [ ] T025 [P] [US2] Add test_maven_workflow_stores_artifacts() to tests/integration/test_maven_agent_workflow.py - assert artifacts table contains session_id, assert artifact_type in ['agent_reasoning', 'llm_tool_call', 'llm_metrics'], assert content is valid JSON, assert timestamp within last 60 seconds
-- [ ] T026 [P] [US2] Create tests/e2e/test_real_llm_invocation.py with test_maven_workflow_llm_calls() - assert llm_call_count >= 3 (SC-002)
-- [ ] T027 [P] [US2] Add test_langsmith_trace_validation() to tests/e2e/test_real_llm_invocation.py
-- [ ] T028 [P] [US2] Add test_maven_agent_tool_call_retry() to verify A2 (agent retries if no tools called)
-- [ ] T028a [P] [US2] Add test_maven_agent_reasoning_validation() to verify SC-003 (agent responses contain reasoning keywords from prompt template dependency_update.md)
+- [X] T024 [P] [US2] Create tests/integration/test_maven_agent_workflow.py with test_maven_workflow_uses_agent() - assert agent created with create_deep_agent(), assert agent.ainvoke() called, assert workflow returns non-None result, assert no exceptions raised
+- [X] T025 [P] [US2] Add test_maven_workflow_stores_artifacts() to tests/integration/test_maven_agent_workflow.py - assert artifacts table contains session_id, assert artifact_type in ['agent_reasoning', 'llm_tool_call', 'llm_metrics'], assert content is valid JSON, assert timestamp within last 60 seconds
+- [X] T026 [P] [US2] Create tests/e2e/test_real_llm_invocation.py with test_maven_workflow_llm_calls() - assert llm_call_count >= 3 (SC-002)
+- [X] T027 [P] [US2] Add test_langsmith_trace_validation() to tests/e2e/test_real_llm_invocation.py
+- [X] T028 [P] [US2] Add test_maven_agent_tool_call_retry() to verify A2 (agent retries if no tools called)
+- [X] T028a [P] [US2] Add test_maven_agent_reasoning_validation() to verify SC-003 (agent responses contain reasoning keywords from prompt template dependency_update.md)
 
 ### Implementation for User Story 2
 
-- [ ] T029 [US2] Implement get_mcp_tool_registry() in src/mcp_servers/registry.py returning 4 required MCP servers: maven_maintenance, git_maintenance, docker, test_generator (NOTE: pit_recommendations and container_runtime exist in codebase but not needed for this feature - agents don't use them)
-- [ ] T030 [P] [US2] Add or verify get_tools() function in src/mcp_servers/maven_maintenance/__init__.py (check T006)
-- [ ] T031 [P] [US2] Add or verify get_tools() function in src/mcp_servers/git_maintenance/__init__.py (check T006)
-- [ ] T032 [P] [US2] Add or verify get_tools() function in src/mcp_servers/docker/__init__.py (check T006)
-- [ ] T033 [P] [US2] Add or verify get_tools() function in src/mcp_servers/test_generator/__init__.py (check T006)
-- [ ] T033a [US2] Create backup utility in src/workflows/backup.py with create_backup(file_path) function: creates timestamped backups in .testboost/backups/, returns backup path, maintains max 10 backups per file (oldest deleted) (Constitution Principle 6)
-- [ ] T033b [P] [US2] Add restore_backup(backup_path) function to backup.py: restores file from backup, validates backup integrity before restore
-- [ ] T033c [P] [US2] Add unit tests for backup.py: test_create_backup(), test_restore_backup(), test_backup_cleanup_max_10(), test_backup_corruption_handling()
-- [ ] T034 [US2] Create src/workflows/maven_maintenance_agent.py with run_maven_maintenance_with_agent() function
-- [ ] T034a [US2] Implement backup creation in maven_maintenance_agent.py before pom.xml modifications (call backup.create_backup() before tool invocations that modify files, store backup_path in artifacts) (Constitution Principle 6)
-- [ ] T035 [US2] Implement agent creation in maven_maintenance_agent.py using create_deep_agent() with MCP tools
-- [ ] T036 [US2] Load agent config from config/agents/maven_maintenance_agent.yaml in maven_maintenance_agent.py
-- [ ] T038 [US2] Load system prompt from config/prompts/maven/dependency_update.md in maven_maintenance_agent.py
-- [ ] T039 [US2] Bind MCP tools to LLM using llm.bind_tools(maven_tools) in maven_maintenance_agent.py
-- [ ] T040 [US2] Implement agent invocation with ainvoke() in maven_maintenance_agent.py
-- [ ] T041 [US2] Add retry logic for agent invocation (A4: retry with backoff, A2: retry if no tools)
-- [ ] T042 [US2] Add JSON validation for tool calls (A5: catch JSONDecodeError, retry max 3 times)
-- [ ] T043 [US2] Add tool call verification (A2: check expected tools called, retry with modified prompt if not)
-- [ ] T044 [US2] Store agent reasoning in artifacts table with artifact_type="agent_reasoning"
-- [ ] T045 [US2] Store tool calls in artifacts table with artifact_type="llm_tool_call"
-- [ ] T046 [US2] Store LLM metrics in artifacts table with artifact_type="llm_metrics" (tokens, duration, cost)
-- [ ] T047 [US2] Add deprecation warning to old src/workflows/maven_maintenance.py run_maven_maintenance()
-- [ ] T048 [US2] Update src/cli/commands/maintenance.py to call run_maven_maintenance_with_agent()
-- [ ] T049 [US2] Add LangSmith tracing validation (check LANGSMITH_TRACING env var) in maven_maintenance_agent.py
+- [X] T029 [US2] Implement get_mcp_tool_registry() in src/mcp_servers/registry.py returning 4 required MCP servers: maven_maintenance, git_maintenance, docker, test_generator (NOTE: pit_recommendations and container_runtime exist in codebase but not needed for this feature - agents don't use them)
+- [X] T030 [P] [US2] Add or verify get_tools() function in src/mcp_servers/maven_maintenance/__init__.py (check T006)
+- [X] T031 [P] [US2] Add or verify get_tools() function in src/mcp_servers/git_maintenance/__init__.py (check T006)
+- [X] T032 [P] [US2] Add or verify get_tools() function in src/mcp_servers/docker/__init__.py (check T006)
+- [X] T033 [P] [US2] Add or verify get_tools() function in src/mcp_servers/test_generator/__init__.py (check T006)
+- [X] T033a [US2] Create backup utility in src/workflows/backup.py with create_backup(file_path) function: creates timestamped backups in .testboost/backups/, returns backup path, maintains max 10 backups per file (oldest deleted) (Constitution Principle 6)
+- [X] T033b [P] [US2] Add restore_backup(backup_path) function to backup.py: restores file from backup, validates backup integrity before restore
+- [X] T033c [P] [US2] Add unit tests for backup.py: test_create_backup(), test_restore_backup(), test_backup_cleanup_max_10(), test_backup_corruption_handling()
+- [X] T034 [US2] Create src/workflows/maven_maintenance_agent.py with run_maven_maintenance_with_agent() function
+- [X] T034a [US2] Implement backup creation in maven_maintenance_agent.py before pom.xml modifications (call backup.create_backup() before tool invocations that modify files, store backup_path in artifacts) (Constitution Principle 6)
+- [X] T035 [US2] Implement agent creation in maven_maintenance_agent.py using create_deep_agent() with MCP tools
+- [X] T036 [US2] Load agent config from config/agents/maven_maintenance_agent.yaml in maven_maintenance_agent.py
+- [X] T038 [US2] Load system prompt from config/prompts/maven/dependency_update.md in maven_maintenance_agent.py
+- [X] T039 [US2] Bind MCP tools to LLM using llm.bind_tools(maven_tools) in maven_maintenance_agent.py
+- [X] T040 [US2] Implement agent invocation with ainvoke() in maven_maintenance_agent.py
+- [X] T041 [US2] Add retry logic for agent invocation (A4: retry with backoff, A2: retry if no tools)
+- [X] T042 [US2] Add JSON validation for tool calls (A5: catch JSONDecodeError, retry max 3 times)
+- [X] T043 [US2] Add tool call verification (A2: check expected tools called, retry with modified prompt if not)
+- [X] T044 [US2] Store agent reasoning in artifacts table with artifact_type="agent_reasoning"
+- [X] T045 [US2] Store tool calls in artifacts table with artifact_type="llm_tool_call"
+- [X] T046 [US2] Store LLM metrics in artifacts table with artifact_type="llm_metrics" (tokens, duration, cost)
+- [X] T047 [US2] Add deprecation warning to old src/workflows/maven_maintenance.py run_maven_maintenance()
+- [X] T048 [US2] Update src/cli/commands/maintenance.py to call run_maven_maintenance_with_agent()
+- [X] T049 [US2] Add LangSmith tracing validation (check LANGSMITH_TRACING env var) in maven_maintenance_agent.py
 
 **Validation**:
 ```bash
@@ -220,26 +220,26 @@ pytest tests/e2e/test_real_llm_invocation.py::test_maven_workflow_llm_calls -v -
 
 > **NOTE: Write these tests FIRST, ensure they FAIL before implementation**
 
-- [ ] T050 [P] [US4] Create tests/integration/test_test_gen_agent_workflow.py with test_test_gen_workflow_uses_agent()
-- [ ] T051 [P] [US4] Add test_test_gen_workflow_stores_artifacts() to tests/integration/test_test_gen_agent_workflow.py
-- [ ] T052 [P] [US4] Add test_test_gen_workflow_llm_calls() to tests/e2e/test_real_llm_invocation.py - assert llm_call_count >= 3 (SC-002)
-- [ ] T053 [P] [US4] Add test_test_gen_agent_tool_call_retry() to verify error correction retry logic
-- [ ] T053a [P] [US4] Add test_test_gen_agent_reasoning_validation() to verify SC-003 (agent responses contain reasoning about class types and test patterns)
+- [X] T050 [P] [US4] Create tests/integration/test_test_gen_agent_workflow.py with test_test_gen_workflow_uses_agent()
+- [X] T051 [P] [US4] Add test_test_gen_workflow_stores_artifacts() to tests/integration/test_test_gen_agent_workflow.py
+- [X] T052 [P] [US4] Add test_test_gen_workflow_llm_calls() to tests/e2e/test_real_llm_invocation.py - assert llm_call_count >= 3 (SC-002)
+- [X] T053 [P] [US4] Add test_test_gen_agent_tool_call_retry() to verify error correction retry logic
+- [X] T053a [P] [US4] Add test_test_gen_agent_reasoning_validation() to verify SC-003 (agent responses contain reasoning about class types and test patterns)
 
 ### Implementation for User Story 4
 
-- [ ] T054 [US4] Create src/workflows/test_generation_agent.py with run_test_generation_with_agent() function
-- [ ] T054a [US4] Implement backup creation in test_generation_agent.py before test file generation (call backup.create_backup() on target test directory before writing test files) (Constitution Principle 6)
-- [ ] T055 [US4] Implement agent creation in test_generation_agent.py using create_deep_agent() with test gen MCP tools
-- [ ] T056 [US4] Load agent config from config/agents/test_gen_agent.yaml in test_generation_agent.py
-- [ ] T057 [US4] Load system prompt (inline string for now - test_generation prompt template deferred to future work, see plan.md)
-- [ ] T058 [US4] Bind test generator MCP tools to LLM using llm.bind_tools(test_gen_tools)
-- [ ] T059 [US4] Implement agent invocation with retry logic (same as T041-T043: backoff, tool validation, JSON check)
-- [ ] T060 [US4] Add auto-correction retry logic (spec: max 3 attempts if compilation errors)
-- [ ] T061 [US4] Store agent reasoning and tool calls in artifacts (same pattern as T044-T046)
-- [ ] T062 [US4] Add deprecation warning to old src/workflows/test_generation.py
-- [ ] T063 [US4] Update src/cli/commands/test.py to call run_test_generation_with_agent()
-- [ ] T064 [US4] Add LangSmith tracing validation for test generation workflow
+- [X] T054 [US4] Create src/workflows/test_generation_agent.py with run_test_generation_with_agent() function
+- [X] T054a [US4] Implement backup creation in test_generation_agent.py before test file generation (call backup.create_backup() on target test directory before writing test files) (Constitution Principle 6)
+- [X] T055 [US4] Implement agent creation in test_generation_agent.py using create_deep_agent() with test gen MCP tools
+- [X] T056 [US4] Load agent config from config/agents/test_gen_agent.yaml in test_generation_agent.py
+- [X] T057 [US4] Load system prompt (inline string for now - test_generation prompt template deferred to future work, see plan.md)
+- [X] T058 [US4] Bind test generator MCP tools to LLM using llm.bind_tools(test_gen_tools)
+- [X] T059 [US4] Implement agent invocation with retry logic (same as T041-T043: backoff, tool validation, JSON check)
+- [X] T060 [US4] Add auto-correction retry logic (spec: max 3 attempts if compilation errors)
+- [X] T061 [US4] Store agent reasoning and tool calls in artifacts (same pattern as T044-T046)
+- [X] T062 [US4] Add deprecation warning to old src/workflows/test_generation.py
+- [X] T063 [US4] Update src/cli/commands/test.py to call run_test_generation_with_agent()
+- [X] T064 [US4] Add LangSmith tracing validation for test generation workflow
 
 **Validation**:
 ```bash
@@ -264,25 +264,25 @@ pytest tests/e2e/test_real_llm_invocation.py::test_maven_workflow_llm_calls -v -
 
 > **NOTE: Write these tests FIRST, ensure they FAIL before implementation**
 
-- [ ] T065 [P] [US5] Create tests/integration/test_docker_agent_workflow.py with test_docker_workflow_uses_agent()
-- [ ] T066 [P] [US5] Add test_docker_workflow_stores_artifacts() to tests/integration/test_docker_agent_workflow.py
-- [ ] T067 [P] [US5] Add test_docker_workflow_llm_calls() to tests/e2e/test_real_llm_invocation.py - assert llm_call_count >= 3 (SC-002)
-- [ ] T068 [P] [US5] Add test_docker_agent_health_check_monitoring() to verify agent waits for health OK
-- [ ] T068a [P] [US5] Add test_docker_agent_reasoning_validation() to verify SC-003 (agent responses contain reasoning about project type detection and dependencies)
+- [X] T065 [P] [US5] Create tests/integration/test_docker_agent_workflow.py with test_docker_workflow_uses_agent()
+- [X] T066 [P] [US5] Add test_docker_workflow_stores_artifacts() to tests/integration/test_docker_agent_workflow.py
+- [X] T067 [P] [US5] Add test_docker_workflow_llm_calls() to tests/e2e/test_real_llm_invocation.py - assert llm_call_count >= 3 (SC-002)
+- [X] T068 [P] [US5] Add test_docker_agent_health_check_monitoring() to verify agent waits for health OK
+- [X] T068a [P] [US5] Add test_docker_agent_reasoning_validation() to verify SC-003 (agent responses contain reasoning about project type detection and dependencies)
 
 ### Implementation for User Story 5
 
-- [ ] T069 [US5] Create src/workflows/docker_deployment_agent.py with run_docker_deployment_with_agent() function
-- [ ] T069a [US5] Implement backup creation in docker_deployment_agent.py before Dockerfile/docker-compose generation (call backup.create_backup() before writing Docker configuration files) (Constitution Principle 6)
-- [ ] T070 [US5] Implement agent creation in docker_deployment_agent.py using create_deep_agent() with Docker MCP tools
-- [ ] T071 [US5] Load agent config from config/agents/deployment_agent.yaml in docker_deployment_agent.py
-- [ ] T072 [US5] Load system prompt (inline string for now - docker prompt template deferred to future work, see plan.md)
-- [ ] T073 [US5] Bind Docker MCP tools to LLM using llm.bind_tools(docker_tools)
-- [ ] T074 [US5] Implement agent invocation with retry logic (same as T041-T043: backoff, tool validation, JSON check)
-- [ ] T075 [US5] Store agent reasoning and tool calls in artifacts (same pattern as T044-T046)
-- [ ] T076 [US5] Add deprecation warning to old src/workflows/docker_deployment.py
-- [ ] T077 [US5] Update src/cli/commands/deploy.py to call run_docker_deployment_with_agent()
-- [ ] T078 [US5] Add LangSmith tracing validation for Docker deployment workflow
+- [X] T069 [US5] Create src/workflows/docker_deployment_agent.py with run_docker_deployment_with_agent() function
+- [X] T069a [US5] Implement backup creation in docker_deployment_agent.py before Dockerfile/docker-compose generation (call backup.create_backup() before writing Docker configuration files) (Constitution Principle 6)
+- [X] T070 [US5] Implement agent creation in docker_deployment_agent.py using create_deep_agent() with Docker MCP tools
+- [X] T071 [US5] Load agent config from config/agents/deployment_agent.yaml in docker_deployment_agent.py
+- [X] T072 [US5] Load system prompt (inline string for now - docker prompt template deferred to future work, see plan.md)
+- [X] T073 [US5] Bind Docker MCP tools to LLM using llm.bind_tools(docker_tools)
+- [X] T074 [US5] Implement agent invocation with retry logic (same as T041-T043: backoff, tool validation, JSON check)
+- [X] T075 [US5] Store agent reasoning and tool calls in artifacts (same pattern as T044-T046)
+- [X] T076 [US5] Add deprecation warning to old src/workflows/docker_deployment.py
+- [X] T077 [US5] Update src/cli/commands/deploy.py to call run_docker_deployment_with_agent()
+- [X] T078 [US5] Add LangSmith tracing validation for Docker deployment workflow
 
 **Validation**:
 ```bash
@@ -307,23 +307,23 @@ pytest tests/e2e/test_real_llm_invocation.py::test_maven_workflow_llm_calls -v -
 
 > **NOTE: Write these tests FIRST, ensure they FAIL before implementation**
 
-- [ ] T079 [P] [US3] Create tests/integration/test_agent_config_loading.py with test_yaml_config_loads() - assert 3 YAML configs loaded (maven_maintenance, test_gen, deployment), assert each config has 'model', 'temperature', 'max_tokens' keys, assert model names valid
-- [ ] T080 [P] [US3] Add test_yaml_changes_take_effect() to tests/integration/test_agent_config_loading.py - modify temperature in YAML, reload config, assert new temperature applied to agent, restore original YAML after test
-- [ ] T081 [P] [US3] Add test_invalid_yaml_fails_startup() to tests/integration/test_agent_config_loading.py - introduce YAML syntax error, assert startup raises ConfigurationError, assert error message contains line number, restore valid YAML after test
-- [ ] T082 [P] [US3] Add test_prompt_template_loads() to tests/integration/test_agent_config_loading.py - assert dependency_update.md exists and loads, assert prompt length > 100 chars, assert prompt contains expected keywords (e.g., 'dependency', 'Maven')
+- [X] T079 [P] [US3] Create tests/integration/test_agent_config_loading.py with test_yaml_config_loads() - assert 3 YAML configs loaded (maven_maintenance, test_gen, deployment), assert each config has 'model', 'temperature', 'max_tokens' keys, assert model names valid
+- [X] T080 [P] [US3] Add test_yaml_changes_take_effect() to tests/integration/test_agent_config_loading.py - modify temperature in YAML, reload config, assert new temperature applied to agent, restore original YAML after test
+- [X] T081 [P] [US3] Add test_invalid_yaml_fails_startup() to tests/integration/test_agent_config_loading.py - introduce YAML syntax error, assert startup raises ConfigurationError, assert error message contains line number, restore valid YAML after test
+- [X] T082 [P] [US3] Add test_prompt_template_loads() to tests/integration/test_agent_config_loading.py - assert dependency_update.md exists and loads, assert prompt length > 100 chars, assert prompt contains expected keywords (e.g., 'dependency', 'Maven')
 
 ### Implementation for User Story 3
 
-- [ ] T084 [US3] Add agent config validation to src/lib/startup_checks.py validate_agent_infrastructure()
-- [ ] T085 [US3] Load and validate all 3 agent YAML configs at startup in validate_agent_infrastructure()
-- [ ] T086 [US3] Add error handling for missing YAML files (raise ConfigurationError with file path)
-- [ ] T087 [US3] Add error handling for malformed YAML (raise ValidationError with line number)
-- [ ] T088 [US3] Add error handling for missing prompt templates (raise ConfigurationError with template path)
-- [ ] T089 [US3] Call validate_agent_infrastructure() from startup event in src/api/main.py
-- [ ] T090 [US3] Call validate_agent_infrastructure() from CLI callback in src/cli/main.py
-- [ ] T091 [US3] Add structured logging for "agent_config_validated" with agent name and model
-- [ ] T092 [US3] Update quickstart.md Scenario 3 with YAML modification example
-- [ ] T093 [US3] Update quickstart.md Scenario 3 with prompt template modification example
+- [X] T084 [US3] Add agent config validation to src/lib/startup_checks.py validate_agent_infrastructure()
+- [X] T085 [US3] Load and validate all 3 agent YAML configs at startup in validate_agent_infrastructure()
+- [X] T086 [US3] Add error handling for missing YAML files (raise ConfigurationError with file path)
+- [X] T087 [US3] Add error handling for malformed YAML (raise ValidationError with line number)
+- [X] T088 [US3] Add error handling for missing prompt templates (raise ConfigurationError with template path)
+- [X] T089 [US3] Call validate_agent_infrastructure() from startup event in src/api/main.py
+- [X] T090 [US3] Call validate_agent_infrastructure() from CLI callback in src/cli/main.py
+- [X] T091 [US3] Add structured logging for "agent_config_validated" with agent name and model
+- [X] T092 [US3] Update quickstart.md Scenario 3 with YAML modification example
+- [X] T093 [US3] Update quickstart.md Scenario 3 with prompt template modification example
 
 **Validation**:
 ```bash

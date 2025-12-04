@@ -22,8 +22,6 @@ class TestMavenWorkflowLLMCalls:
     @pytest.mark.e2e
     async def test_maven_workflow_llm_calls(self, tmp_path):
         """Test Maven workflow makes at least 3 real LLM API calls."""
-        from src.workflows.maven_maintenance_agent import run_maven_maintenance_with_agent
-
         # Create a minimal Maven project for testing
         project_path = tmp_path / "test-project"
         project_path.mkdir()
@@ -93,6 +91,9 @@ class TestMavenWorkflowLLMCalls:
 
             # Make the patch return our wrapper
             mock_get_llm.side_effect = get_llm_with_counter
+
+            # Import workflow function AFTER patch is applied (critical!)
+            from src.workflows.maven_maintenance_agent import run_maven_maintenance_with_agent
 
             # Execute workflow with real LLM (wrapped with counter)
             result = await run_maven_maintenance_with_agent(
@@ -557,7 +558,6 @@ class TestTestGenerationWorkflowLLMCalls:
         """Test Test Generation workflow makes at least 3 real LLM API calls (T052, SC-002)."""
         from uuid import uuid4
         from unittest.mock import AsyncMock, MagicMock
-        from src.workflows.test_generation_agent import run_test_generation_with_agent
 
         # Create a minimal Java project for test generation
         project_path = tmp_path / "test-project"
@@ -674,6 +674,9 @@ public class Calculator {
             # Patch repositories to avoid database operations
             with patch("src.workflows.test_generation_agent.ArtifactRepository", return_value=mock_artifact_repo):
                 with patch("src.workflows.test_generation_agent.SessionRepository", return_value=mock_session_repo):
+
+                    # Import workflow function AFTER patch is applied (critical!)
+                    from src.workflows.test_generation_agent import run_test_generation_with_agent
 
                     # Execute workflow with real LLM (wrapped with counter)
                     session_id = uuid4()

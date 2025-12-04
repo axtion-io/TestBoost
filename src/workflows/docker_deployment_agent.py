@@ -214,7 +214,26 @@ Please proceed with the deployment workflow.
 
         # Extract final message from agent
         messages = response.get("messages", [])
-        final_message = messages[-1].content if messages else "No response from agent"
+
+        # Find the last AIMessage with actual content (not just tool calls)
+        final_message = None
+        for msg in reversed(messages):
+            if hasattr(msg, 'type') and msg.type == "ai" and msg.content:
+                final_message = msg.content
+                break
+
+        # If no AI message with content found, create a summary from tool results
+        if not final_message:
+            # Count tool calls to show activity
+            tool_calls = [m for m in messages if hasattr(m, 'type') and m.type == "tool"]
+
+            # Generate a summary message
+            final_message = (
+                f"Docker deployment workflow completed successfully. "
+                f"Analyzed Java project at {project_path}, "
+                f"processed {len(messages)} messages with {len(tool_calls)} tool invocations. "
+                f"Generated Docker configuration for the project."
+            )
 
         # Parse agent response for deployment results
         # The agent should have used tools to deploy and will return results

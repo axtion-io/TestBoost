@@ -45,11 +45,11 @@ class TestLLMConnectionSuccess:
             mock_llm.ainvoke.return_value = mock_response
             mock_get_llm.return_value = mock_llm
 
-            await check_llm_connection(model="anthropic/claude-3-sonnet-20240229")
+            await check_llm_connection(model="anthropic/claude-sonnet-4-5")
 
             # Verify get_llm called with custom model
             mock_get_llm.assert_called_once_with(
-                model="anthropic/claude-3-sonnet-20240229",
+                model="anthropic/claude-sonnet-4-5",
                 timeout=5
             )
 

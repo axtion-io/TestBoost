@@ -234,7 +234,7 @@ async def _invoke_agent_with_retry(
     input_data: dict[str, Any],
     session_id: UUID,
     artifact_repo: ArtifactRepository,
-) -> AIMessage:
+) -> dict[str, Any] | AIMessage:
     """
     Invoke agent with retry logic for transient failures (T059, A4 edge case).
 
@@ -253,7 +253,7 @@ async def _invoke_agent_with_retry(
         artifact_repo: Repository for storing tool calls
 
     Returns:
-        Agent response message
+        Agent response (dict for LangGraph final state or AIMessage for single LLM call)
 
     Raises:
         LLMError: If invocation fails after retries
@@ -262,8 +262,16 @@ async def _invoke_agent_with_retry(
         logger.debug("agent_invoke_start", session_id=str(session_id))
         response = await agent.ainvoke(input_data)
 
-        # Store tool calls if present (T061)
-        if hasattr(response, "tool_calls") and response.tool_calls:
+        # Handle both dict (LangGraph state) and AIMessage responses
+        if isinstance(response, dict):
+            # LangGraph returns final state as dict with 'messages' key
+            messages = response.get("messages", [])
+            if messages:
+                last_message = messages[-1]
+                if hasattr(last_message, "tool_calls") and last_message.tool_calls:
+                    await _store_tool_calls(session_id, artifact_repo, last_message.tool_calls)
+        elif hasattr(response, "tool_calls") and response.tool_calls:
+            # Direct AIMessage response
             await _store_tool_calls(session_id, artifact_repo, response.tool_calls)
 
         logger.debug("agent_invoke_success", session_id=str(session_id))
@@ -434,7 +442,18 @@ Please fix these compilation errors while maintaining test logic and coverage.""
         )
 
         # Extract corrected content from response
-        corrected = _extract_code_from_response(correction_response.content)
+        # Handle both dict (LangGraph state) and AIMessage responses
+        if isinstance(correction_response, dict):
+            messages = correction_response.get("messages", [])
+            if messages:
+                last_message = messages[-1]
+                response_content = last_message.content if hasattr(last_message, "content") else str(last_message)
+            else:
+                response_content = str(correction_response)
+        else:
+            response_content = correction_response.content
+
+        corrected = _extract_code_from_response(response_content)
         if corrected:
             current_content = corrected
 
@@ -474,11 +493,23 @@ def _check_test_syntax(test_content: str) -> dict[str, Any]:
     return {"success": len(errors) == 0, "errors": errors}
 
 
-def _extract_generated_tests(response: AIMessage) -> list[dict[str, Any]]:
+def _extract_generated_tests(response: dict[str, Any] | AIMessage) -> list[dict[str, Any]]:
     """Extract generated test files from agent response."""
     # Parse agent response for test file content
     # This is simplified - real implementation would parse structured output
-    content = response.content if isinstance(response.content, str) else str(response.content)
+
+    # Extract content from response (handle both dict and AIMessage)
+    if isinstance(response, dict):
+        # LangGraph returns final state as dict with 'messages' key
+        messages = response.get("messages", [])
+        if messages:
+            last_message = messages[-1]
+            content = last_message.content if hasattr(last_message, "content") else str(last_message)
+        else:
+            content = str(response)
+    else:
+        # Direct AIMessage response
+        content = response.content if isinstance(response.content, str) else str(response.content)
 
     tests = []
     # Look for Java code blocks
@@ -520,13 +551,26 @@ def _extract_code_from_response(content: str) -> str | None:
 async def _store_agent_reasoning(
     session_id: UUID,
     artifact_repo: ArtifactRepository,
-    response: AIMessage,
+    response: dict[str, Any] | AIMessage,
     agent_name: str,
 ) -> None:
     """Store agent reasoning as artifact (T061)."""
+    # Extract content from response (handle both dict and AIMessage)
+    if isinstance(response, dict):
+        # LangGraph returns final state as dict with 'messages' key
+        messages = response.get("messages", [])
+        if messages:
+            last_message = messages[-1]
+            content = last_message.content if hasattr(last_message, "content") else str(last_message)
+        else:
+            content = str(response)
+    else:
+        # Direct AIMessage response
+        content = response.content if isinstance(response.content, str) else str(response.content)
+
     reasoning_content = {
         "agent": agent_name,
-        "reasoning": response.content if isinstance(response.content, str) else str(response.content),
+        "reasoning": content,
         "timestamp": time.time(),
     }
 

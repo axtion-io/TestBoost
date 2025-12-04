@@ -91,3 +91,4 @@ docker/maven-cache/
 
 # Config backups
 config/agents/.backups/
+tests/fixtures/spring-petclinic/

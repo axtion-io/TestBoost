@@ -17,6 +17,13 @@ def _configure_structlog() -> None:
     if _configured:
         return
 
+    # Configure standard library logging
+    logging.basicConfig(
+        format="%(message)s",
+        stream=sys.stderr,
+        level=logging.DEBUG,
+    )
+
     # Determine if we're in development or production
     # In development, use colored console output
     # In production, use JSON output
@@ -49,9 +56,9 @@ def _configure_structlog() -> None:
 
     structlog.configure(
         processors=processors,
-        wrapper_class=structlog.make_filtering_bound_logger(logging.DEBUG),
+        wrapper_class=structlog.stdlib.BoundLogger,
         context_class=dict,
-        logger_factory=structlog.PrintLoggerFactory(),
+        logger_factory=structlog.stdlib.LoggerFactory(),
         cache_logger_on_first_use=True,
     )
 
@@ -111,4 +118,17 @@ def clear_context() -> None:
     structlog.contextvars.clear_contextvars()
 
 
-__all__ = ["get_logger", "bind_context", "clear_context"]
+def configure_logging() -> None:
+    """
+    Configure structured logging for the application.
+
+    This function ensures structlog is properly configured.
+    Safe to call multiple times (idempotent).
+
+    Example:
+        >>> configure_logging()  # Called at startup
+    """
+    _configure_structlog()
+
+
+__all__ = ["get_logger", "bind_context", "clear_context", "configure_logging"]

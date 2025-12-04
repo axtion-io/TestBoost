@@ -107,37 +107,7 @@ jobs:
         mypy src/ --ignore-missing-imports
       continue-on-error: true
 
-  e2e-manual:
-    name: E2E Tests (Manual Trigger Only)
-    runs-on: ubuntu-latest
-    if: github.event_name == 'workflow_dispatch'
-
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-
-    - name: Set up Python 3.12
-      uses: actions/setup-python@v5
-      with:
-        python-version: '3.12'
-
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install poetry
-        poetry install --no-interaction
-
-    - name: Run E2E Tests with Real LLM (requires secrets)
-      env:
-        GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
-        LANGSMITH_API_KEY: ${{ secrets.LANGSMITH_API_KEY }}
-        LANGSMITH_TRACING: true
-      run: |
-        poetry run pytest tests/e2e/test_real_llm_invocation.py -v --tb=short
-      continue-on-error: true
-
-    - name: Display E2E Test Warning
-      if: failure()
-      run: |
-        echo "⚠️ E2E tests require LLM API keys configured as GitHub secrets"
-        echo "Configure GOOGLE_API_KEY and LANGSMITH_API_KEY in repository settings"
+  # E2E Tests with Real LLM are NOT run in CI
+  # Reason: Requires paid API keys (Google Gemini, LangSmith)
+  # These tests are run manually during development with local API keys
+  # See .github/README.md for details on running E2E tests locally

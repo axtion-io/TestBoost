@@ -47,15 +47,12 @@ Matrice Python: 3.11, 3.12
 
 ## Configuration des Secrets
 
-Pour exécuter les tests E2E avec LLM réel:
+**⚠️ Note Importante**: Les tests E2E avec LLM réel ne sont **PAS exécutés dans GitHub Actions** pour les raisons suivantes:
+- Coûts API (Google Gemini, LangSmith)
+- Sécurité (pas de clés API stockées dans GitHub)
+- Fiabilité (dépendance externe aux services LLM)
 
-1. Aller dans **Settings** → **Secrets and variables** → **Actions**
-2. Ajouter les secrets suivants:
-
-```bash
-GOOGLE_API_KEY=your_google_api_key_here
-LANGSMITH_API_KEY=your_langsmith_api_key_here
-```
+**Les tests E2E sont exécutés manuellement en local** par les développeurs avant les merges importants.
 
 ## Tests Exclus du CI Automatique
 

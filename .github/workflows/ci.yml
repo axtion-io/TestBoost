@@ -39,11 +39,6 @@ jobs:
         pip install poetry
         poetry install --no-interaction
 
-    - name: Run Unit Tests
-      run: |
-        poetry run pytest tests/unit/ -v --tb=short --cov=src --cov-report=xml
-      continue-on-error: false
-
     - name: Run Integration Tests (no LLM required)
       run: |
         poetry run pytest tests/integration/test_llm_connectivity.py -v --tb=short -k "not test_llm_connection_success"
@@ -70,14 +65,6 @@ jobs:
       run: |
         poetry run pytest tests/e2e/test_edge_cases.py -v --tb=short
       continue-on-error: false
-
-    - name: Upload coverage to Codecov
-      uses: codecov/codecov-action@v4
-      with:
-        file: ./coverage.xml
-        flags: unittests
-        name: codecov-umbrella
-      continue-on-error: true
 
   lint:
     name: Code Quality

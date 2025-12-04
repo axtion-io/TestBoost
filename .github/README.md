@@ -17,16 +17,13 @@ Ce dossier contient les workflows GitHub Actions pour l'intégration continue (C
 Matrice Python: 3.11, 3.12
 
 **Tests exécutés:**
-- ✅ **Unit Tests** - Tests unitaires avec coverage
 - ✅ **Integration Tests** - Tests d'intégration (sans LLM réel)
 - ✅ **Regression Tests** (T097a) - Validation compatibilité backward
 - ✅ **Security Audit** (T101a) - Vérification absence de clés API hardcodées
 - ✅ **Documentation Tests** (T103b-e) - Validation documentation complète
 - ✅ **Edge Case Tests** (T105b-f) - Tests cas limites (rate limits, retry, etc.)
 
-**Coverage:**
-- Rapports de couverture uploadés vers Codecov
-- Coverage badge disponible dans README.md
+**Note:** Les tests unitaires seront ajoutés dans une future itération.
 
 #### 2. `lint` - Qualité de Code
 - **Ruff** - Linter Python moderne (formatage, style, erreurs)
@@ -68,10 +65,7 @@ Pour reproduire les tests CI localement:
 
 ```bash
 # Tous les tests (sans E2E LLM)
-poetry run pytest tests/unit/ tests/integration/ tests/regression/ tests/security/ tests/e2e/test_edge_cases.py -v
-
-# Avec coverage
-poetry run pytest tests/unit/ --cov=src --cov-report=html
+poetry run pytest tests/integration/ tests/regression/ tests/security/ tests/e2e/test_edge_cases.py -v
 
 # Tests E2E avec LLM (nécessite GOOGLE_API_KEY)
 export GOOGLE_API_KEY=your_key
@@ -80,11 +74,10 @@ poetry run pytest tests/e2e/test_real_llm_invocation.py -v
 
 ## Badges de Statut
 
-Ajoutez ces badges dans votre README.md:
+Ajoutez ce badge dans votre README.md:
 
 ```markdown
 ![CI Status](https://github.com/YOUR_ORG/TestBoost/workflows/CI%20-%20TestBoost%20Tests/badge.svg)
-![Coverage](https://codecov.io/gh/YOUR_ORG/TestBoost/branch/main/graph/badge.svg)
 ```
 
 ## Maintenance
@@ -106,13 +99,12 @@ Le cache pip est automatiquement géré via `actions/cache@v4` basé sur `pyproj
 - Vérifier les variables d'environnement manquantes
 - Consulter les logs détaillés dans l'onglet Actions
 
-**Problème**: Coverage non uploadé vers Codecov
-- Vérifier que le token Codecov est configuré (secret `CODECOV_TOKEN`)
-- Le job continue même si l'upload échoue (`continue-on-error: true`)
+**Problème**: Tests non trouvés (collected 0 items)
+- Vérifier que le dossier de tests contient des fichiers test_*.py
+- Les tests unitaires seront ajoutés dans une future itération
 
 ## Références
 
 - [GitHub Actions Documentation](https://docs.github.com/en/actions)
 - [Poetry Documentation](https://python-poetry.org/docs/)
 - [Pytest Documentation](https://docs.pytest.org/)
-- [Codecov Documentation](https://docs.codecov.com/)

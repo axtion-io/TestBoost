@@ -508,6 +508,301 @@ ERROR | agent_config_invalid | error=Field 'llm.model' is required
 
 ---
 
+## Migration Guide: From Old Workflows to Agent-Based Workflows
+
+**Audience**: Existing TestBoost users upgrading from 001-testboost-core
+
+### Overview
+
+The 002-deepagents-integration feature introduces **agent-powered workflows** alongside existing deterministic workflows. This migration is **100% backward compatible** - all existing code, CLI commands, and API endpoints continue to work unchanged.
+
+### What's Changing?
+
+| Aspect | Old Approach (001) | New Approach (002) | Breaking Changes? |
+|--------|-------------------|-------------------|-------------------|
+| **Execution** | Deterministic scripts | LLM agent reasoning | **NO** - Old functions still callable |
+| **Decision Making** | Hardcoded rules | Dynamic LLM analysis | **NO** - Opt-in via `--mode` flag |
+| **Configuration** | Python code | YAML + Markdown prompts | **NO** - New configs added, old ignored |
+| **Dependencies** | Maven/Git tools only | + DeepAgents 0.2.8 | **NO** - Additive only |
+| **API Keys** | None required | LLM provider required | **NO** - Validation at startup only |
+
+### Migration Path: Choose Your Approach
+
+#### Option 1: Gradual Migration (Recommended)
+
+**Who**: Teams wanting to test agents on non-critical workflows first
+
+**Steps**:
+1. **Add LLM API key** to `.env` (keeps old workflows unchanged)
+2. **Test agent workflows** on sample projects (not production)
+3. **Compare results** between old and new approaches
+4. **Switch production workflows** one at a time
+
+**Example**:
+```bash
+# Week 1: Test agents on sample project
+.venv\Scripts\python -m src.cli.main maintenance maven \
+  --project-path "C:\test\spring-petclinic" \
+  --mode autonomous  # NEW: Agent-powered
+
+# Week 2: Run old workflow on same project for comparison
+.venv\Scripts\python -m src.cli.main maintenance maven \
+  --project-path "C:\test\spring-petclinic" \
+  --mode deterministic  # OLD: Rule-based (still works!)
+
+# Week 3+: Gradually switch production workflows
+```
+
+#### Option 2: Immediate Switch (All-In)
+
+**Who**: New deployments or teams confident in LLM agents
+
+**Steps**:
+1. **Set `GOOGLE_API_KEY`** in `.env`
+2. **Update CLI scripts** to use `--mode autonomous` by default
+3. **Monitor LangSmith traces** for first 48 hours
+4. **Rollback** to old workflows if issues (change `--mode` flag)
+
+### Step-by-Step Migration Examples
+
+#### Example 1: Maven Maintenance Workflow
+
+**Before (Old Deterministic Approach)**:
+```python
+# src/workflows/maven_maintenance.py - DEPRECATED but still works
+from src.lib.maven import analyze_dependencies, update_pom
+
+def run_maven_maintenance(project_path: str) -> dict:
+    """Old deterministic workflow with hardcoded rules."""
+    deps = analyze_dependencies(project_path)
+
+    # Hardcoded rules
+    updates = [
+        dep for dep in deps
+        if dep.has_security_vuln() or dep.is_minor_update()
+    ]
+
+    update_pom(project_path, updates)
+    return {"updated_count": len(updates)}
+```
+
+**After (New Agent-Powered Approach)**:
+```python
+# src/workflows/maven_maintenance_agent.py - NEW
+from src.agents.adapter import create_deep_agent
+from src.mcp_servers.registry import get_mcp_tool_registry
+
+async def run_maven_maintenance_with_agent(project_path: str) -> dict:
+    """New agent workflow with LLM reasoning."""
+    # Agent decides which deps to update based on:
+    # - CVE severity scores
+    # - Breaking change analysis
+    # - Project-specific context
+    # - User's risk tolerance
+
+    agent = await create_deep_agent(
+        config_path="config/agents/maven_maintenance_agent.yaml",
+        tools=get_mcp_tool_registry()["maven-maintenance"]
+    )
+
+    result = await agent.ainvoke({
+        "project_path": project_path,
+        "prompt": load_prompt("maven/dependency_update.md")
+    })
+
+    return result
+```
+
+**CLI Comparison**:
+```bash
+# OLD WAY (still works, deprecated warning logged)
+.venv\Scripts\python -m src.cli.main maintenance maven \
+  --project-path "C:\projects\my-app"
+  # Uses: src.workflows.maven_maintenance.run_maven_maintenance()
+
+# NEW WAY (agent-powered)
+.venv\Scripts\python -m src.cli.main maintenance maven \
+  --project-path "C:\projects\my-app" \
+  --mode autonomous
+  # Uses: src.workflows.maven_maintenance_agent.run_maven_maintenance_with_agent()
+```
+
+#### Example 2: API Endpoint Migration
+
+**Before**:
+```python
+# src/api/routes/maintenance.py - OLD
+@router.post("/maven")
+async def run_maven_maintenance(request: MaintenanceRequest):
+    from src.workflows.maven_maintenance import run_maven_maintenance
+    result = run_maven_maintenance(request.project_path)
+    return {"status": "completed", "updates": result["updated_count"]}
+```
+
+**After (Backward Compatible)**:
+```python
+# src/api/routes/maintenance.py - NEW (supports both!)
+@router.post("/maven")
+async def run_maven_maintenance(request: MaintenanceRequest):
+    # Check if agent mode requested
+    if request.mode == "autonomous":
+        from src.workflows.maven_maintenance_agent import run_maven_maintenance_with_agent
+        result = await run_maven_maintenance_with_agent(request.project_path)
+    else:
+        # Old workflow still works!
+        from src.workflows.maven_maintenance import run_maven_maintenance
+        result = run_maven_maintenance(request.project_path)
+
+    return {"status": "completed", "result": result}
+```
+
+### Configuration Migration
+
+**No migration needed!** Old configs coexist with new agent configs.
+
+**Old Configuration** (still used by deterministic workflows):
+```python
+# src/config.py - Unchanged
+MAVEN_UPDATE_POLICY = "security-first"
+MAX_DEPENDENCY_AGE_DAYS = 180
+```
+
+**New Configuration** (only used by agent workflows):
+```yaml
+# config/agents/maven_maintenance_agent.yaml - NEW file, doesn't affect old code
+llm:
+  provider: "google-genai"
+  model: "gemini-2.5-flash"
+  temperature: 0.3
+```
+
+### Testing Your Migration
+
+**Step 1: Verify Old Workflows Still Work**
+
+Create regression tests to ensure backward compatibility:
+
+```python
+# tests/regression/test_old_workflows.py
+import pytest
+from src.workflows.maven_maintenance import run_maven_maintenance
+
+def test_old_maven_workflow_still_callable():
+    """Ensure old workflow function still exists and works."""
+    result = run_maven_maintenance("tests/fixtures/spring-petclinic")
+    assert result is not None
+    assert "updated_count" in result
+
+def test_old_workflow_logs_deprecation_warning(caplog):
+    """Ensure old workflows log deprecation warnings."""
+    run_maven_maintenance("tests/fixtures/spring-petclinic")
+    assert "DEPRECATED" in caplog.text
+    assert "run_maven_maintenance_with_agent" in caplog.text
+```
+
+**Step 2: Compare Results**
+
+Run both workflows on the same project:
+
+```bash
+# Run old workflow, save output
+.venv\Scripts\python -m src.cli.main maintenance maven \
+  --project-path "C:\test\spring-petclinic" \
+  --mode deterministic \
+  --output old_result.json
+
+# Run new workflow, save output
+.venv\Scripts\python -m src.cli.main maintenance maven \
+  --project-path "C:\test\spring-petclinic" \
+  --mode autonomous \
+  --output new_result.json
+
+# Compare results
+diff old_result.json new_result.json
+```
+
+**Expected Differences**:
+- **Agent reasoning**: New workflow includes LLM analysis text
+- **Update count**: May differ (agents consider more factors)
+- **Execution time**: Agents slower (LLM API calls) but more thorough
+
+### Rollback Plan
+
+If agent workflows cause issues:
+
+**Immediate Rollback** (reverts to old workflows):
+```bash
+# Option 1: Remove LLM API key (forces old workflow usage)
+# In .env file:
+# GOOGLE_API_KEY=  # Remove or comment out
+
+# Option 2: Change CLI default mode
+# In src/cli/commands/maintenance.py:
+# default_mode = "deterministic"  # Instead of "autonomous"
+```
+
+**Partial Rollback** (use agents for some workflows only):
+```yaml
+# config/feature_flags.yaml
+workflows:
+  maven_maintenance:
+    use_agent: false  # Rollback Maven to old workflow
+  test_generation:
+    use_agent: true   # Keep test gen on agent
+  docker_deployment:
+    use_agent: true   # Keep deployment on agent
+```
+
+### Troubleshooting Migration Issues
+
+**Issue**: "Old workflow no longer works after upgrade"
+
+**Solution**: This should never happen! If it does:
+1. Check Python imports: Ensure `from src.workflows.maven_maintenance import run_maven_maintenance` still works
+2. Verify function signature unchanged: Compare with 001-testboost-core version
+3. Report bug: This violates backward compatibility guarantee
+
+**Issue**: "Agent workflow too slow for CI/CD pipeline"
+
+**Solution**:
+1. Use old deterministic workflow for CI: `--mode deterministic`
+2. Or use faster LLM: Switch from Claude to Gemini Flash in YAML config
+3. Or cache LLM responses: Enable Anthropic prompt caching
+
+**Issue**: "Unexpected LLM costs"
+
+**Solution**:
+1. Monitor costs first week: Check LangSmith dashboard daily
+2. Set budget alerts: Configure in Google Cloud Console / Anthropic dashboard
+3. Use free tier: Gemini Flash has generous free tier (1500 requests/day)
+4. Switch to deterministic: Old workflows have zero LLM costs
+
+### When to Use Which Workflow?
+
+| Scenario | Recommended Workflow | Reasoning |
+|----------|---------------------|-----------|
+| **CI/CD pipelines** | Deterministic (old) | Faster, predictable, no API costs |
+| **Production critical** | Deterministic (old) | No external LLM dependency |
+| **Complex projects** | Agent-powered (new) | Better analysis, context-aware decisions |
+| **Security-focused** | Agent-powered (new) | Understands CVE severity, risk assessment |
+| **Large codebases** | Agent-powered (new) | Handles complexity better than rules |
+| **Offline environments** | Deterministic (old) | No internet required |
+
+### Summary: Migration Checklist
+
+- [ ] **Add LLM API key** to `.env` file
+- [ ] **Test agent workflows** on non-production projects
+- [ ] **Compare results** between old and new approaches
+- [ ] **Update documentation** (internal wikis, runbooks)
+- [ ] **Configure monitoring** (LangSmith traces, cost alerts)
+- [ ] **Train team** on new YAML/Markdown config approach
+- [ ] **Plan rollback** strategy if issues arise
+- [ ] **Monitor first week** closely for unexpected behavior
+- [ ] **Gradually migrate** production workflows one at a time
+- [ ] **Deprecate old workflows** after 6 months (optional)
+
+---
+
 ## Next Steps
 
 After completing integration:

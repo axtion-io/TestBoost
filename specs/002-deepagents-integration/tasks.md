@@ -350,9 +350,9 @@ pytest tests/integration/test_agent_config_loading.py -v
 
 **Purpose**: Improvements that affect multiple user stories and final validation
 
-- [ ] T094 [P] Update README.md with agent requirements section (Python 3.11+, DeepAgents 0.2.7, LLM API keys)
-- [ ] T094a [P] Verify README.md exists at repo root before updating
-- [ ] T095 [P] Add troubleshooting section to README.md for LLM connection errors and edge cases
+- [X] T094 [P] Update README.md with agent requirements section (Python 3.11+, DeepAgents 0.2.7, LLM API keys)
+- [X] T094a [P] Verify README.md exists at repo root before updating
+- [X] T095 [P] Add troubleshooting section to README.md for LLM connection errors and edge cases
 - [ ] T096 [P] Update 001-testboost-core/checklists/e2e-acceptance.md to mark unblocked checks as passing
 - [ ] T097 Run full E2E test suite from 001-testboost-core checklist to validate all 9 unblocked checks
 - [ ] T097a [P] Regression test suite: Create tests/regression/test_old_workflows.py with test_old_maven_maintenance_still_works(), test_old_test_generation_still_works(), test_old_docker_deployment_still_works() - verify old workflow functions callable, execute successfully, log deprecation warnings. Validates backward compatibility (per plan.md: "API/CLI interfaces stay the same initially")
@@ -360,7 +360,7 @@ pytest tests/integration/test_agent_config_loading.py -v
 - [ ] T097c [P] API interface regression: Test /api/maintenance/maven, /api/test/generate, /api/deploy/docker endpoints still accept same request payloads and return compatible responses (no breaking changes)
 - [ ] T098 [P] Performance testing: Measure all 3 workflows with metrics: (1) Total duration (target <2min Maven, <3min test gen, <90s deployment), (2) LLM call latency (p50, p95, p99), (3) Token processing rate (tokens/sec), (4) Memory usage delta (before/after workflow). Baseline: Run each workflow 10 times, compute averages, store in tests/performance/baseline_metrics.json. Validate: New agent workflows within 20% of baseline (SC-010)
 - [ ] T099 [P] Cost analysis: Log LLM token usage and estimate costs for Gemini/Claude/GPT-4o across all workflows (rates: Gemini Flash $0.075/1M input + $0.30/1M output, Claude Sonnet $3/1M input + $15/1M output, GPT-4o $2.50/1M input + $10/1M output)
-- [ ] T100 Add migration guide to quickstart.md for transitioning from old workflows to agent-based workflows
+- [X] T100 Add migration guide to quickstart.md for transitioning from old workflows to agent-based workflows
 - [ ] T101 [P] Code review: Ensure no direct system calls (all via MCP tools per Constitution Principle 2)
 - [ ] T101a [P] Security audit: Grep logs/testboost.log and test output for API key patterns (regex: 'sk-[A-Za-z0-9]{32,}', 'AIza[A-Za-z0-9]{35}'), verify zero matches (Constitution Principle 7)
 - [ ] T101b [NOTE] Additional security testing deferred: Comprehensive security audit (OWASP Top 10, prompt injection, LLM jailbreak attempts, MCP tool authorization) is OUT OF SCOPE for this feature. Future work: Create dedicated security testing feature specification with threat modeling, penetration testing scenarios, and security checklist.
@@ -376,7 +376,7 @@ pytest tests/integration/test_agent_config_loading.py -v
 - [ ] T103c [P] Add test_quickstart_scenarios_complete() to test_documentation.py - assert quickstart.md contains all 4 scenarios (Developer, CLI User, Administrator, Tester), verify each scenario has Given-When-Then format
 - [ ] T103d [P] Add test_migration_guide_exists() to test_documentation.py - assert quickstart.md has migration guide section explaining transition from old workflows to agent-based workflows
 - [ ] T103e [P] Add test_prompt_templates_documented() to test_documentation.py - verify config/prompts/maven/dependency_update.md has comment header explaining purpose, usage, and modification guidelines
-- [ ] T104 [P] Document edge case handling in README.md (A1-A5: rate limits, missing tools, retry with backoff, JSON validation, malformed tool calls)
+- [X] T104 [P] Document edge case handling in README.md (A1-A5: rate limits, missing tools, retry with backoff, JSON validation, malformed tool calls)
 - [ ] T105 Validate all 3 workflows respect "Zéro Complaisance" (fail-fast, no silent degradation, real LLM calls)
 - [ ] T105a Test Maven workflow with large project (>170k tokens) to verify DeepAgents automatic summarization handles context window per spec.md Edge Case
 - [ ] T105b [P] Edge case test suite: Create tests/e2e/test_edge_cases.py with test_rate_limit_error_handling() - mock 429 response, assert error message format matches spec (A1)

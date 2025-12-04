@@ -1,0 +1,143 @@
+name: CI - TestBoost Tests
+
+on:
+  push:
+    branches: [ main, develop, '002-deepagents-integration' ]
+  pull_request:
+    branches: [ main, develop ]
+  workflow_dispatch:
+
+jobs:
+  test:
+    name: Run Tests
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        python-version: ['3.11', '3.12']
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ matrix.python-version }}
+
+    - name: Cache pip dependencies
+      uses: actions/cache@v4
+      with:
+        path: ~/.cache/pip
+        key: ${{ runner.os }}-pip-${{ hashFiles('**/pyproject.toml') }}
+        restore-keys: |
+          ${{ runner.os }}-pip-
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install poetry
+        poetry install --no-interaction
+
+    - name: Run Unit Tests
+      run: |
+        poetry run pytest tests/unit/ -v --tb=short --cov=src --cov-report=xml
+      continue-on-error: false
+
+    - name: Run Integration Tests (no LLM required)
+      run: |
+        poetry run pytest tests/integration/test_llm_connectivity.py -v --tb=short -k "not test_llm_connection_success"
+        poetry run pytest tests/integration/test_agent_config_loading.py -v --tb=short
+        poetry run pytest tests/integration/test_agent_config_validation.py -v --tb=short
+      continue-on-error: false
+
+    - name: Run Regression Tests (T097a)
+      run: |
+        poetry run pytest tests/regression/test_old_workflows.py -v --tb=short
+      continue-on-error: false
+
+    - name: Run Security Audit Tests (T101a)
+      run: |
+        poetry run pytest tests/security/test_api_key_audit.py -v --tb=short
+      continue-on-error: false
+
+    - name: Run Documentation Tests (T103b-e)
+      run: |
+        poetry run pytest tests/integration/test_documentation.py -v --tb=short
+      continue-on-error: false
+
+    - name: Run Edge Case Tests (T105b-f)
+      run: |
+        poetry run pytest tests/e2e/test_edge_cases.py -v --tb=short
+      continue-on-error: false
+
+    - name: Upload coverage to Codecov
+      uses: codecov/codecov-action@v4
+      with:
+        file: ./coverage.xml
+        flags: unittests
+        name: codecov-umbrella
+      continue-on-error: true
+
+  lint:
+    name: Code Quality
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Python 3.12
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install ruff mypy
+
+    - name: Run Ruff linter
+      run: |
+        ruff check src/ tests/
+      continue-on-error: true
+
+    - name: Run type checking with mypy
+      run: |
+        mypy src/ --ignore-missing-imports
+      continue-on-error: true
+
+  e2e-manual:
+    name: E2E Tests (Manual Trigger Only)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch'
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Python 3.12
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install poetry
+        poetry install --no-interaction
+
+    - name: Run E2E Tests with Real LLM (requires secrets)
+      env:
+        GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
+        LANGSMITH_API_KEY: ${{ secrets.LANGSMITH_API_KEY }}
+        LANGSMITH_TRACING: true
+      run: |
+        poetry run pytest tests/e2e/test_real_llm_invocation.py -v --tb=short
+      continue-on-error: true
+
+    - name: Display E2E Test Warning
+      if: failure()
+      run: |
+        echo "⚠️ E2E tests require LLM API keys configured as GitHub secrets"
+        echo "Configure GOOGLE_API_KEY and LANGSMITH_API_KEY in repository settings"

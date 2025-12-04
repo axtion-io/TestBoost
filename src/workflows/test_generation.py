@@ -1,9 +1,22 @@
 """
 Test Generation Workflow using LangGraph.
 
+DEPRECATED: This workflow is deprecated in favor of test_generation_agent.py (T062).
+The new workflow uses DeepAgents for real LLM agent integration with tool calls.
+
 Implements a full workflow for analyzing Java projects, generating tests,
 running mutation testing, and generating killer tests if needed.
 """
+
+import warnings
+
+warnings.warn(
+    "test_generation.py workflow is deprecated. "
+    "Use test_generation_agent.py with DeepAgents LLM integration instead. "
+    "See 002-deepagents-integration spec for details.",
+    DeprecationWarning,
+    stacklevel=2,
+)
 
 import json
 from datetime import datetime

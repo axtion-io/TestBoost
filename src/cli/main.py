@@ -1,12 +1,16 @@
 """Typer CLI application for TestBoost."""
 
+import asyncio
+import sys
 import typer
 
 from src.cli.commands.audit import app as audit_app
+from src.cli.commands.config import app as config_app
 from src.cli.commands.deploy import app as deploy_app
 from src.cli.commands.maintenance import app as maintenance_app
 from src.cli.commands.tests import app as tests_app
 from src.lib.logging import get_logger
+from src.lib.startup_checks import run_all_startup_checks, StartupCheckError
 
 logger = get_logger(__name__)
 
@@ -36,8 +40,26 @@ def main(
         help="Show version and exit.",
     ),
 ) -> None:
-    """TestBoost CLI - AI-powered Java test generation and maintenance."""
-    pass
+    """
+    TestBoost CLI - AI-powered Java test generation and maintenance.
+
+    Implements T009: Check LLM connectivity before accepting commands.
+    Constitutional principle: "Zéro Complaisance" - No workflows execute without LLM.
+    """
+    # T009: Run startup checks before any command execution
+    # Skip if only version flag is provided
+    if version:
+        return
+
+    try:
+        # Run startup checks synchronously in CLI context
+        asyncio.run(run_all_startup_checks())
+        logger.info("cli_startup_checks_passed")
+    except StartupCheckError as e:
+        logger.error("cli_startup_checks_failed", error=str(e))
+        typer.echo(f"❌ Startup checks failed: {e}", err=True)
+        # Application MUST fail if startup checks fail (FR-010)
+        raise typer.Exit(code=1)
 
 
 @app.command()
@@ -194,6 +216,7 @@ app.add_typer(maintenance_app, name="maintenance")
 app.add_typer(audit_app, name="audit")
 app.add_typer(tests_app, name="tests")
 app.add_typer(deploy_app, name="deploy")
+app.add_typer(config_app, name="config")
 
 if __name__ == "__main__":
     app()

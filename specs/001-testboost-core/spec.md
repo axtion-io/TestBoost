@@ -270,7 +270,7 @@ En tant qu'utilisateur, je veux choisir entre un mode interactif (avec confirmat
 
 ### Environnement d'exécution TestBoost
 
-- Python 3.10+ (requis par LangGraph 1.0)
+- Python 3.11+ (requis par DeepAgents 0.2.7)
 - Poetry (gestion des dépendances avec virtualenv)
 - Docker & Docker Compose
 - Git

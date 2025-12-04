@@ -1,251 +1,32 @@
 # Test Generation Agent Configuration
-# DeepAgents YAML configuration for automated test generation
+# Simplified DeepAgents YAML configuration matching spec.md schema
 
 name: test_gen_agent
-version: "1.0.0"
-description: Agent for automated Java test generation with mutation testing validation
+description: Java test generation specialist with mutation testing validation
 
-# Agent identity and behavior
 identity:
-  role: test_engineer
-  goal: >
-    Generate comprehensive, high-quality tests for Java applications that achieve
-    high mutation scores while following project conventions and best practices.
-  backstory: >
-    You are an expert test engineer specializing in Java testing strategies.
-    You understand the importance of not just code coverage, but mutation score
-    as a true measure of test effectiveness. You are skilled at writing tests
-    that truly verify behavior, not just exercise code paths.
+  role: Test Generation Specialist
+  persona: Meticulous, test-quality-focused, mutation-score-driven
 
-# LLM configuration
 llm:
+  provider: anthropic
   model: claude-sonnet-4-5-20250929
-  temperature: 0.2
+  temperature: 0.3
   max_tokens: 8192
 
-# Tools available to this agent
 tools:
-  # Test Generator tools
-  - name: analyze-project-context
-    server: test-generator
-    description: Analyze Java project structure, frameworks, and testing patterns
+  mcp_servers:
+    - test-generator
+    - maven-maintenance
+    - pit-recommendations
 
-  - name: detect-test-conventions
-    server: test-generator
-    description: Detect existing test conventions in the project
+prompts:
+  system: config/prompts/testing/unit_test_strategy.md
 
-  - name: generate-adaptive-tests
-    server: test-generator
-    description: Generate unit tests adapted to project conventions
-
-  - name: generate-integration-tests
-    server: test-generator
-    description: Generate integration tests for services and repositories
-
-  - name: generate-snapshot-tests
-    server: test-generator
-    description: Generate snapshot tests for API responses
-
-  - name: run-mutation-testing
-    server: test-generator
-    description: Run PIT mutation testing to measure test effectiveness
-
-  - name: analyze-mutants
-    server: test-generator
-    description: Analyze mutation results for improvement opportunities
-
-  - name: generate-killer-tests
-    server: test-generator
-    description: Generate tests to kill surviving mutants
-
-  # PIT Recommendations tools
-  - name: analyze-hard-mutants
-    server: pit-recommendations
-    description: Identify patterns in hard-to-kill mutants
-
-  - name: recommend-test-improvements
-    server: pit-recommendations
-    description: Generate test improvement recommendations
-
-  - name: prioritize-test-efforts
-    server: pit-recommendations
-    description: Prioritize test improvement efforts
-
-  # Maven tools
-  - name: compile-tests
-    server: maven-maintenance
-    description: Compile test sources
-
-  - name: run-tests
-    server: maven-maintenance
-    description: Execute project tests
-
-# MCP server connections
-mcp_servers:
-  - name: test-generator
-    command: python
-    args:
-      - -m
-      - src.mcp_servers.test_generator
-    env:
-      PYTHONPATH: "${workspaceFolder}"
-
-  - name: pit-recommendations
-    command: python
-    args:
-      - -m
-      - src.mcp_servers.pit_recommendations
-    env:
-      PYTHONPATH: "${workspaceFolder}"
-
-  - name: maven-maintenance
-    command: python
-    args:
-      - -m
-      - src.mcp_servers.maven_maintenance
-    env:
-      PYTHONPATH: "${workspaceFolder}"
-
-# Workflow configuration
 workflow:
-  type: langgraph
-  graph: src.workflows.test_generation.test_generation_graph
+  graph_name: test_generation
+  node_name: analyze_project_context
 
-  # Workflow steps
-  steps:
-    - name: analyze_project_structure
-      description: Analyze project structure and context
-      timeout: 60s
-
-    - name: detect_conventions
-      description: Detect existing test conventions
-      timeout: 60s
-
-    - name: classify_classes
-      description: Classify classes by type
-      timeout: 30s
-
-    - name: generate_unit_tests
-      description: Generate unit tests
-      timeout: 600s
-
-    - name: compile_and_fix_unit
-      description: Compile and fix unit tests
-      timeout: 300s
-      retry: 3
-
-    - name: generate_integration_tests
-      description: Generate integration tests
-      timeout: 600s
-
-    - name: compile_and_fix_integration
-      description: Compile integration tests
-      timeout: 300s
-
-    - name: generate_snapshot_tests
-      description: Generate snapshot tests
-      timeout: 300s
-
-    - name: compile_and_fix_snapshot
-      description: Compile snapshot tests
-      timeout: 300s
-
-    - name: deploy_docker
-      description: Deploy application to Docker
-      timeout: 300s
-
-    - name: check_app_health
-      description: Verify application health
-      timeout: 60s
-
-    - name: generate_e2e_tests
-      description: Generate E2E tests
-      timeout: 600s
-
-    - name: run_mutation_testing
-      description: Run PIT mutation testing
-      timeout: 1800s
-
-    - name: generate_killer_tests
-      description: Generate killer tests if needed
-      timeout: 600s
-      conditional: mutation_score < target
-
-    - name: finalize
-      description: Generate quality report
-
-# Error handling
 error_handling:
-  retry:
-    max_attempts: 3
-    backoff: exponential
-    initial_delay: 2s
-
-  on_failure:
-    - action: log
-      level: error
-      message: "Test generation failed: {error}"
-    - action: notify
-      message: "Test generation failed for {project_name}: {error}"
-
-# Quality thresholds
-quality:
-  mutation_score_target: 80
-  minimum_acceptable_score: 60
-  coverage_target: 80
-
-# Notifications
-notifications:
-  on_complete:
-    channels:
-      - type: log
-        level: info
-    message: >
-      Test generation complete for {project_name}:
-      Mutation score {mutation_score}%,
-      {unit_tests_count} unit tests,
-      {integration_tests_count} integration tests
-
-  on_low_score:
-    channels:
-      - type: log
-        level: warning
-    condition: mutation_score < 60
-    message: >
-      Low mutation score for {project_name}: {mutation_score}%
-      Consider reviewing generated tests for quality.
-
-# Resource limits
-resources:
-  max_memory: 4Gi
-  max_cpu: 4
-  timeout: 60m
-
-# Security settings
-security:
-  allow_network: true
-  allow_filesystem: true
-  sandbox: false
-
-  allowed_paths:
-    - "${project_path}"
-    - "${workspace}/target"
-    - "${workspace}/src/test"
-
-  blocked_commands:
-    - rm -rf /
-    - sudo
-
-# Metrics and observability
-observability:
-  metrics:
-    enabled: true
-    prefix: testboost_test_generation
-
-  tracing:
-    enabled: true
-    service_name: test-generation-agent
-
-  logging:
-    level: INFO
-    format: json
+  max_retries: 3
+  timeout_seconds: 180

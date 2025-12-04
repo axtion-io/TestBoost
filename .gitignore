@@ -10,9 +10,9 @@ dist/
 downloads/
 eggs/
 .eggs/
-/lib/
-/lib64/
+lib/
 !src/lib/
+lib64/
 parts/
 sdist/
 var/
@@ -89,3 +89,7 @@ test-projects/
 
 # Docker build artifacts
 docker/maven-cache/
+
+# Config backups
+config/agents/.backups/
+tests/fixtures/spring-petclinic/

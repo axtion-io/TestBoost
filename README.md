@@ -51,6 +51,26 @@ TestBoost automates Java/Spring Boot project maintenance through AI-powered work
 - Maven 3.6+ (for Java project analysis)
 - Git
 
+### Agent Requirements
+
+**Required for AI-Powered Workflows:**
+
+TestBoost uses real LLM agents (not mocks) for all workflows. You must configure at least one LLM provider:
+
+- **Google Gemini** (recommended): `GOOGLE_API_KEY` in `.env`
+- **Anthropic Claude**: `ANTHROPIC_API_KEY` in `.env`
+- **OpenAI GPT**: `OPENAI_API_KEY` in `.env`
+
+**DeepAgents Integration:**
+- DeepAgents 0.2.8 (installed via Poetry)
+- LangGraph 1.0+ for agent workflows
+- LangChain Core 1.1.7+ for tool integration
+
+**Startup Validation:**
+- Application validates LLM connectivity on startup
+- Fails within 5 seconds if LLM provider not accessible
+- No workflows execute without real LLM invocation (Zero Complaisance principle)
+
 ### Installation
 
 1. **Clone the repository**
@@ -91,6 +111,27 @@ uvicorn src.api.main:app --reload
 Access the API documentation at http://localhost:8000/docs
 
 ### CLI Usage
+
+**Configuration Management:**
+```bash
+# Validate agent configurations
+python -m src.cli.main config validate
+
+# Validate specific agent
+python -m src.cli.main config validate --agent maven_maintenance_agent
+
+# Show agent configuration
+python -m src.cli.main config show maven_maintenance_agent
+
+# Backup configuration
+python -m src.cli.main config backup maven_maintenance_agent
+
+# Rollback to latest backup
+python -m src.cli.main config rollback maven_maintenance_agent
+
+# Reload configurations (hot-reload)
+python -m src.cli.main config reload --all
+```
 
 **Analyze dependencies:**
 ```bash
@@ -136,10 +177,12 @@ TestBoost/
 - **Backend**: Python 3.11+, FastAPI, Uvicorn
 - **Database**: PostgreSQL 15 with Alembic migrations
 - **Workflows**: LangGraph 1.0 for state machines
-- **Agents**: DeepAgents with YAML configuration
+- **Agents**: DeepAgents 0.2.8 with YAML configuration
+- **LLM Providers**: Google Gemini, Anthropic Claude, OpenAI GPT
 - **Tools**: MCP (Model Context Protocol) servers
 - **CLI**: Typer with Rich for terminal UI
 - **Logging**: Structlog for structured JSON logs
+- **Observability**: LangSmith tracing integration
 
 ### Database Schema
 
@@ -204,10 +247,49 @@ LANGSMITH_TRACING=true
 
 ### Agent Configuration
 
-Agent behaviors are configured in `config/agents/*.yaml`:
+Agent behaviors are configured in `config/agents/*.yaml` using DeepAgents 0.2.8 format:
+
+```yaml
+name: maven_maintenance_agent
+description: Handles Maven dependency updates and security fixes
+
+identity:
+  role: Maven Dependency Maintenance Expert
+  persona: Technical advisor for Java/Spring Boot projects
+
+llm:
+  provider: google-genai
+  model: gemini-2.5-flash-preview-09-2025
+  temperature: 0.1
+  max_tokens: 4096
+
+tools:
+  mcp_servers:
+    - maven_maintenance
+    - container_runtime
+
+prompts:
+  system: config/prompts/maven/system.md
+
+workflow:
+  graph_name: maven_maintenance_workflow
+  node_name: agent_node
+
+error_handling:
+  max_retries: 3
+  timeout_seconds: 300
+```
+
+Available agents:
 - `maven_maintenance_agent.yaml` - Dependency update logic
 - `test_gen_agent.yaml` - Test generation strategies
 - `deployment_agent.yaml` - Docker deployment rules
+
+**Configuration Management Features:**
+- **Hot-reload**: Changes detected automatically via file modification time tracking
+- **Validation**: 7-layer validation (YAML syntax, schema, MCP servers, prompts, LLM provider, parameters)
+- **Backup/Rollback**: Timestamped backups with one-command rollback
+- **CLI Integration**: Complete configuration management via `config` command group
 
 Prompt templates are in `config/prompts/`:
 - `common/java_expert.md` - Java/Spring Boot expertise
@@ -257,6 +339,62 @@ alembic downgrade -1
 
 ## Troubleshooting
 
+### LLM Connection Errors
+
+**Missing API Key:**
+```bash
+# Error: "LLM not available: GOOGLE_API_KEY not configured"
+# Solution: Add API key to .env file
+echo "GOOGLE_API_KEY=your-api-key-here" >> .env
+```
+
+**Invalid API Key:**
+```bash
+# Error: "Authentication failed: Invalid API key"
+# Solution: Verify API key is correct and has proper permissions
+# Check provider dashboard for key validity
+```
+
+**LLM Timeout:**
+```bash
+# Error: "LLM connection timeout after 5s"
+# Solution: Check network connectivity and provider status
+# Application retries 3 times with exponential backoff (1s-10s)
+```
+
+**Rate Limit Exceeded (A1):**
+```
+Error: "LLM rate limit exceeded by google-genai. Retry after 60 seconds. Workflow aborted."
+```
+- TestBoost respects rate limits and does NOT silently degrade
+- Workflow fails immediately with explicit error message
+- Wait for the specified duration before retrying
+- Consider upgrading your LLM provider plan for higher limits
+
+### Edge Case Handling
+
+TestBoost implements "Zero Complaisance" - workflows fail-fast with clear errors rather than degrading silently:
+
+**Missing Tool Calls (A2):**
+- If LLM response doesn't include expected tool invocations
+- System retries with modified prompt (max 3 attempts)
+- Logs show: "Agent did not call expected tools, retrying with enhanced prompt"
+
+**Intermittent Connectivity (A4):**
+- Network timeouts trigger exponential backoff retry
+- 3 attempts with 1s, 5s, 10s waits
+- Logs show: "Network error, retrying in {wait_time}s (attempt {n}/3)"
+
+**Malformed JSON (A5):**
+- Invalid JSON in tool call arguments triggers validation retry
+- Max 3 retry attempts with JSONDecodeError logging
+- Clear error: "Tool call JSON validation failed: {specific_error}"
+
+**Context Window Overflow (A6):**
+- DeepAgents automatically summarizes large inputs
+- Monitor token counts in logs/artifacts
+- For projects >170k tokens, agent uses automatic chunking
+
 ### PostgreSQL Connection Error
 ```bash
 # Check if PostgreSQL is running
@@ -276,6 +414,18 @@ export LANG=en_US.UTF-8
 
 ### LangGraph Recursion Limit
 Workflow now includes automatic termination conditions. If you encounter recursion errors, check that your project has valid Maven configuration.
+
+### Configuration Changes Not Taking Effect (A3)
+Agent configs are hot-reloaded based on file modification time:
+```bash
+# Verify config validation
+python -m src.cli.main config validate
+
+# Force reload all configurations
+python -m src.cli.main config reload --all
+
+# Check logs for "agent_config_validated" event
+```
 
 ## Contributing
 
@@ -302,6 +452,4 @@ Built with:
 
 ---
 
-**Version**: 0.1.0
-**Status**: Beta - Core features implemented and tested
-**Last Updated**: 2025-11-28
+**Version**: 0.2.0

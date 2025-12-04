@@ -17,6 +17,7 @@ from src.api.middleware.logging import request_logging_middleware
 from src.api.routers import health, sessions
 from src.lib.config import get_settings
 from src.lib.logging import get_logger
+from src.lib.startup_checks import run_all_startup_checks, StartupCheckError
 
 logger = get_logger(__name__)
 settings = get_settings()
@@ -24,8 +25,23 @@ settings = get_settings()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
-    """Application lifespan events."""
+    """
+    Application lifespan events.
+
+    Implements T008: Check LLM connectivity at startup before accepting commands.
+    Constitutional principle: "Zéro Complaisance" - No workflows execute without LLM.
+    """
     logger.info("application_startup", version=app.version)
+
+    try:
+        # T008: Run all startup checks (currently LLM connectivity only)
+        await run_all_startup_checks()
+        logger.info("startup_checks_passed")
+    except StartupCheckError as e:
+        logger.error("startup_checks_failed", error=str(e))
+        # Application MUST fail if startup checks fail (FR-010)
+        raise RuntimeError(f"Application startup failed: {e}") from e
+
     yield
     logger.info("application_shutdown")
 

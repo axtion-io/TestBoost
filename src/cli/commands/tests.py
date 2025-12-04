@@ -5,7 +5,6 @@ from pathlib import Path
 
 import typer
 from rich.console import Console
-from rich.progress import Progress, TextColumn
 from rich.table import Table
 from src.cli.progress import create_progress
 
@@ -308,25 +307,51 @@ async def _run_test_generation(
     output_dir: str | None,
     verbose: bool,
 ) -> None:
-    """Run test generation workflow."""
-    from src.workflows.test_generation import run_test_generation
+    """Run test generation workflow with LLM agent (T063)."""
+    from src.db import SessionLocal
+    from src.workflows.test_generation_agent import run_test_generation_with_agent
+    from src.db.repository import SessionRepository
+
+    # Show agent workflow notice
+    console.print("[yellow]Using LLM-powered test generation agent[/yellow]")
+    console.print("[dim]LangSmith tracing enabled if LANGSMITH_TRACING=true[/dim]\n")
 
     with create_progress(console) as progress:
-        
-        
-    
-        task = progress.add_task("Running test generation workflow...", total=None)
+
+
+
+        task = progress.add_task("Running test generation workflow with agent...", total=None)
 
         try:
-            final_state = await run_test_generation(
-                str(project_dir), target_mutation_score=mutation_score
-            )
+            # Create session in database
+            async with SessionLocal() as db_session:
+                session_repo = SessionRepository(db_session)
+                session = await session_repo.create(
+                    session_type="test_generation",
+                    status="in_progress",
+                    mode="autonomous",
+                    project_path=str(project_dir),
+                    config={"target_coverage": mutation_score},
+                )
+                session_id = session.id
+
+                # Run agent-based workflow (T062)
+                result = await run_test_generation_with_agent(
+                    session_id=session_id,
+                    project_path=str(project_dir),
+                    db_session=db_session,
+                    coverage_target=mutation_score,
+                )
+
+                # Update session status
+                await session_repo.update(session_id, status="completed")
+                await db_session.commit()
 
             progress.remove_task(task)
 
             # Display results
-            if final_state.errors:
-                console.print(f"\n[red]Test generation failed:[/red] {final_state.errors[0]}")
+            if not result.get("success"):
+                console.print(f"\n[red]Test generation failed[/red]")
                 raise typer.Exit(1)
 
             console.print("\n[bold green]Test Generation Complete[/bold green]\n")
@@ -336,28 +361,33 @@ async def _run_test_generation(
             table.add_column("Metric", style="cyan")
             table.add_column("Value", style="green")
 
-            table.add_row("Unit Tests Generated", str(len(final_state.generated_unit_tests)))
-            table.add_row(
-                "Integration Tests Generated", str(len(final_state.generated_integration_tests))
-            )
-            table.add_row(
-                "Snapshot Tests Generated", str(len(final_state.generated_snapshot_tests))
-            )
-            table.add_row("Killer Tests Generated", str(len(final_state.killer_tests_generated)))
-            table.add_row("Mutation Score", f"{final_state.mutation_score}%")
-            table.add_row("Target Score", f"{mutation_score}%")
+            metrics = result.get("metrics", {})
+            generated_tests = result.get("generated_tests", [])
+
+            table.add_row("Tests Generated", str(metrics.get("tests_generated", 0)))
+            table.add_row("Compilation Success", str(metrics.get("compilation_success", False)))
+            table.add_row("Coverage Target", f"{metrics.get('coverage_target', mutation_score)}%")
+            table.add_row("Duration", f"{metrics.get('duration_seconds', 0)}s")
+            table.add_row("Agent", result.get("agent_name", "unknown"))
 
             console.print(table)
 
-            if final_state.warnings:
-                console.print("\n[yellow]Warnings:[/yellow]")
-                for warning in final_state.warnings:
-                    console.print(f"  - {warning}")
+            # Show generated test files
+            if generated_tests:
+                console.print("\n[bold]Generated Test Files:[/bold]")
+                for test in generated_tests:
+                    status = "[green]✓[/green]" if test.get("compiles") else "[red]✗[/red]"
+                    console.print(f"  {status} {test.get('path', 'unknown')}")
+                    if test.get("correction_attempts", 0) > 0:
+                        console.print(
+                            f"    [dim]Auto-corrected after {test['correction_attempts']} attempts[/dim]"
+                        )
 
             console.print("\n[bold]Next Steps:[/bold]")
             console.print("1. Review generated tests in src/test/java")
             console.print("2. Run test suite: mvn test")
-            console.print("3. Commit passing tests")
+            console.print("3. Check LangSmith traces for agent reasoning")
+            console.print("4. Commit passing tests")
 
         except Exception as e:
             progress.remove_task(task)

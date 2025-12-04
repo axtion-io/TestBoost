@@ -28,6 +28,12 @@ class Settings(BaseSettings):
     environment: str = "development"
     debug: bool = False
 
+    # Session management
+    session_retention_days: int = 30
+
+    # Locking
+    project_lock_timeout_seconds: int = 3600
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",

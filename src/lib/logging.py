@@ -62,7 +62,7 @@ def configure_logging(log_level: str = "INFO", environment: str = "development")
 
 def get_logger(name: str | None = None) -> structlog.stdlib.BoundLogger:
     """Get a configured logger instance."""
-    return structlog.get_logger(name)
+    return structlog.get_logger(name)  # type: ignore[return-value]
 
 
 __all__ = ["configure_logging", "get_logger", "mask_sensitive_data"]

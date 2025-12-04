@@ -1,5 +1,9 @@
 """SQLAlchemy declarative base."""
 
-from sqlalchemy.orm import declarative_base
+from sqlalchemy.orm import DeclarativeBase
 
-Base = declarative_base()
+
+class Base(DeclarativeBase):  # type: ignore[misc]
+    """SQLAlchemy declarative base for all models."""
+
+    pass

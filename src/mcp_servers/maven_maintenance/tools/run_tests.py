@@ -112,9 +112,11 @@ async def run_tests(
 
 async def _parse_surefire_reports(project_dir: Path) -> dict[str, Any]:
     """Parse Surefire XML reports for detailed test results."""
-    result = {
-        "summary": {"total": 0, "passed": 0, "failed": 0, "skipped": 0, "errors": 0},
-        "failed_tests": [],
+    summary: dict[str, int] = {"total": 0, "passed": 0, "failed": 0, "skipped": 0, "errors": 0}
+    failed_tests: list[dict[str, Any]] = []
+    result: dict[str, Any] = {
+        "summary": summary,
+        "failed_tests": failed_tests,
     }
 
     # Find surefire reports directory
@@ -134,11 +136,11 @@ async def _parse_surefire_reports(project_dir: Path) -> dict[str, Any]:
             errors = int(root.get("errors", 0))
             skipped = int(root.get("skipped", 0))
 
-            result["summary"]["total"] += tests
-            result["summary"]["failed"] += failures
-            result["summary"]["errors"] += errors
-            result["summary"]["skipped"] += skipped
-            result["summary"]["passed"] += tests - failures - errors - skipped
+            summary["total"] += tests
+            summary["failed"] += failures
+            summary["errors"] += errors
+            summary["skipped"] += skipped
+            summary["passed"] += tests - failures - errors - skipped
 
             # Get failed test details
             for testcase in root.findall(".//testcase"):
@@ -161,7 +163,7 @@ async def _parse_surefire_reports(project_dir: Path) -> dict[str, Any]:
                             error.get("message", "")[:500] if error is not None else ""
                         )
 
-                    result["failed_tests"].append(test_info)
+                    failed_tests.append(test_info)
 
         except Exception:
             continue

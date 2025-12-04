@@ -19,7 +19,7 @@ class TestReadmeCompleteness:
 
     def test_readme_has_agent_requirements_section(self):
         """Test README contains Agent Requirements section."""
-        readme = Path("README.md").read_text()
+        readme = Path("README.md").read_text(encoding="utf-8")
 
         # Check for agent requirements section
         assert "agent" in readme.lower(), "README should mention agents"
@@ -29,14 +29,14 @@ class TestReadmeCompleteness:
 
     def test_readme_has_troubleshooting_section(self):
         """Test README contains Troubleshooting section."""
-        readme = Path("README.md").read_text()
+        readme = Path("README.md").read_text(encoding="utf-8")
 
         assert "troubleshoot" in readme.lower(), \
             "README should have troubleshooting section"
 
     def test_readme_has_edge_case_section(self):
         """Test README documents edge case handling."""
-        readme = Path("README.md").read_text()
+        readme = Path("README.md").read_text(encoding="utf-8")
 
         # Check for edge case documentation
         edge_case_terms = ["edge case", "error handling", "retry", "rate limit"]
@@ -45,7 +45,7 @@ class TestReadmeCompleteness:
 
     def test_readme_minimum_content(self):
         """Test README has minimum content length."""
-        readme = Path("README.md").read_text()
+        readme = Path("README.md").read_text(encoding="utf-8")
         word_count = len(readme.split())
 
         assert word_count >= 500, \

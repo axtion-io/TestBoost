@@ -508,6 +508,139 @@ ERROR | agent_config_invalid | error=Field 'llm.model' is required
 
 ---
 
+## Migration Guide: Upgrading from v1 Workflows
+
+This section helps you migrate from the previous deterministic workflows to the new DeepAgents-powered workflows.
+
+### Overview of Changes
+
+| Component | Previous (v1) | New (v2 with DeepAgents) |
+|-----------|---------------|--------------------------|
+| Workflow Logic | Deterministic LangGraph nodes | AI-powered agent reasoning |
+| Configuration | Hardcoded in Python | YAML configs + Markdown prompts |
+| Tool Execution | Direct function calls | MCP server tool calls |
+| Observability | Basic logging | LangSmith tracing + artifacts |
+| Error Handling | Manual retry logic | Auto-retry with A2 edge case handling |
+
+### API Interface Compatibility
+
+The following API endpoints and request/response models remain backward compatible:
+
+**Unchanged Endpoints**:
+- `POST /api/testboost/maintenance/maven` - MaintenanceRequest/MaintenanceResponse
+- `POST /api/testboost/analyze` - AnalyzeRequest/AnalyzeResponse
+- `POST /api/testboost/tests/generate` - TestGenerateRequest/TestGenerateResponse
+
+**New Endpoints** (additive, non-breaking):
+- `GET /api/health` - Enhanced health check with LLM status
+- `GET /api/v2/sessions/{session_id}/artifacts` - View agent reasoning artifacts
+
+### Function Migration Reference
+
+| Previous Function | New Function | Changes |
+|------------------|--------------|---------|
+| `run_maven_maintenance()` | `run_maven_maintenance_with_agent()` | Now uses DeepAgents LLM with MCP tools |
+| `run_test_generation()` | `run_test_generation_with_agent()` | Added `db_session` parameter for artifact storage |
+| `run_docker_deployment()` | `run_docker_deployment_with_agent()` | Adds checkpointer for pause/resume |
+
+### Exception Hierarchy Changes
+
+Previous exceptions are still available, with new agent-specific additions:
+
+```python
+# Still available (backward compatible)
+from src.lib.llm import LLMError, LLMProviderError, LLMTimeoutError
+
+# New in v2
+from src.lib.llm import LLMRateLimitError  # A1 edge case handling
+from src.lib.startup_checks import StartupCheckError, LLMConnectionError, AgentConfigError
+from src.workflows.maven_maintenance_agent import MavenAgentError, ToolCallError, AgentTimeoutError
+from src.workflows.test_generation_agent import TestGenerationError, CompilationError
+```
+
+### Configuration Migration
+
+**Step 1**: Create agent YAML config (if not exists)
+
+```yaml
+# config/agents/maven_maintenance_agent.yaml
+name: "maven_maintenance_agent"
+llm:
+  provider: "anthropic"  # or "google-genai", "openai"
+  model: "claude-sonnet-4-5-20250929"
+  temperature: 0.3
+tools:
+  mcp_servers:
+    - "maven-maintenance"
+    - "git-maintenance"
+prompts:
+  system: "config/prompts/maven/dependency_update.md"
+error_handling:
+  max_retries: 3
+```
+
+**Step 2**: Update environment variables
+
+```bash
+# Required: At least one LLM provider
+ANTHROPIC_API_KEY=your_key_here
+# OR
+GOOGLE_API_KEY=your_key_here
+# OR
+OPENAI_API_KEY=your_key_here
+
+# Recommended: Enable tracing
+LANGSMITH_API_KEY=your_langsmith_key
+LANGSMITH_TRACING=true
+LANGSMITH_PROJECT=testboost
+```
+
+**Step 3**: Verify startup
+
+```bash
+poetry run python -m src.cli.main --help
+# Should see: llm_connection_ok in logs
+```
+
+### Breaking Changes
+
+1. **Startup Check Required**: Application now validates LLM connectivity at startup. If no valid API key is configured, the application will not start (Zéro Complaisance principle).
+
+2. **Agent Config Required**: All three required agents must have valid YAML configurations:
+   - `maven_maintenance_agent.yaml`
+   - `test_gen_agent.yaml`
+   - `deployment_agent.yaml`
+
+3. **Database Session for Test Gen**: `run_test_generation_with_agent()` now requires a `db_session` parameter for artifact storage.
+
+### Rollback Procedure
+
+If you need to temporarily revert to v1 behavior:
+
+1. Use the old workflow functions directly (still available):
+   ```python
+   from src.workflows.maven_maintenance import run_maven_maintenance
+   # Instead of: from src.workflows.maven_maintenance_agent import run_maven_maintenance_with_agent
+   ```
+
+2. Set `SKIP_LLM_CHECK=true` (development only, not recommended for production)
+
+### Validation
+
+Run the regression test suite to verify backward compatibility:
+
+```bash
+poetry run pytest tests/regression/test_old_workflows.py -v
+```
+
+All 21 tests should pass, confirming:
+- Workflow function signatures unchanged
+- Exception classes available
+- API models backward compatible
+- Library imports working
+
+---
+
 ## Next Steps
 
 After completing integration:

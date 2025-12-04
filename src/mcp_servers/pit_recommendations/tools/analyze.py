@@ -55,7 +55,11 @@ async def analyze_hard_mutants(
 
 async def _analyze_hard_mutants(report_file: Path, group_by: str) -> dict[str, Any]:
     """Analyze mutation report for hard-to-kill patterns."""
-    analysis = {
+    hard_mutant_patterns: list[dict[str, Any]] = []
+    hot_spots: list[dict[str, Any]] = []
+    complexity_indicators: list[dict[str, Any]] = []
+
+    analysis: dict[str, Any] = {
         "success": True,
         "summary": {
             "total_mutants": 0,
@@ -64,10 +68,10 @@ async def _analyze_hard_mutants(report_file: Path, group_by: str) -> dict[str, A
             "no_coverage": 0,
             "mutation_score": 0,
         },
-        "hard_mutant_patterns": [],
+        "hard_mutant_patterns": hard_mutant_patterns,
         "grouped_analysis": {},
-        "hot_spots": [],
-        "complexity_indicators": [],
+        "hot_spots": hot_spots,
+        "complexity_indicators": complexity_indicators,
     }
 
     try:
@@ -75,8 +79,8 @@ async def _analyze_hard_mutants(report_file: Path, group_by: str) -> dict[str, A
         root = tree.getroot()
 
         # Collect all mutations
-        surviving = []
-        all_mutations = []
+        surviving: list[dict[str, Any]] = []
+        all_mutations: list[dict[str, Any]] = []
 
         for mutation in root.findall(".//mutation"):
             status = mutation.get("status", "UNKNOWN")
@@ -116,13 +120,13 @@ async def _analyze_hard_mutants(report_file: Path, group_by: str) -> dict[str, A
             analysis["grouped_analysis"] = _group_by_method(surviving)
 
         # Identify patterns
-        analysis["hard_mutant_patterns"] = _identify_patterns(surviving)
+        hard_mutant_patterns.extend(_identify_patterns(surviving))
 
         # Find hot spots (high concentration of surviving mutants)
-        analysis["hot_spots"] = _find_hot_spots(surviving)
+        hot_spots.extend(_find_hot_spots(surviving))
 
         # Identify complexity indicators
-        analysis["complexity_indicators"] = _identify_complexity(surviving, all_mutations)
+        complexity_indicators.extend(_identify_complexity(surviving, all_mutations))
 
     except ET.ParseError as e:
         analysis["success"] = False
@@ -131,7 +135,7 @@ async def _analyze_hard_mutants(report_file: Path, group_by: str) -> dict[str, A
     return analysis
 
 
-def _group_by_mutator(surviving: list[dict]) -> dict[str, Any]:
+def _group_by_mutator(surviving: list[dict[str, Any]]) -> dict[str, Any]:
     """Group surviving mutants by mutator type."""
     groups = defaultdict(list)
 
@@ -149,7 +153,7 @@ def _group_by_mutator(surviving: list[dict]) -> dict[str, Any]:
     return result
 
 
-def _group_by_class(surviving: list[dict]) -> dict[str, Any]:
+def _group_by_class(surviving: list[dict[str, Any]]) -> dict[str, Any]:
     """Group surviving mutants by class."""
     groups = defaultdict(list)
 
@@ -170,7 +174,7 @@ def _group_by_class(surviving: list[dict]) -> dict[str, Any]:
     return result
 
 
-def _group_by_method(surviving: list[dict]) -> dict[str, Any]:
+def _group_by_method(surviving: list[dict[str, Any]]) -> dict[str, Any]:
     """Group surviving mutants by method."""
     groups = defaultdict(list)
 
@@ -190,7 +194,7 @@ def _group_by_method(surviving: list[dict]) -> dict[str, Any]:
     return result
 
 
-def _identify_patterns(surviving: list[dict]) -> list[dict]:
+def _identify_patterns(surviving: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Identify common patterns in hard-to-kill mutants."""
     patterns = []
 
@@ -237,7 +241,7 @@ def _identify_patterns(surviving: list[dict]) -> list[dict]:
     return patterns
 
 
-def _find_hot_spots(surviving: list[dict]) -> list[dict]:
+def _find_hot_spots(surviving: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Find code hot spots with high mutant survival."""
     # Group by method and calculate density
     method_mutants = defaultdict(list)
@@ -265,12 +269,12 @@ def _find_hot_spots(surviving: list[dict]) -> list[dict]:
     return sorted(hot_spots, key=lambda x: -x["surviving_count"])[:10]
 
 
-def _identify_complexity(surviving: list[dict], all_mutations: list[dict]) -> list[dict]:
+def _identify_complexity(surviving: list[dict[str, Any]], all_mutations: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Identify complexity indicators from mutation patterns."""
-    indicators = []
+    indicators: list[dict[str, Any]] = []
 
     # Calculate survival rate by class
-    class_stats = defaultdict(lambda: {"killed": 0, "survived": 0})
+    class_stats: dict[str, dict[str, int]] = defaultdict(lambda: {"killed": 0, "survived": 0})
     for mutation in all_mutations:
         class_name = mutation["class"].split(".")[-1]
         if mutation["status"] == "KILLED":

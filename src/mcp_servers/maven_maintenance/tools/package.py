@@ -93,7 +93,7 @@ async def package_project(
 
 async def _find_artifacts(project_dir: Path) -> list[dict[str, Any]]:
     """Find generated artifacts in the target directory."""
-    artifacts = []
+    artifacts: list[dict[str, Any]] = []
     target_dir = project_dir / "target"
 
     if not target_dir.exists():
@@ -128,11 +128,12 @@ async def _find_artifacts(project_dir: Path) -> list[dict[str, Any]]:
 
 def _format_size(size_bytes: int) -> str:
     """Format file size in human-readable format."""
+    size: float = float(size_bytes)
     for unit in ["B", "KB", "MB", "GB"]:
-        if size_bytes < 1024:
-            return f"{size_bytes:.1f} {unit}"
-        size_bytes /= 1024
-    return f"{size_bytes:.1f} TB"
+        if size < 1024:
+            return f"{size:.1f} {unit}"
+        size /= 1024
+    return f"{size:.1f} TB"
 
 
 def _extract_build_errors(output: str) -> list[dict[str, Any]]:

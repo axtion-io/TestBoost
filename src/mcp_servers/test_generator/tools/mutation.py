@@ -90,12 +90,16 @@ async def run_mutation_testing(
 
 async def _parse_pit_results(project_dir: Path) -> dict[str, Any]:
     """Parse PIT mutation testing results."""
-    results = {
+    mutations: dict[str, int] = {"total": 0, "killed": 0, "survived": 0, "no_coverage": 0, "timed_out": 0}
+    by_class_list: list[dict[str, Any]] = []
+    surviving_mutants: list[dict[str, Any]] = []
+
+    results: dict[str, Any] = {
         "success": True,
         "mutation_score": 0,
-        "mutations": {"total": 0, "killed": 0, "survived": 0, "no_coverage": 0, "timed_out": 0},
-        "by_class": [],
-        "surviving_mutants": [],
+        "mutations": mutations,
+        "by_class": by_class_list,
+        "surviving_mutants": surviving_mutants,
         "report_path": "",
     }
 
@@ -113,7 +117,7 @@ async def _parse_pit_results(project_dir: Path) -> dict[str, Any]:
         tree = ET.parse(report_file)
         root = tree.getroot()
 
-        by_class = {}
+        by_class: dict[str, dict[str, int]] = {}
 
         for mutation in root.findall(".//mutation"):
             status = mutation.get("status", "UNKNOWN")
@@ -123,13 +127,13 @@ async def _parse_pit_results(project_dir: Path) -> dict[str, Any]:
             mutator = mutation.findtext("mutator", "")
             description = mutation.findtext("description", "")
 
-            results["mutations"]["total"] += 1
+            mutations["total"] += 1
 
             if status == "KILLED":
-                results["mutations"]["killed"] += 1
+                mutations["killed"] += 1
             elif status == "SURVIVED":
-                results["mutations"]["survived"] += 1
-                results["surviving_mutants"].append(
+                mutations["survived"] += 1
+                surviving_mutants.append(
                     {
                         "class": class_name,
                         "method": method,
@@ -139,9 +143,9 @@ async def _parse_pit_results(project_dir: Path) -> dict[str, Any]:
                     }
                 )
             elif status == "NO_COVERAGE":
-                results["mutations"]["no_coverage"] += 1
+                mutations["no_coverage"] += 1
             elif status == "TIMED_OUT":
-                results["mutations"]["timed_out"] += 1
+                mutations["timed_out"] += 1
 
             # Track by class
             if class_name not in by_class:
@@ -151,9 +155,9 @@ async def _parse_pit_results(project_dir: Path) -> dict[str, Any]:
                 by_class[class_name]["killed"] += 1
 
         # Calculate scores
-        if results["mutations"]["total"] > 0:
+        if mutations["total"] > 0:
             results["mutation_score"] = round(
-                (results["mutations"]["killed"] / results["mutations"]["total"]) * 100, 1
+                (mutations["killed"] / mutations["total"]) * 100, 1
             )
 
         # Format by-class results
@@ -161,7 +165,7 @@ async def _parse_pit_results(project_dir: Path) -> dict[str, Any]:
             score = (
                 round((counts["killed"] / counts["total"]) * 100, 1) if counts["total"] > 0 else 0
             )
-            results["by_class"].append(
+            by_class_list.append(
                 {
                     "class": class_name,
                     "killed": counts["killed"],
@@ -171,7 +175,7 @@ async def _parse_pit_results(project_dir: Path) -> dict[str, Any]:
             )
 
         # Sort by score (lowest first - these need attention)
-        results["by_class"].sort(key=lambda x: x["score"])
+        by_class_list.sort(key=lambda x: x["score"])
 
     except ET.ParseError as e:
         results["parse_error"] = str(e)

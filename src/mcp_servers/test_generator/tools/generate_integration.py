@@ -68,16 +68,19 @@ async def generate_integration_tests(
 
 def _analyze_for_integration(source_code: str) -> dict[str, Any]:
     """Analyze source for integration test requirements."""
-    info = {
+    annotations: list[str] = []
+    endpoints: list[dict[str, str]] = []
+    dependencies: list[dict[str, str]] = []
+    info: dict[str, Any] = {
         "class_name": "",
         "package": "",
-        "annotations": [],
+        "annotations": annotations,
         "has_repository": False,
         "has_rest_client": False,
         "has_database": False,
         "has_messaging": False,
-        "endpoints": [],
-        "dependencies": [],
+        "endpoints": endpoints,
+        "dependencies": dependencies,
     }
 
     # Extract package
@@ -91,8 +94,8 @@ def _analyze_for_integration(source_code: str) -> dict[str, Any]:
         info["class_name"] = class_match.group(1)
 
     # Extract annotations
-    annotations = re.findall(r"@(\w+)", source_code)
-    info["annotations"] = list(set(annotations))
+    found_annotations = re.findall(r"@(\w+)", source_code)
+    annotations.extend(list(set(found_annotations)))
 
     # Check for repository usage
     if "Repository" in source_code or "JpaRepository" in source_code:
@@ -116,14 +119,14 @@ def _analyze_for_integration(source_code: str) -> dict[str, Any]:
         re.MULTILINE,
     )
     for match in endpoint_pattern.finditer(source_code):
-        info["endpoints"].append(
+        endpoints.append(
             {"method": match.group(1).replace("Mapping", "").upper(), "path": match.group(2)}
         )
 
     return info
 
 
-def _determine_integration_type(class_info: dict) -> str:
+def _determine_integration_type(class_info: dict[str, Any]) -> str:
     """Determine the type of integration test needed."""
     annotations = class_info["annotations"]
 
@@ -158,7 +161,7 @@ def _get_integration_test_path(project_dir: Path, source_path: Path) -> Path:
 
 
 def _generate_integration_code(
-    class_info: dict, test_type: str, test_containers: bool, mock_external: bool
+    class_info: dict[str, Any], test_type: str, test_containers: bool, mock_external: bool
 ) -> str:
     """Generate integration test code."""
     class_name = class_info["class_name"]
@@ -297,7 +300,7 @@ def _generate_integration_code(
     return "\n".join(imports + class_body)
 
 
-def _generate_mvc_test(endpoint: dict, class_name: str) -> list[str]:
+def _generate_mvc_test(endpoint: dict[str, str], class_name: str) -> list[str]:
     """Generate MockMvc test for an endpoint."""
     method = endpoint["method"]
     path = endpoint["path"]

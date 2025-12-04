@@ -33,16 +33,20 @@ async def analyze_project_context(
             {"success": False, "error": f"Project path does not exist: {project_path}"}
         )
 
-    results = {
+    frameworks: list[str] = []
+    test_frameworks: list[str] = []
+    dependencies: list[dict[str, Any]] = []
+
+    results: dict[str, Any] = {
         "success": True,
         "project_path": str(project_dir.absolute()),
         "project_type": "unknown",
         "build_system": "unknown",
-        "frameworks": [],
-        "test_frameworks": [],
+        "frameworks": frameworks,
+        "test_frameworks": test_frameworks,
         "source_structure": {},
         "test_structure": {},
-        "dependencies": [],
+        "dependencies": dependencies,
         "java_version": None,
         "module_info": {},
     }
@@ -66,11 +70,11 @@ async def analyze_project_context(
     results["test_structure"] = await _analyze_test_structure(project_dir, scan_depth)
 
     # Detect frameworks from imports
-    results["frameworks"] = await _detect_frameworks(project_dir)
-    results["test_frameworks"] = await _detect_test_frameworks(project_dir)
+    frameworks.extend(await _detect_frameworks(project_dir))
+    test_frameworks.extend(await _detect_test_frameworks(project_dir))
 
     # Determine project type
-    results["project_type"] = _determine_project_type(results["frameworks"])
+    results["project_type"] = _determine_project_type(frameworks)
 
     return json.dumps(results, indent=2)
 

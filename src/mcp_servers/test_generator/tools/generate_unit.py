@@ -15,7 +15,7 @@ async def generate_adaptive_tests(
     project_path: str,
     source_file: str,
     class_type: str | None = None,
-    conventions: dict | None = None,
+    conventions: dict[str, Any] | None = None,
     coverage_target: float = 80,
 ) -> str:
     """
@@ -88,13 +88,18 @@ async def generate_adaptive_tests(
 
 def _analyze_class(source_code: str) -> dict[str, Any]:
     """Analyze Java class structure."""
-    info = {
+    methods: list[dict[str, Any]] = []
+    dependencies: list[dict[str, str]] = []
+    annotations: list[str] = []
+    fields: list[str] = []
+
+    info: dict[str, Any] = {
         "class_name": "",
         "package": "",
-        "methods": [],
-        "dependencies": [],
-        "annotations": [],
-        "fields": [],
+        "methods": methods,
+        "dependencies": dependencies,
+        "annotations": annotations,
+        "fields": fields,
     }
 
     # Extract package
@@ -111,7 +116,7 @@ def _analyze_class(source_code: str) -> dict[str, Any]:
     class_annotations = re.findall(
         r"@(\w+)(?:\([^)]*\))?\s*(?:public\s+)?(?:abstract\s+)?class", source_code
     )
-    info["annotations"] = class_annotations
+    annotations.extend(class_annotations)
 
     # Extract methods
     method_pattern = re.compile(
@@ -132,7 +137,7 @@ def _analyze_class(source_code: str) -> dict[str, Any]:
         if method_name == info["class_name"]:
             continue
 
-        info["methods"].append(
+        methods.append(
             {
                 "name": method_name,
                 "return_type": return_type,
@@ -147,12 +152,12 @@ def _analyze_class(source_code: str) -> dict[str, Any]:
     )
 
     for match in dep_pattern.finditer(source_code):
-        info["dependencies"].append({"type": match.group(1), "name": match.group(2)})
+        dependencies.append({"type": match.group(1), "name": match.group(2)})
 
     return info
 
 
-def _detect_class_type(source_code: str, class_info: dict) -> str:
+def _detect_class_type(source_code: str, class_info: dict[str, Any]) -> str:
     """Auto-detect class type from code patterns."""
     class_name = class_info["class_name"].lower()
     annotations = [a.lower() for a in class_info["annotations"]]
@@ -187,7 +192,7 @@ def _get_test_file_path(project_dir: Path, source_path: Path) -> Path:
     return project_dir / Path(*parts)
 
 
-def _generate_test_code(context: dict) -> str:
+def _generate_test_code(context: dict[str, Any]) -> str:
     """Generate test code based on context."""
     class_name = context["class_name"]
     package = context["package"]
@@ -269,7 +274,7 @@ def _generate_test_code(context: dict) -> str:
 
 
 def _generate_method_tests(
-    method: dict, class_name: str, class_type: str, uses_assertj: bool
+    method: dict[str, Any], class_name: str, class_type: str, uses_assertj: bool
 ) -> list[str]:
     """Generate test methods for a single method."""
     method_name = method["name"]

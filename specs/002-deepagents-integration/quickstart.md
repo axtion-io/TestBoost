@@ -525,6 +525,47 @@ The 002-deepagents-integration feature introduces **agent-powered workflows** al
 | **Configuration** | Python code | YAML + Markdown prompts | **NO** - New configs added, old ignored |
 | **Dependencies** | Maven/Git tools only | + DeepAgents 0.2.8 | **NO** - Additive only |
 | **API Keys** | None required | LLM provider required | **NO** - Validation at startup only |
+| **Tool Execution** | Direct function calls | MCP server tool calls | **NO** - Old functions wrapped |
+| **Observability** | Basic logging | LangSmith tracing + artifacts | **NO** - Old logs still work |
+| **Error Handling** | Manual retry logic | Auto-retry with edge cases (A1-A6) | **NO** - Additive enhancement |
+
+### API Interface Compatibility
+
+The following API endpoints and request/response models remain **100% backward compatible**:
+
+**Unchanged Endpoints**:
+- `POST /api/testboost/maintenance/maven` - MaintenanceRequest/MaintenanceResponse
+- `POST /api/testboost/analyze` - AnalyzeRequest/AnalyzeResponse
+- `POST /api/testboost/tests/generate` - TestGenerateRequest/TestGenerateResponse
+
+**New Endpoints** (additive, non-breaking):
+- `GET /api/health` - Enhanced health check with LLM status
+- `GET /api/v2/sessions/{session_id}/artifacts` - View agent reasoning artifacts
+
+### Function Migration Reference
+
+| Previous Function | New Function | Changes |
+|------------------|--------------|---------|
+| `run_maven_maintenance()` | `run_maven_maintenance_with_agent()` | Now uses DeepAgents LLM with MCP tools |
+| `run_test_generation()` | `run_test_generation_with_agent()` | Added `db_session` parameter for artifact storage |
+| `run_docker_deployment()` | `run_docker_deployment_with_agent()` | Adds checkpointer for pause/resume |
+
+**Note**: Old functions still work and log deprecation warnings.
+
+### Exception Hierarchy Changes
+
+Previous exceptions are still available, with new agent-specific additions:
+
+```python
+# Still available (backward compatible)
+from src.lib.llm import LLMError, LLMProviderError, LLMTimeoutError
+
+# New in v2 (additive, non-breaking)
+from src.lib.llm import LLMRateLimitError  # A1 edge case handling
+from src.lib.startup_checks import StartupCheckError, LLMConnectionError, AgentConfigError
+from src.workflows.maven_maintenance_agent import MavenAgentError, ToolCallError, AgentTimeoutError
+from src.workflows.test_generation_agent import TestGenerationError, CompilationError
+```
 
 ### Migration Path: Choose Your Approach
 
@@ -563,118 +604,69 @@ The 002-deepagents-integration feature introduces **agent-powered workflows** al
 3. **Monitor LangSmith traces** for first 48 hours
 4. **Rollback** to old workflows if issues (change `--mode` flag)
 
-### Step-by-Step Migration Examples
-
-#### Example 1: Maven Maintenance Workflow
-
-**Before (Old Deterministic Approach)**:
-```python
-# src/workflows/maven_maintenance.py - DEPRECATED but still works
-from src.lib.maven import analyze_dependencies, update_pom
-
-def run_maven_maintenance(project_path: str) -> dict:
-    """Old deterministic workflow with hardcoded rules."""
-    deps = analyze_dependencies(project_path)
-
-    # Hardcoded rules
-    updates = [
-        dep for dep in deps
-        if dep.has_security_vuln() or dep.is_minor_update()
-    ]
-
-    update_pom(project_path, updates)
-    return {"updated_count": len(updates)}
-```
-
-**After (New Agent-Powered Approach)**:
-```python
-# src/workflows/maven_maintenance_agent.py - NEW
-from src.agents.adapter import create_deep_agent
-from src.mcp_servers.registry import get_mcp_tool_registry
-
-async def run_maven_maintenance_with_agent(project_path: str) -> dict:
-    """New agent workflow with LLM reasoning."""
-    # Agent decides which deps to update based on:
-    # - CVE severity scores
-    # - Breaking change analysis
-    # - Project-specific context
-    # - User's risk tolerance
-
-    agent = await create_deep_agent(
-        config_path="config/agents/maven_maintenance_agent.yaml",
-        tools=get_mcp_tool_registry()["maven-maintenance"]
-    )
-
-    result = await agent.ainvoke({
-        "project_path": project_path,
-        "prompt": load_prompt("maven/dependency_update.md")
-    })
-
-    return result
-```
-
-**CLI Comparison**:
-```bash
-# OLD WAY (still works, deprecated warning logged)
-.venv\Scripts\python -m src.cli.main maintenance maven \
-  --project-path "C:\projects\my-app"
-  # Uses: src.workflows.maven_maintenance.run_maven_maintenance()
-
-# NEW WAY (agent-powered)
-.venv\Scripts\python -m src.cli.main maintenance maven \
-  --project-path "C:\projects\my-app" \
-  --mode autonomous
-  # Uses: src.workflows.maven_maintenance_agent.run_maven_maintenance_with_agent()
-```
-
-#### Example 2: API Endpoint Migration
-
-**Before**:
-```python
-# src/api/routes/maintenance.py - OLD
-@router.post("/maven")
-async def run_maven_maintenance(request: MaintenanceRequest):
-    from src.workflows.maven_maintenance import run_maven_maintenance
-    result = run_maven_maintenance(request.project_path)
-    return {"status": "completed", "updates": result["updated_count"]}
-```
-
-**After (Backward Compatible)**:
-```python
-# src/api/routes/maintenance.py - NEW (supports both!)
-@router.post("/maven")
-async def run_maven_maintenance(request: MaintenanceRequest):
-    # Check if agent mode requested
-    if request.mode == "autonomous":
-        from src.workflows.maven_maintenance_agent import run_maven_maintenance_with_agent
-        result = await run_maven_maintenance_with_agent(request.project_path)
-    else:
-        # Old workflow still works!
-        from src.workflows.maven_maintenance import run_maven_maintenance
-        result = run_maven_maintenance(request.project_path)
-
-    return {"status": "completed", "result": result}
-```
-
 ### Configuration Migration
 
 **No migration needed!** Old configs coexist with new agent configs.
 
+**Step 1**: Create agent YAML config (if not exists)
+
+```yaml
+# config/agents/maven_maintenance_agent.yaml
+name: "maven_maintenance_agent"
+llm:
+  provider: "anthropic"  # or "google-genai", "openai"
+  model: "claude-sonnet-4-5-20250929"
+  temperature: 0.3
+tools:
+  mcp_servers:
+    - "maven-maintenance"
+    - "git-maintenance"
+prompts:
+  system: "config/prompts/maven/dependency_update.md"
+error_handling:
+  max_retries: 3
+```
+
 **Old Configuration** (still used by deterministic workflows):
 ```python
-# src/config.py - Unchanged
+# src/config.py - Unchanged, still works
 MAVEN_UPDATE_POLICY = "security-first"
 MAX_DEPENDENCY_AGE_DAYS = 180
 ```
 
-**New Configuration** (only used by agent workflows):
-```yaml
-# config/agents/maven_maintenance_agent.yaml - NEW file, doesn't affect old code
-llm:
-  provider: "google-genai"
-  model: "gemini-2.5-flash"
-  temperature: 0.3
+**Step 2**: Update environment variables
+
+```bash
+# Required: At least one LLM provider
+ANTHROPIC_API_KEY=your_key_here
+# OR
+GOOGLE_API_KEY=your_key_here
+# OR
+OPENAI_API_KEY=your_key_here
+
+# Recommended: Enable tracing
+LANGSMITH_API_KEY=your_langsmith_key
+LANGSMITH_TRACING=true
+LANGSMITH_PROJECT=testboost
 ```
+
+**Step 3**: Verify startup
+
+```bash
+.venv\Scripts\python -m src.cli.main --help
+# Should see: llm_connection_ok in logs
+```
+
+### Breaking Changes
+
+1. **Startup Check Required**: Application now validates LLM connectivity at startup. If no valid API key is configured, the application will not start (Zéro Complaisance principle).
+
+2. **Agent Config Required**: All three required agents must have valid YAML configurations:
+   - `maven_maintenance_agent.yaml`
+   - `test_gen_agent.yaml`
+   - `deployment_agent.yaml`
+
+3. **Database Session for Test Gen**: `run_test_generation_with_agent()` now requires a `db_session` parameter for artifact storage.
 
 ### Testing Your Migration
 
@@ -699,6 +691,18 @@ def test_old_workflow_logs_deprecation_warning(caplog):
     assert "DEPRECATED" in caplog.text
     assert "run_maven_maintenance_with_agent" in caplog.text
 ```
+
+Run the regression test suite:
+
+```bash
+.venv\Scripts\python -m pytest tests/regression/test_old_workflows.py -v
+```
+
+All tests should pass, confirming:
+- Workflow function signatures unchanged
+- Exception classes available
+- API models backward compatible
+- Library imports working
 
 **Step 2: Compare Results**
 
@@ -739,6 +743,13 @@ If agent workflows cause issues:
 # Option 2: Change CLI default mode
 # In src/cli/commands/maintenance.py:
 # default_mode = "deterministic"  # Instead of "autonomous"
+
+# Option 3: Use old workflow functions directly (still available)
+```
+
+```python
+from src.workflows.maven_maintenance import run_maven_maintenance
+# Instead of: from src.workflows.maven_maintenance_agent import run_maven_maintenance_with_agent
 ```
 
 **Partial Rollback** (use agents for some workflows only):
@@ -751,6 +762,12 @@ workflows:
     use_agent: true   # Keep test gen on agent
   docker_deployment:
     use_agent: true   # Keep deployment on agent
+```
+
+**Development-Only Option**:
+```bash
+# Set SKIP_LLM_CHECK=true (not recommended for production)
+SKIP_LLM_CHECK=true .venv\Scripts\python -m src.cli.main --help
 ```
 
 ### Troubleshooting Migration Issues

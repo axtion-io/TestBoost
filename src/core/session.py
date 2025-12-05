@@ -179,7 +179,7 @@ class SessionService:
     async def update_session(
         self,
         session_id: uuid.UUID,
-        **kwargs,
+        **kwargs: Any,
     ) -> Session | None:
         """
         Update a session.

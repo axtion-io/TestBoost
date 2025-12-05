@@ -7,6 +7,7 @@ Provides the 'boost audit' command for dependency security scanning.
 import asyncio
 import json
 from pathlib import Path
+from typing import Any
 
 import typer
 from rich.console import Console
@@ -84,7 +85,7 @@ def scan_vulnerabilities(
         console.print(f"[red]Error:[/red] Not a Maven project: pom.xml not found in {project_dir}")
         raise typer.Exit(1)
 
-    async def _scan():
+    async def _scan() -> dict[str, Any]:
         from src.mcp_servers.maven_maintenance.tools.analyze import analyze_dependencies
 
         with create_progress(console) as progress:
@@ -283,7 +284,7 @@ def generate_report(
         console.print(f"[red]Error:[/red] Project path not found: {project_dir}")
         raise typer.Exit(1)
 
-    async def _analyze():
+    async def _analyze() -> dict[str, Any]:
         from src.mcp_servers.maven_maintenance.tools.analyze import analyze_dependencies
 
         with create_progress(console) as progress:
@@ -320,7 +321,7 @@ def generate_report(
     console.print(f"[green]Security report generated:[/green] {output_path.absolute()}")
 
 
-def _generate_html_report(project_path: str, vulnerabilities: list, dependencies: list) -> str:
+def _generate_html_report(project_path: str, vulnerabilities: list[Any], dependencies: list[Any]) -> str:
     """Generate an HTML security report."""
     from datetime import datetime
 

@@ -5,6 +5,8 @@ Provides tools for analyzing mutation testing results and
 recommending test improvements to increase mutation score.
 """
 
+from typing import Any
+
 from mcp.server import Server
 from mcp.types import Tool
 
@@ -16,7 +18,7 @@ from .tools.recommend import recommend_test_improvements
 server = Server("pit-recommendations")
 
 
-@server.list_tools()
+@server.list_tools()  # type: ignore[untyped-decorator]
 async def list_tools() -> list[Tool]:
     """List all available PIT recommendation tools."""
     return [
@@ -100,25 +102,25 @@ async def list_tools() -> list[Tool]:
     ]
 
 
-@server.call_tool()
-async def call_tool(name: str, arguments: dict) -> str:
+@server.call_tool()  # type: ignore[untyped-decorator]
+async def call_tool(name: str, arguments: dict[str, Any]) -> str:
     """Route tool calls to appropriate handlers."""
     if name == "analyze-hard-mutants":
-        return await analyze_hard_mutants(**arguments)
+        return await analyze_hard_mutants(**arguments)  # type: ignore[no-untyped-call]
     elif name == "recommend-test-improvements":
-        return await recommend_test_improvements(**arguments)
+        return await recommend_test_improvements(**arguments)  # type: ignore[no-untyped-call]
     elif name == "prioritize-test-efforts":
-        return await prioritize_test_efforts(**arguments)
+        return await prioritize_test_efforts(**arguments)  # type: ignore[no-untyped-call]
     else:
         raise ValueError(f"Unknown tool: {name}")
 
 
-async def main():
+async def main() -> None:
     """Run the MCP server."""
     from mcp.server.stdio import stdio_server
 
     async with stdio_server() as (read_stream, write_stream):
-        await server.run(read_stream, write_stream, server.create_initialization_options())
+        await server.run(read_stream, write_stream, server.create_initialization_options())  # type: ignore[no-untyped-call]
 
 
 if __name__ == "__main__":

@@ -17,7 +17,7 @@ logger = get_logger(__name__)
 class AgentAdapter:
     """Adapt DeepAgents configuration to LangGraph nodes."""
 
-    def __init__(self, mcp_tool_registry: dict[str, list[BaseTool]] | None = None):
+    def __init__(self, mcp_tool_registry: dict[str, list[BaseTool]] | None = None) -> None:
         """Initialize adapter with optional MCP tool registry.
 
         Args:
@@ -28,6 +28,7 @@ class AgentAdapter:
     def create_node(
         self,
         config: AgentConfig,
+        system_prompt: str,
         input_mapper: Callable[[WorkflowState], str] | None = None,
         output_mapper: Callable[[str, WorkflowState], WorkflowState] | None = None,
     ) -> Callable[[WorkflowState], WorkflowState]:
@@ -35,6 +36,7 @@ class AgentAdapter:
 
         Args:
             config: Agent configuration
+            system_prompt: System prompt content for the agent
             input_mapper: Function to convert state to LLM input
             output_mapper: Function to process LLM output into state updates
 
@@ -43,14 +45,14 @@ class AgentAdapter:
         """
         # Get LLM instance
         llm = get_llm(
-            model=config.model,
-            temperature=config.temperature,
-            max_tokens=config.max_tokens,
+            model=config.llm.model,
+            temperature=config.llm.temperature,
+            max_tokens=config.llm.max_tokens,
         )
 
         # Collect tools from MCP servers
         tools: list[BaseTool] = []
-        for server_name in config.mcp_servers:
+        for server_name in config.tools.mcp_servers:
             if server_name in self.mcp_tool_registry:
                 tools.extend(self.mcp_tool_registry[server_name])
             else:
@@ -62,7 +64,7 @@ class AgentAdapter:
 
         # Bind tools to LLM if available
         if tools:
-            llm = llm.bind_tools(tools)
+            llm = llm.bind_tools(tools)  # type: ignore[assignment]
             logger.info(
                 "tools_bound",
                 agent=config.name,
@@ -79,7 +81,7 @@ class AgentAdapter:
 
             # Build messages
             messages = [
-                SystemMessage(content=config.system_prompt),
+                SystemMessage(content=system_prompt),
             ]
 
             # Map input from state
@@ -94,8 +96,8 @@ class AgentAdapter:
 
             # Invoke LLM
             try:
-                response = await llm.ainvoke(messages)
-                response_text = response.content if hasattr(response, "content") else str(response)
+                response = await llm.ainvoke(messages)  # type: ignore[no-untyped-call]
+                response_text = response.content if hasattr(response, "content") else str(response)  # type: ignore[union-attr]
 
                 logger.info(
                     "agent_node_completed",
@@ -143,8 +145,8 @@ class AgentAdapter:
         async def node(state: WorkflowState) -> WorkflowState:
             """Execute tool calls from messages."""
             # ToolNode expects messages in state
-            result = await tool_node.ainvoke(state)
-            return {**state, **result}
+            result = await tool_node.ainvoke(state)  # type: ignore[no-untyped-call]
+            return {**state, **result}  # type: ignore[return-value]
 
         return node
 
@@ -155,7 +157,7 @@ def _default_input_mapper(input_data: dict[str, Any]) -> str:
         return "Process the current workflow state."
 
     # Format as key-value pairs
-    parts = []
+    parts: list[str] = []
     for key, value in input_data.items():
         if isinstance(value, (dict, list)):
             import json
@@ -168,10 +170,10 @@ def _default_input_mapper(input_data: dict[str, Any]) -> str:
 
 def _default_output_mapper(response: str, state: WorkflowState) -> WorkflowState:
     """Default mapping from LLM response to state updates."""
-    output_data = state.get("output_data", {}).copy()
+    output_data: dict[str, Any] = state.get("output_data", {}).copy()  # type: ignore[assignment]
     output_data["last_response"] = response
 
-    results = state.get("results", []).copy()
+    results: list[dict[str, Any]] = state.get("results", []).copy()  # type: ignore[assignment]
     results.append(
         {
             "step": state.get("current_step"),

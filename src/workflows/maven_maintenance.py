@@ -12,7 +12,7 @@ with validation, rollback support, and interactive user confirmation.
 import warnings
 import json
 from datetime import datetime
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 from uuid import uuid4
 
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
@@ -32,23 +32,23 @@ class MavenMaintenanceState(BaseModel):
     # Git state
     original_branch: str = ""
     maintenance_branch: str = ""
-    git_status: dict = Field(default_factory=dict)
+    git_status: dict[str, Any] = Field(default_factory=dict)
 
     # Analysis results
-    dependencies: list[dict] = Field(default_factory=list)
-    available_updates: list[dict] = Field(default_factory=list)
-    vulnerabilities: list[dict] = Field(default_factory=list)
-    release_notes: dict = Field(default_factory=dict)
+    dependencies: list[dict[str, Any]] = Field(default_factory=list)
+    available_updates: list[dict[str, Any]] = Field(default_factory=list)
+    vulnerabilities: list[dict[str, Any]] = Field(default_factory=list)
+    release_notes: dict[str, Any] = Field(default_factory=dict)
 
     # Test results
-    baseline_test_results: dict = Field(default_factory=dict)
-    validation_test_results: dict = Field(default_factory=dict)
+    baseline_test_results: dict[str, Any] = Field(default_factory=dict)
+    validation_test_results: dict[str, Any] = Field(default_factory=dict)
 
     # Update tracking
-    pending_updates: list[dict] = Field(default_factory=list)
-    applied_updates: list[dict] = Field(default_factory=list)
-    failed_updates: list[dict] = Field(default_factory=list)
-    rollback_stack: list[dict] = Field(default_factory=list)
+    pending_updates: list[dict[str, Any]] = Field(default_factory=list)
+    applied_updates: list[dict[str, Any]] = Field(default_factory=list)
+    failed_updates: list[dict[str, Any]] = Field(default_factory=list)
+    rollback_stack: list[dict[str, Any]] = Field(default_factory=list)
 
     # User interaction
     user_approved: bool = False
@@ -67,7 +67,7 @@ class MavenMaintenanceState(BaseModel):
         arbitrary_types_allowed = True
 
 
-async def validate_project(state: MavenMaintenanceState) -> dict:
+async def validate_project(state: MavenMaintenanceState) -> dict[str, Any]:
     """
     Validate that the project exists and is a valid Maven project.
 
@@ -120,7 +120,7 @@ async def validate_project(state: MavenMaintenanceState) -> dict:
     }
 
 
-async def check_git_status(state: MavenMaintenanceState) -> dict:
+async def check_git_status(state: MavenMaintenanceState) -> dict[str, Any]:
     """
     Check the git status of the project repository.
 
@@ -160,7 +160,7 @@ async def check_git_status(state: MavenMaintenanceState) -> dict:
     }
 
 
-async def analyze_maven(state: MavenMaintenanceState) -> dict:
+async def analyze_maven(state: MavenMaintenanceState) -> dict[str, Any]:
     """
     Analyze Maven dependencies for updates and vulnerabilities.
 
@@ -225,7 +225,7 @@ async def analyze_maven(state: MavenMaintenanceState) -> dict:
     }
 
 
-async def fetch_release_notes(state: MavenMaintenanceState) -> dict:
+async def fetch_release_notes(state: MavenMaintenanceState) -> dict[str, Any]:
     """
     Fetch release notes for available updates.
 
@@ -258,7 +258,7 @@ async def fetch_release_notes(state: MavenMaintenanceState) -> dict:
     }
 
 
-async def run_baseline_tests(state: MavenMaintenanceState) -> dict:
+async def run_baseline_tests(state: MavenMaintenanceState) -> dict[str, Any]:
     """
     Run baseline tests before applying updates.
 
@@ -297,7 +297,7 @@ async def run_baseline_tests(state: MavenMaintenanceState) -> dict:
     }
 
 
-async def user_validation(state: MavenMaintenanceState) -> dict:
+async def user_validation(state: MavenMaintenanceState) -> dict[str, Any]:
     """
     Present updates to user for validation and selection.
 
@@ -337,7 +337,7 @@ async def user_validation(state: MavenMaintenanceState) -> dict:
     }
 
 
-async def create_maintenance_branch(state: MavenMaintenanceState) -> dict:
+async def create_maintenance_branch(state: MavenMaintenanceState) -> dict[str, Any]:
     """
     Create a new branch for the maintenance work.
 
@@ -372,7 +372,7 @@ async def create_maintenance_branch(state: MavenMaintenanceState) -> dict:
     }
 
 
-async def apply_update_batch(state: MavenMaintenanceState) -> dict:
+async def apply_update_batch(state: MavenMaintenanceState) -> dict[str, Any]:
     """
     Apply a batch of dependency updates.
 
@@ -495,7 +495,7 @@ async def apply_update_batch(state: MavenMaintenanceState) -> dict:
     }
 
 
-async def validate_changes(state: MavenMaintenanceState) -> dict:
+async def validate_changes(state: MavenMaintenanceState) -> dict[str, Any]:
     """
     Validate changes by running tests and checking compilation.
 
@@ -545,7 +545,7 @@ async def validate_changes(state: MavenMaintenanceState) -> dict:
     }
 
 
-async def rollback_changes(state: MavenMaintenanceState) -> dict:
+async def rollback_changes(state: MavenMaintenanceState) -> dict[str, Any]:
     """
     Rollback applied changes if validation fails.
 
@@ -606,7 +606,7 @@ async def rollback_changes(state: MavenMaintenanceState) -> dict:
     }
 
 
-async def commit_changes(state: MavenMaintenanceState) -> dict:
+async def commit_changes(state: MavenMaintenanceState) -> dict[str, Any]:
     """
     Commit the applied changes.
 
@@ -653,7 +653,7 @@ async def commit_changes(state: MavenMaintenanceState) -> dict:
     }
 
 
-async def finalize(state: MavenMaintenanceState) -> dict:
+async def finalize(state: MavenMaintenanceState) -> dict[str, Any]:
     """
     Finalize the maintenance workflow.
 
@@ -708,7 +708,7 @@ def has_updates(state: MavenMaintenanceState) -> Literal["continue", "end"]:
     return "continue"
 
 
-def create_maven_maintenance_workflow() -> StateGraph:
+def create_maven_maintenance_workflow() -> StateGraph[Any]:
     """
     Create the Maven maintenance workflow graph.
 
@@ -770,7 +770,7 @@ def create_maven_maintenance_workflow() -> StateGraph:
 maven_maintenance_graph = create_maven_maintenance_workflow().compile()
 
 
-async def run_maven_maintenance(project_path: str, user_approved: bool = False) -> dict:
+async def run_maven_maintenance(project_path: str, user_approved: bool = False) -> dict[str, Any]:
     """
     Run the Maven maintenance workflow.
 
@@ -793,6 +793,6 @@ async def run_maven_maintenance(project_path: str, user_approved: bool = False) 
 
     initial_state = MavenMaintenanceState(project_path=project_path, user_approved=user_approved)
 
-    final_state = await maven_maintenance_graph.ainvoke(initial_state)
+    final_state = await maven_maintenance_graph.ainvoke(initial_state)  # type: ignore[arg-type]
 
     return final_state

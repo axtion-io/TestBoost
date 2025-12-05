@@ -5,6 +5,8 @@ Provides tools for managing git branches, commits, and status
 during maintenance workflows.
 """
 
+from typing import Any
+
 from mcp.server import Server
 from mcp.types import Tool
 
@@ -16,7 +18,7 @@ from .tools.status import get_status
 server = Server("git-maintenance")
 
 
-@server.list_tools()
+@server.list_tools()  # type: ignore[untyped-decorator]
 async def list_tools() -> list[Tool]:
     """List all available Git maintenance tools."""
     return [
@@ -76,25 +78,25 @@ async def list_tools() -> list[Tool]:
     ]
 
 
-@server.call_tool()
-async def call_tool(name: str, arguments: dict) -> str:
+@server.call_tool()  # type: ignore[untyped-decorator]
+async def call_tool(name: str, arguments: dict[str, Any]) -> str:
     """Route tool calls to appropriate handlers."""
     if name == "create-maintenance-branch":
-        return await create_maintenance_branch(**arguments)
+        return await create_maintenance_branch(**arguments)  # type: ignore[no-untyped-call]
     elif name == "commit-changes":
-        return await commit_changes(**arguments)
+        return await commit_changes(**arguments)  # type: ignore[no-untyped-call]
     elif name == "get-status":
-        return await get_status(**arguments)
+        return await get_status(**arguments)  # type: ignore[no-untyped-call]
     else:
         raise ValueError(f"Unknown tool: {name}")
 
 
-async def main():
+async def main() -> None:
     """Run the MCP server."""
     from mcp.server.stdio import stdio_server
 
     async with stdio_server() as (read_stream, write_stream):
-        await server.run(read_stream, write_stream, server.create_initialization_options())
+        await server.run(read_stream, write_stream, server.create_initialization_options())  # type: ignore[no-untyped-call]
 
 
 if __name__ == "__main__":

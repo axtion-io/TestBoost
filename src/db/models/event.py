@@ -2,6 +2,7 @@
 
 import uuid
 from datetime import datetime
+from typing import Any
 
 from sqlalchemy import DateTime, ForeignKey, Index, String, Text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
@@ -23,7 +24,7 @@ class Event(Base):
         UUID(as_uuid=True), ForeignKey("steps.id", ondelete="CASCADE"), nullable=True
     )
     event_type: Mapped[str] = mapped_column(String(100), nullable=False)
-    event_data: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    event_data: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
     message: Mapped[str | None] = mapped_column(Text, nullable=True)
     timestamp: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=datetime.utcnow

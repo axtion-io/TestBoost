@@ -7,6 +7,7 @@ Provides the 'boost maintenance' command for dependency updates.
 import asyncio
 import json
 from pathlib import Path
+from typing import Any
 
 import typer
 from rich.console import Console
@@ -88,7 +89,7 @@ def run_maintenance(
         raise typer.Exit(1)
 
     # Run the maintenance workflow
-    async def _run():
+    async def _run() -> Any:
         # Use new agent-based workflow (US2)
         from src.workflows.maven_maintenance_agent import run_maven_maintenance_with_agent
         from uuid import uuid4
@@ -118,12 +119,12 @@ def run_maintenance(
 
                 # Create a result object compatible with old format
                 class AgentResult:
-                    def __init__(self, data):
+                    def __init__(self, data: dict[str, Any]) -> None:
                         self.completed = data.get("success", False)
-                        self.errors = [] if self.completed else ["Workflow failed"]
-                        self.warnings = []
-                        self.applied_updates = []
-                        self.failed_updates = []
+                        self.errors: list[str] = [] if self.completed else ["Workflow failed"]
+                        self.warnings: list[str] = []
+                        self.applied_updates: list[dict[str, Any]] = []
+                        self.failed_updates: list[dict[str, Any]] = []
                         self.maintenance_branch = "agent-maintenance"
                         self.session_id = data.get("session_id", session_id)
                         self.analysis = data.get("analysis", "")
@@ -321,7 +322,7 @@ def list_updates(
         console.print(f"[red]Error:[/red] Project path not found: {project_dir}")
         raise typer.Exit(1)
 
-    async def _analyze():
+    async def _analyze() -> dict[str, Any]:
         from src.mcp_servers.maven_maintenance.tools.analyze import analyze_dependencies
 
         with create_progress(console) as progress:

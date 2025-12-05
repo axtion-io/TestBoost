@@ -231,7 +231,7 @@ def _run_analysis(project_dir: Path, verbose: bool) -> None:
     """Run project analysis."""
     import json
 
-    async def analyze():
+    async def analyze() -> None:
         from src.mcp_servers.test_generator.tools.analyze import analyze_project_context
         from src.mcp_servers.test_generator.tools.conventions import detect_test_conventions
 

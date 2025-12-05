@@ -20,10 +20,10 @@ class JobScheduler:
     Supports scheduling jobs at specific times or intervals.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize the scheduler."""
         self._running = False
-        self._tasks: list[asyncio.Task] = []
+        self._tasks: list[asyncio.Task[None]] = []
         self._jobs: dict[str, dict[str, Any]] = {}
 
     def register_job(
@@ -214,7 +214,7 @@ def create_default_scheduler() -> JobScheduler:
     scheduler = JobScheduler()
 
     # Register session purge job - runs daily at 2 AM
-    async def purge_job():
+    async def purge_job() -> dict[str, Any]:
         job = SessionPurgeJob()
         return await job.execute()
 
@@ -231,7 +231,7 @@ def create_default_scheduler() -> JobScheduler:
 _scheduler: JobScheduler | None = None
 
 
-def get_scheduler() -> JobScheduler:
+def get_scheduler() -> "JobScheduler":
     """Get or create the global scheduler instance."""
     global _scheduler
     if _scheduler is None:

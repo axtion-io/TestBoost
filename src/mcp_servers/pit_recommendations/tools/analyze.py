@@ -266,7 +266,7 @@ def _find_hot_spots(surviving: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 }
             )
 
-    return sorted(hot_spots, key=lambda x: -x["surviving_count"])[:10]
+    return sorted(hot_spots, key=lambda x: -x["surviving_count"])[:10]  # type: ignore[operator]
 
 
 def _identify_complexity(surviving: list[dict[str, Any]], all_mutations: list[dict[str, Any]]) -> list[dict[str, Any]]:

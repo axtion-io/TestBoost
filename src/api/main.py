@@ -5,11 +5,13 @@ import uuid
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import Any
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
+from starlette.responses import Response
 
 from src.api.middleware.auth import api_key_auth_middleware
 from src.api.middleware.error import ErrorHandlerMiddleware
@@ -70,7 +72,7 @@ app.add_middleware(
 class RequestIDMiddleware(BaseHTTPMiddleware):
     """Add request ID to each request."""
 
-    async def dispatch(self, request: Request, call_next):
+    async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
         request_id = request.headers.get("X-Request-ID", str(uuid.uuid4()))
         request.state.request_id = request_id
         response = await call_next(request)
@@ -120,7 +122,7 @@ async def value_error_handler(request: Request, exc: ValueError) -> JSONResponse
     )
 
 
-def export_openapi_schema(output_path: str | None = None) -> dict:
+def export_openapi_schema(output_path: str | None = None) -> dict[str, Any]:
     """
     Export the OpenAPI schema to a file.
 
@@ -160,7 +162,7 @@ def export_openapi_schema(output_path: str | None = None) -> dict:
     return schema
 
 
-def generate_openapi_schema() -> dict:
+def generate_openapi_schema() -> dict[str, Any]:
     """
     Generate the OpenAPI schema without writing to file.
 

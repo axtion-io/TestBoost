@@ -5,7 +5,8 @@ from typing import Any
 
 from fastapi import Request, status
 from fastapi.responses import JSONResponse
-from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
+from starlette.responses import Response
 
 from src.lib.logging import get_logger
 
@@ -214,7 +215,7 @@ class ErrorHandlerMiddleware(BaseHTTPMiddleware):
     Ensures consistent error response format across the API per FR-032.
     """
 
-    async def dispatch(self, request: Request, call_next):
+    async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
         """
         Process request and handle any exceptions.
 

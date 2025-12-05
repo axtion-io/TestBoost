@@ -207,7 +207,7 @@ async def _check_endpoints(
     endpoints: list[dict[str, Any]], remaining_timeout: float
 ) -> dict[str, Any]:
     """Check HTTP endpoints for health."""
-    result = {"checks": [], "all_passed": True}
+    result: dict[str, Any] = {"checks": [], "all_passed": True}
 
     if remaining_timeout <= 0:
         remaining_timeout = 10

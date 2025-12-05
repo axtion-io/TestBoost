@@ -1,5 +1,7 @@
 """LangChain BaseTool wrappers for Docker Deployment MCP tools."""
 
+from typing import Any
+
 from langchain_core.tools import BaseTool, tool
 
 # Import existing MCP tool implementations
@@ -121,7 +123,7 @@ async def docker_health_check(
     project_name: str = "",
     timeout: int = 120,
     check_interval: int = 5,
-    endpoints: list[dict] | None = None
+    endpoints: list[dict[str, Any]] | None = None
 ) -> str:
     """
     Check health status of deployed containers with wait logic.

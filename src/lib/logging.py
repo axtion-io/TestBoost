@@ -85,12 +85,12 @@ def get_logger(name: str | None = None, **initial_context: Any) -> structlog.std
     """
     _configure_structlog()
 
-    logger = structlog.get_logger(name)
+    logger: structlog.stdlib.BoundLogger = structlog.get_logger(name)
 
     if initial_context:
         logger = logger.bind(**initial_context)
 
-    return logger
+    return logger  # type: ignore[return-value]
 
 
 def bind_context(**context: Any) -> None:

@@ -8,7 +8,7 @@ from sqlalchemy.orm import DeclarativeBase
 from src.lib.config import get_settings
 
 
-class Base(DeclarativeBase):  # type: ignore[misc]
+class Base(DeclarativeBase):
     """SQLAlchemy declarative base for all models."""
 
     pass

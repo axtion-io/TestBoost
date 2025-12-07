@@ -1,5 +1,7 @@
 """Health check endpoint."""
 
+from typing import Any
+
 from fastapi import APIRouter, Depends
 from fastapi.responses import JSONResponse
 from sqlalchemy import text
@@ -23,7 +25,7 @@ async def health_check(db: AsyncSession = Depends(get_db)) -> JSONResponse:
     Returns status, version, and database connectivity.
     Returns 503 if unhealthy.
     """
-    health_status = {
+    health_status: dict[str, Any] = {
         "status": "healthy",
         "version": "0.1.0",
         "checks": {

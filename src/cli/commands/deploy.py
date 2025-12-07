@@ -7,14 +7,14 @@ Provides the 'boost deploy' command for Docker deployment.
 import asyncio
 import json
 from pathlib import Path
+from typing import Any
 
 import typer
 from rich.console import Console
 from rich.panel import Panel
-from rich.progress import Progress, TextColumn
 from rich.table import Table
-from src.cli.progress import create_progress
 
+from src.cli.progress import create_progress
 from src.lib.logging import get_logger
 
 logger = get_logger(__name__)
@@ -97,13 +97,13 @@ def run_deployment(
         health_endpoints.append({"url": ep, "method": "GET", "expected_status": 200})
 
     # Run the deployment workflow
-    async def _run():
+    async def _run() -> Any:
         from src.workflows.docker_deployment import run_docker_deployment
 
         with create_progress(console) as progress:
-            
-            
-        
+
+
+
             task = progress.add_task("Running Docker deployment...", total=None)
 
             try:
@@ -120,7 +120,7 @@ def run_deployment(
                 progress.stop()
                 console.print(f"[red]Error:[/red] {str(e)}")
                 logger.exception("deploy_run_error", error=str(e))
-                raise typer.Exit(1)
+                raise typer.Exit(1) from None
 
     result = asyncio.run(_run())
 
@@ -221,7 +221,7 @@ def stop_deployment(
         console.print(f"[red]Error:[/red] docker-compose.yml not found in {project_dir}")
         raise typer.Exit(1)
 
-    async def _stop():
+    async def _stop() -> tuple[str, int]:
         import asyncio
         import subprocess
 
@@ -244,12 +244,12 @@ def stop_deployment(
         )
 
         stdout, _ = await process.communicate()
-        return stdout.decode("utf-8", errors="replace"), process.returncode
+        return stdout.decode("utf-8", errors="replace"), process.returncode or 0
 
     with create_progress(console) as progress:
-        
-        
-    
+
+
+
         task = progress.add_task("Stopping deployment...", total=None)
         output, returncode = asyncio.run(_stop())
         progress.update(task, completed=True)
@@ -298,14 +298,14 @@ def show_logs(
         console.print(f"[red]Error:[/red] docker-compose.yml not found in {project_dir}")
         raise typer.Exit(1)
 
-    async def _logs():
+    async def _logs() -> dict[str, Any]:
         from src.mcp_servers.docker.tools.logs import collect_logs
 
         result = await collect_logs(
             str(compose_file), services=[service] if service else [], tail=tail, follow=follow
         )
 
-        return json.loads(result)
+        return json.loads(result)  # type: ignore[no-any-return]
 
     logs_result = asyncio.run(_logs())
 
@@ -338,12 +338,12 @@ def check_status(
         console.print(f"[red]Error:[/red] docker-compose.yml not found in {project_dir}")
         raise typer.Exit(1)
 
-    async def _status():
+    async def _status() -> dict[str, Any]:
         from src.mcp_servers.docker.tools.health import health_check
 
         result = await health_check(str(compose_file), timeout=10, check_interval=2)
 
-        return json.loads(result)
+        return json.loads(result)  # type: ignore[no-any-return]
 
     status_result = asyncio.run(_status())
 
@@ -405,7 +405,7 @@ def build_only(
     dockerfile = project_dir / "Dockerfile"
     compose_file = project_dir / "docker-compose.yml"
 
-    async def _build():
+    async def _build() -> dict[str, Any]:
         import subprocess
 
         # Generate files if needed
@@ -455,9 +455,9 @@ def build_only(
         }
 
     with create_progress(console) as progress:
-        
-        
-    
+
+
+
         task = progress.add_task("Building Docker image...", total=None)
         result = asyncio.run(_build())
         progress.update(task, completed=True)

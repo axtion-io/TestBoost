@@ -169,7 +169,6 @@ def _generate_dockerfile(config: dict[str, Any]) -> str:
     java_version = config.get("java_version", "17")
     build_tool = config.get("build_tool", "maven")
     artifact_type = config.get("artifact_type", "jar")
-    artifact_name = config.get("artifact_name", "app")
     port = config.get("port", 8080)
     is_spring_boot = config.get("is_spring_boot", False)
 

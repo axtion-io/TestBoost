@@ -49,52 +49,51 @@ class SessionPurgeJob:
             cutoff_date=cutoff_date.isoformat(),
         )
 
-        async with AsyncSession(self.engine) as db_session:
-            async with db_session.begin():
-                # Find sessions to purge
-                sessions_to_purge = await db_session.execute(
-                    select(Session.id).where(
-                        and_(
-                            Session.created_at < cutoff_date,
-                            Session.status.in_(["completed", "failed", "cancelled"]),
-                        )
+        async with AsyncSession(self.engine) as db_session, db_session.begin():
+            # Find sessions to purge
+            sessions_to_purge = await db_session.execute(
+                select(Session.id).where(
+                    and_(
+                        Session.created_at < cutoff_date,
+                        Session.status.in_(["completed", "failed", "cancelled"]),
                     )
                 )
-                session_ids = [row[0] for row in sessions_to_purge.all()]
+            )
+            session_ids = [row[0] for row in sessions_to_purge.all()]
 
-                if not session_ids:
-                    logger.info("purge_job_completed", sessions_purged=0)
-                    return {
-                        "sessions_purged": 0,
-                        "steps_purged": 0,
-                        "events_purged": 0,
-                        "artifacts_purged": 0,
-                        "cutoff_date": cutoff_date.isoformat(),
-                    }
+            if not session_ids:
+                logger.info("purge_job_completed", sessions_purged=0)
+                return {
+                    "sessions_purged": 0,
+                    "steps_purged": 0,
+                    "events_purged": 0,
+                    "artifacts_purged": 0,
+                    "cutoff_date": cutoff_date.isoformat(),
+                }
 
-                # Delete artifacts first (foreign key constraint)
-                artifacts_result = await db_session.execute(
-                    delete(Artifact).where(Artifact.session_id.in_(session_ids))
-                )
-                artifacts_purged = artifacts_result.rowcount
+            # Delete artifacts first (foreign key constraint)
+            artifacts_result = await db_session.execute(
+                delete(Artifact).where(Artifact.session_id.in_(session_ids))
+            )
+            artifacts_purged = artifacts_result.rowcount or 0  # type: ignore[attr-defined]
 
-                # Delete events
-                events_result = await db_session.execute(
-                    delete(Event).where(Event.session_id.in_(session_ids))
-                )
-                events_purged = events_result.rowcount
+            # Delete events
+            events_result = await db_session.execute(
+                delete(Event).where(Event.session_id.in_(session_ids))
+            )
+            events_purged = events_result.rowcount or 0  # type: ignore[attr-defined]
 
-                # Delete steps
-                steps_result = await db_session.execute(
-                    delete(Step).where(Step.session_id.in_(session_ids))
-                )
-                steps_purged = steps_result.rowcount
+            # Delete steps
+            steps_result = await db_session.execute(
+                delete(Step).where(Step.session_id.in_(session_ids))
+            )
+            steps_purged = steps_result.rowcount or 0  # type: ignore[attr-defined]
 
-                # Delete sessions
-                sessions_result = await db_session.execute(
-                    delete(Session).where(Session.id.in_(session_ids))
-                )
-                sessions_purged = sessions_result.rowcount
+            # Delete sessions
+            sessions_result = await db_session.execute(
+                delete(Session).where(Session.id.in_(session_ids))
+            )
+            sessions_purged = sessions_result.rowcount or 0  # type: ignore[attr-defined]
 
         result = {
             "sessions_purged": sessions_purged,

@@ -7,10 +7,11 @@ and selected strategy.
 
 import json
 from pathlib import Path
+from typing import Any
 
 
 async def prioritize_test_efforts(
-    project_path: str, recommendations: list[dict] | None = None, strategy: str = "balanced"
+    project_path: str, recommendations: list[dict[str, Any]] | None = None, strategy: str = "balanced"
 ) -> str:
     """
     Prioritize test improvement efforts.
@@ -72,13 +73,13 @@ async def prioritize_test_efforts(
     return json.dumps(results, indent=2)
 
 
-def _score_recommendations(recommendations: list[dict], strategy: str) -> list[dict]:
+def _score_recommendations(recommendations: list[dict[str, Any]], strategy: str) -> list[dict[str, Any]]:
     """Score and sort recommendations based on strategy."""
     effort_scores = {"low": 1, "medium": 2, "high": 3}
     impact_scores = {"low": 1, "medium": 2, "high": 3}
     priority_scores = {"critical": 4, "high": 3, "medium": 2, "low": 1}
 
-    scored_recs = []
+    scored_recs: list[dict[str, Any]] = []
 
     for rec in recommendations:
         effort = effort_scores.get(rec.get("effort", "medium"), 2)
@@ -86,12 +87,13 @@ def _score_recommendations(recommendations: list[dict], strategy: str) -> list[d
         priority = priority_scores.get(rec.get("priority", "medium"), 2)
 
         # Calculate score based on strategy
+        score: float
         if strategy == "quick_wins":
             # Favor low effort, any impact
-            score = (4 - effort) * 3 + impact
+            score = float((4 - effort) * 3 + impact)
         elif strategy == "high_impact":
             # Favor high impact, regardless of effort
-            score = impact * 3 + priority
+            score = float(impact * 3 + priority)
         else:  # balanced
             # Balance effort vs impact, with priority boost
             score = (impact / effort) * priority
@@ -113,28 +115,31 @@ def _score_recommendations(recommendations: list[dict], strategy: str) -> list[d
     return scored_recs
 
 
-def _create_action_phases(scored_recs: list[dict]) -> list[dict]:
+def _create_action_phases(scored_recs: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Create action phases from prioritized recommendations."""
-    phases = [
+    items1: list[dict[str, Any]] = []
+    items2: list[dict[str, Any]] = []
+    items3: list[dict[str, Any]] = []
+    phases: list[dict[str, Any]] = [
         {
             "phase": 1,
             "name": "Quick Wins",
             "description": "Low effort, immediate impact improvements",
-            "items": [],
+            "items": items1,
             "estimated_effort": "1-2 days",
         },
         {
             "phase": 2,
             "name": "Core Improvements",
             "description": "Medium effort improvements with good ROI",
-            "items": [],
+            "items": items2,
             "estimated_effort": "3-5 days",
         },
         {
             "phase": 3,
             "name": "Deep Improvements",
             "description": "Higher effort improvements for complete coverage",
-            "items": [],
+            "items": items3,
             "estimated_effort": "1-2 weeks",
         },
     ]
@@ -143,23 +148,20 @@ def _create_action_phases(scored_recs: list[dict]) -> list[dict]:
         effort = rec.get("effort", "medium")
         priority = rec.get("priority", "medium")
 
-        # Determine phase
+        # Determine phase and append to appropriate list
+        item = {
+            "rank": rec["rank"],
+            "title": rec["title"],
+            "action": rec.get("action", ""),
+            "impact": rec.get("impact", "medium"),
+            "count": rec.get("count", 0),
+        }
         if effort == "low" or (effort == "medium" and priority == "critical"):
-            phase_idx = 0
+            items1.append(item)
         elif effort == "medium" or (effort == "high" and priority == "critical"):
-            phase_idx = 1
+            items2.append(item)
         else:
-            phase_idx = 2
-
-        phases[phase_idx]["items"].append(
-            {
-                "rank": rec["rank"],
-                "title": rec["title"],
-                "action": rec.get("action", ""),
-                "impact": rec.get("impact", "medium"),
-                "count": rec.get("count", 0),
-            }
-        )
+            items3.append(item)
 
     # Calculate totals for each phase
     for phase in phases:
@@ -185,9 +187,10 @@ def _get_strategy_description(strategy: str) -> str:
     return descriptions.get(strategy, "Unknown strategy")
 
 
-def _estimate_timeline(phases: list[dict]) -> dict:
+def _estimate_timeline(phases: list[dict[str, Any]]) -> dict[str, Any]:
     """Estimate timeline for completing improvements."""
-    timeline = {"quick_wins": "1-2 days", "all_phases": "1-3 weeks", "breakdown": []}
+    breakdown: list[dict[str, Any]] = []
+    timeline: dict[str, Any] = {"quick_wins": "1-2 days", "all_phases": "1-3 weeks", "breakdown": breakdown}
 
     cumulative_days = 0
     for phase in phases:
@@ -200,7 +203,7 @@ def _estimate_timeline(phases: list[dict]) -> dict:
                 days = min(10, phase["item_count"] * 2)
 
             cumulative_days += days
-            timeline["breakdown"].append(
+            breakdown.append(
                 {
                     "phase": phase["name"],
                     "items": phase["item_count"],
@@ -213,11 +216,12 @@ def _estimate_timeline(phases: list[dict]) -> dict:
     return timeline
 
 
-def _calculate_expected_improvement(scored_recs: list[dict]) -> dict:
+def _calculate_expected_improvement(scored_recs: list[dict[str, Any]]) -> dict[str, Any]:
     """Calculate expected improvement from recommendations."""
-    improvement = {
+    by_phase: dict[str, int] = {"phase_1": 0, "phase_2": 0, "phase_3": 0}
+    improvement: dict[str, Any] = {
         "estimated_mutants_killed": 0,
-        "by_phase": {"phase_1": 0, "phase_2": 0, "phase_3": 0},
+        "by_phase": by_phase,
     }
 
     for rec in scored_recs:
@@ -232,10 +236,10 @@ def _calculate_expected_improvement(scored_recs: list[dict]) -> dict:
 
         # Assign to phase
         if effort == "low":
-            improvement["by_phase"]["phase_1"] += estimated_kills
+            by_phase["phase_1"] += estimated_kills
         elif effort == "medium":
-            improvement["by_phase"]["phase_2"] += estimated_kills
+            by_phase["phase_2"] += estimated_kills
         else:
-            improvement["by_phase"]["phase_3"] += estimated_kills
+            by_phase["phase_3"] += estimated_kills
 
     return improvement

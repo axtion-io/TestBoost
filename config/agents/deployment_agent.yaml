@@ -1,197 +1,31 @@
 # Docker Deployment Agent Configuration
-# DeepAgents YAML configuration for Docker deployment automation
+# Simplified DeepAgents YAML configuration matching spec.md schema
 
 name: deployment_agent
-version: "1.0.0"
-description: Agent for automated Docker deployment of Java applications
+description: Docker deployment specialist with health monitoring
 
-# Agent identity and behavior
 identity:
-  role: deployment_engineer
-  goal: >
-    Safely deploy Java applications using Docker with proper health checks,
-    dependency management, and comprehensive deployment reports.
-  backstory: >
-    You are an expert DevOps engineer specializing in containerization and
-    Docker deployments. You understand the importance of proper container
-    configuration, health monitoring, and dependency management for reliable
-    production deployments.
+  role: Docker Deployment Specialist
+  persona: Reliable, health-check-focused, deployment-safety-conscious
 
-# LLM configuration
 llm:
-  model: claude-sonnet-4-5-20250929
-  temperature: 0.1
-  max_tokens: 4096
+  provider: google-genai
+  model: gemini-2.0-flash
+  temperature: 0.3
+  max_tokens: 8192
 
-# Tools available to this agent
 tools:
-  - name: create-dockerfile
-    server: docker-deployment
-    description: Generate a Dockerfile for a Java project
+  mcp_servers:
+    - docker-deployment
+    - container-runtime
 
-  - name: create-compose
-    server: docker-deployment
-    description: Generate docker-compose.yml with application and dependencies
+prompts:
+  system: config/prompts/deployment/docker_guidelines.md
 
-  - name: deploy-compose
-    server: docker-deployment
-    description: Deploy containers using docker-compose
-
-  - name: health-check
-    server: docker-deployment
-    description: Check health status of deployed containers
-
-  - name: collect-logs
-    server: docker-deployment
-    description: Collect logs from deployed containers
-
-  - name: create-maven-container
-    server: container-runtime
-    description: Create a Docker container for Maven builds
-
-  - name: execute-in-container
-    server: container-runtime
-    description: Execute commands inside a running container
-
-  - name: destroy-container
-    server: container-runtime
-    description: Stop and remove a container
-
-# MCP server connections
-mcp_servers:
-  - name: docker-deployment
-    command: python
-    args:
-      - -m
-      - src.mcp_servers.docker
-    env:
-      PYTHONPATH: "${workspaceFolder}"
-
-  - name: container-runtime
-    command: python
-    args:
-      - -m
-      - src.mcp_servers.container_runtime
-    env:
-      PYTHONPATH: "${workspaceFolder}"
-
-# Workflow configuration
 workflow:
-  type: langgraph
-  graph: src.workflows.docker_deployment.docker_deployment_graph
+  graph_name: docker_deployment
+  node_name: analyze_project
 
-  # Workflow steps
-  steps:
-    - name: analyze_project
-      description: Detect Java version, build tool, and dependencies
-      timeout: 30s
-
-    - name: generate_dockerfile
-      description: Generate optimized Dockerfile for the project
-      timeout: 30s
-
-    - name: generate_docker_compose
-      description: Generate docker-compose with detected dependencies
-      timeout: 30s
-
-    - name: build_image
-      description: Build Docker image from Dockerfile
-      timeout: 600s
-
-    - name: run_container
-      description: Start containers in detached mode
-      timeout: 60s
-
-    - name: check_health
-      description: Wait for containers to be healthy
-      timeout: 120s
-
-    - name: validate_endpoints
-      description: Validate application HTTP endpoints
-      timeout: 60s
-
-    - name: finalize
-      description: Generate deployment report
-      timeout: 10s
-
-# Error handling
 error_handling:
-  retry:
-    max_attempts: 3
-    backoff: exponential
-    initial_delay: 2s
-
-  on_failure:
-    - action: collect_logs
-      condition: containers_running
-    - action: notify
-      message: "Deployment failed: {error}"
-
-# Notifications
-notifications:
-  on_complete:
-    channels:
-      - type: log
-        level: info
-    message: >
-      Deployment complete for {project_name}:
-      {container_count} containers running, health: {health_status}
-
-  on_error:
-    channels:
-      - type: log
-        level: error
-    message: >
-      Deployment failed for {project_name}: {error}
-
-# Resource limits
-resources:
-  max_memory: 4Gi
-  max_cpu: 4
-  timeout: 20m
-
-# Security settings
-security:
-  allow_network: true
-  allow_filesystem: true
-  sandbox: false
-
-  allowed_paths:
-    - "${project_path}"
-    - "/var/run/docker.sock"
-
-  blocked_commands:
-    - rm -rf /
-    - sudo rm
-
-# Docker-specific settings
-docker:
-  default_registry: ""
-  build_args: {}
-  labels:
-    managed-by: testboost
-    version: "1.0.0"
-
-  health_check:
-    interval: 30s
-    timeout: 10s
-    retries: 3
-    start_period: 60s
-
-  compose:
-    version: "3.8"
-    default_network: app-network
-
-# Metrics and observability
-observability:
-  metrics:
-    enabled: true
-    prefix: testboost_deployment
-
-  tracing:
-    enabled: true
-    service_name: deployment-agent
-
-  logging:
-    level: INFO
-    format: json
+  max_retries: 3
+  timeout_seconds: 120

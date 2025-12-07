@@ -1,14 +1,26 @@
 """
 Docker Deployment Workflow using LangGraph.
 
+DEPRECATED: This workflow is deprecated in favor of docker_deployment_agent.py (T076).
+Use run_docker_deployment_with_agent() from docker_deployment_agent.py instead.
+
 Implements a full workflow for deploying Java applications with Docker,
 including project analysis, Dockerfile generation, container deployment,
 health checking, and endpoint validation.
 """
 
+import warnings
+
+warnings.warn(
+    "docker_deployment.py workflow is deprecated. "
+    "Use docker_deployment_agent.py with run_docker_deployment_with_agent() instead.",
+    DeprecationWarning,
+    stacklevel=2
+)
+
 import json
 from datetime import datetime
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 from uuid import uuid4
 
 from langchain_core.messages import AIMessage, BaseMessage
@@ -42,16 +54,16 @@ class DockerDeploymentState(BaseModel):
     service_dependencies: list[str] = Field(default_factory=list)
 
     # Deployment state
-    containers: list[dict] = Field(default_factory=list)
+    containers: list[dict[str, Any]] = Field(default_factory=list)
     build_logs: str = ""
     deploy_logs: str = ""
 
     # Health status
-    health_status: dict = Field(default_factory=dict)
-    endpoint_results: list[dict] = Field(default_factory=list)
+    health_status: dict[str, Any] = Field(default_factory=dict)
+    endpoint_results: list[dict[str, Any]] = Field(default_factory=list)
 
     # Validation endpoints
-    health_endpoints: list[dict] = Field(default_factory=list)
+    health_endpoints: list[dict[str, Any]] = Field(default_factory=list)
 
     # Workflow state
     current_step: str = ""
@@ -60,7 +72,7 @@ class DockerDeploymentState(BaseModel):
     completed: bool = False
 
     # Final report
-    deployment_report: dict = Field(default_factory=dict)
+    deployment_report: dict[str, Any] = Field(default_factory=dict)
 
     # Messages for chat interface
     messages: Annotated[list[BaseMessage], add_messages] = Field(default_factory=list)
@@ -69,7 +81,7 @@ class DockerDeploymentState(BaseModel):
         arbitrary_types_allowed = True
 
 
-async def analyze_project(state: DockerDeploymentState) -> dict:
+async def analyze_project(state: DockerDeploymentState) -> dict[str, Any]:
     """
     Analyze the Java project to detect JAR/WAR, Java version, and build tool.
 
@@ -225,7 +237,7 @@ async def analyze_project(state: DockerDeploymentState) -> dict:
     }
 
 
-async def generate_dockerfile(state: DockerDeploymentState) -> dict:
+async def generate_dockerfile(state: DockerDeploymentState) -> dict[str, Any]:
     """
     Generate a Dockerfile for the project.
 
@@ -259,7 +271,7 @@ async def generate_dockerfile(state: DockerDeploymentState) -> dict:
     }
 
 
-async def generate_docker_compose(state: DockerDeploymentState) -> dict:
+async def generate_docker_compose(state: DockerDeploymentState) -> dict[str, Any]:
     """
     Generate docker-compose.yml with detected dependencies.
 
@@ -299,7 +311,7 @@ async def generate_docker_compose(state: DockerDeploymentState) -> dict:
     }
 
 
-async def build_image(state: DockerDeploymentState) -> dict:
+async def build_image(state: DockerDeploymentState) -> dict[str, Any]:
     """
     Build the Docker image.
 
@@ -337,7 +349,7 @@ async def build_image(state: DockerDeploymentState) -> dict:
     }
 
 
-async def run_container(state: DockerDeploymentState) -> dict:
+async def run_container(state: DockerDeploymentState) -> dict[str, Any]:
     """
     Deploy and run the containers.
 
@@ -382,7 +394,7 @@ async def run_container(state: DockerDeploymentState) -> dict:
     }
 
 
-async def check_health(state: DockerDeploymentState) -> dict:
+async def check_health(state: DockerDeploymentState) -> dict[str, Any]:
     """
     Check container health with wait logic.
 
@@ -440,7 +452,7 @@ async def check_health(state: DockerDeploymentState) -> dict:
     }
 
 
-async def validate_endpoints(state: DockerDeploymentState) -> dict:
+async def validate_endpoints(state: DockerDeploymentState) -> dict[str, Any]:
     """
     Validate specific application endpoints.
 
@@ -501,7 +513,7 @@ async def validate_endpoints(state: DockerDeploymentState) -> dict:
     }
 
 
-async def finalize(state: DockerDeploymentState) -> dict:
+async def finalize(state: DockerDeploymentState) -> dict[str, Any]:
     """
     Finalize deployment and generate report.
 
@@ -611,7 +623,7 @@ def should_continue(state: DockerDeploymentState) -> Literal["continue", "error"
     return "continue"
 
 
-def create_docker_deployment_workflow() -> StateGraph:
+def create_docker_deployment_workflow() -> StateGraph[Any]:
     """
     Create the Docker deployment workflow graph.
 
@@ -654,7 +666,7 @@ docker_deployment_graph = create_docker_deployment_workflow().compile()
 async def run_docker_deployment(
     project_path: str,
     service_dependencies: list[str] | None = None,
-    health_endpoints: list[dict] | None = None,
+    health_endpoints: list[dict[str, Any]] | None = None,
 ) -> DockerDeploymentState:
     """
     Run the Docker deployment workflow.
@@ -673,6 +685,6 @@ async def run_docker_deployment(
         health_endpoints=health_endpoints or [],
     )
 
-    final_state = await docker_deployment_graph.ainvoke(initial_state)
+    final_state = await docker_deployment_graph.ainvoke(initial_state)  # type: ignore[arg-type]
 
-    return final_state
+    return final_state  # type: ignore[return-value]

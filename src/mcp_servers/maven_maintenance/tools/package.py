@@ -5,6 +5,7 @@ Packages a Maven project into its distributable format.
 """
 
 import asyncio
+import contextlib
 import json
 import subprocess
 from pathlib import Path
@@ -93,7 +94,7 @@ async def package_project(
 
 async def _find_artifacts(project_dir: Path) -> list[dict[str, Any]]:
     """Find generated artifacts in the target directory."""
-    artifacts = []
+    artifacts: list[dict[str, Any]] = []
     target_dir = project_dir / "target"
 
     if not target_dir.exists():
@@ -128,11 +129,12 @@ async def _find_artifacts(project_dir: Path) -> list[dict[str, Any]]:
 
 def _format_size(size_bytes: int) -> str:
     """Format file size in human-readable format."""
+    size: float = float(size_bytes)
     for unit in ["B", "KB", "MB", "GB"]:
-        if size_bytes < 1024:
-            return f"{size_bytes:.1f} {unit}"
-        size_bytes /= 1024
-    return f"{size_bytes:.1f} TB"
+        if size < 1024:
+            return f"{size:.1f} {unit}"
+        size /= 1024
+    return f"{size:.1f} TB"
 
 
 def _extract_build_errors(output: str) -> list[dict[str, Any]]:
@@ -158,10 +160,8 @@ def _extract_build_errors(output: str) -> list[dict[str, Any]]:
                     parts = message.split(":")
                     if len(parts) >= 2:
                         current_error["file"] = parts[0]
-                        try:
+                        with contextlib.suppress(ValueError):
                             current_error["line"] = int(parts[1])
-                        except ValueError:
-                            pass
         elif in_error_block and line.strip() and not line.strip().startswith("["):
             # Continuation of error message
             if "context" not in current_error:

@@ -6,7 +6,7 @@ Stores project metadata, configuration, and status information.
 
 import enum
 from datetime import datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 from uuid import UUID, uuid4
 
 from sqlalchemy import JSON, DateTime, String
@@ -84,9 +84,9 @@ class Project(Base):
 
     last_analyzed: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
-    analysis_config: Mapped[dict | None] = mapped_column(JSON, nullable=True, default=dict)
+    analysis_config: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True, default=dict)
 
-    project_metadata: Mapped[dict | None] = mapped_column(JSON, nullable=True, default=dict)
+    project_metadata: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True, default=dict)
 
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
 
@@ -113,7 +113,7 @@ class Project(Base):
 
         return os.path.join(self.path, self.pom_path)
 
-    def to_dict(self) -> dict:
+    def to_dict(self) -> dict[str, Any]:
         """Convert project to dictionary representation."""
         return {
             "id": str(self.id),

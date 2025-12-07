@@ -6,7 +6,7 @@ Provides ASCII-safe progress indicators for Windows compatibility.
 import sys
 
 from rich.console import Console
-from rich.progress import Progress, TextColumn, BarColumn, TimeElapsedColumn
+from rich.progress import BarColumn, Progress, TextColumn, TimeElapsedColumn
 
 
 def create_progress(console: Console | None = None) -> Progress:

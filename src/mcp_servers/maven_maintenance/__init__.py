@@ -5,6 +5,8 @@ Provides tools for analyzing dependencies, compiling tests, running tests,
 and packaging Maven projects.
 """
 
+from typing import Any
+
 from mcp.server import Server
 from mcp.types import Tool
 
@@ -17,7 +19,7 @@ from .tools.run_tests import run_tests
 server = Server("maven-maintenance")
 
 
-@server.list_tools()
+@server.list_tools()  # type: ignore
 async def list_tools() -> list[Tool]:
     """List all available Maven maintenance tools."""
     return [
@@ -133,8 +135,8 @@ async def list_tools() -> list[Tool]:
     ]
 
 
-@server.call_tool()
-async def call_tool(name: str, arguments: dict) -> str:
+@server.call_tool()  # type: ignore
+async def call_tool(name: str, arguments: dict[str, Any]) -> str:
     """Route tool calls to appropriate handlers."""
     if name == "analyze-dependencies":
         return await analyze_dependencies(**arguments)
@@ -148,7 +150,7 @@ async def call_tool(name: str, arguments: dict) -> str:
         raise ValueError(f"Unknown tool: {name}")
 
 
-async def main():
+async def main() -> None:
     """Run the MCP server."""
     from mcp.server.stdio import stdio_server
 

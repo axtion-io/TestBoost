@@ -3,6 +3,7 @@
 import uuid
 from datetime import datetime
 from enum import Enum
+from typing import Any
 
 from sqlalchemy import DateTime, Index, String, Text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
@@ -53,8 +54,8 @@ class Session(Base):
         String(20), nullable=False, default=SessionMode.INTERACTIVE.value
     )
     project_path: Mapped[str] = mapped_column(Text, nullable=False)
-    config: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
-    result: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    config: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
+    result: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=datetime.utcnow

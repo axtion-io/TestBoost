@@ -5,6 +5,8 @@ Provides tools for managing git branches, commits, and status
 during maintenance workflows.
 """
 
+from typing import Any
+
 from mcp.server import Server
 from mcp.types import Tool
 
@@ -16,7 +18,7 @@ from .tools.status import get_status
 server = Server("git-maintenance")
 
 
-@server.list_tools()
+@server.list_tools()  # type: ignore
 async def list_tools() -> list[Tool]:
     """List all available Git maintenance tools."""
     return [
@@ -76,8 +78,8 @@ async def list_tools() -> list[Tool]:
     ]
 
 
-@server.call_tool()
-async def call_tool(name: str, arguments: dict) -> str:
+@server.call_tool()  # type: ignore
+async def call_tool(name: str, arguments: dict[str, Any]) -> str:
     """Route tool calls to appropriate handlers."""
     if name == "create-maintenance-branch":
         return await create_maintenance_branch(**arguments)
@@ -89,13 +91,12 @@ async def call_tool(name: str, arguments: dict) -> str:
         raise ValueError(f"Unknown tool: {name}")
 
 
-async def main():
+async def main() -> None:
     """Run the MCP server."""
     from mcp.server.stdio import stdio_server
 
     async with stdio_server() as (read_stream, write_stream):
         await server.run(read_stream, write_stream, server.create_initialization_options())
-
 
 if __name__ == "__main__":
     import asyncio

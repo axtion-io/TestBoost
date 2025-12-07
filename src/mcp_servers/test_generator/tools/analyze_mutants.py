@@ -53,27 +53,32 @@ async def analyze_mutants(
 
 async def _analyze_mutations(report_file: Path, min_score: float) -> dict[str, Any]:
     """Perform detailed mutation analysis."""
-    analysis = {
+    hard_to_kill: list[dict[str, Any]] = []
+    by_class: list[dict[str, Any]] = []
+    recommendations: list[str] = []
+    priority_improvements: list[dict[str, Any]] = []
+
+    analysis: dict[str, Any] = {
         "success": True,
         "mutation_score": 0,
         "meets_threshold": False,
         "threshold": min_score,
         "summary": {"total_mutants": 0, "killed": 0, "survived": 0, "no_coverage": 0},
-        "hard_to_kill": [],
+        "hard_to_kill": hard_to_kill,
         "by_mutator": {},
-        "by_class": [],
-        "recommendations": [],
-        "priority_improvements": [],
+        "by_class": by_class,
+        "recommendations": recommendations,
+        "priority_improvements": priority_improvements,
     }
 
     try:
         tree = ET.parse(report_file)
         root = tree.getroot()
 
-        surviving = []
-        no_coverage = []
-        mutator_stats = Counter()
-        class_stats = {}
+        surviving: list[dict[str, Any]] = []
+        no_coverage_list: list[dict[str, Any]] = []
+        mutator_stats: Counter[str] = Counter()
+        class_stats: dict[str, dict[str, Any]] = {}
 
         for mutation in root.findall(".//mutation"):
             status = mutation.get("status", "UNKNOWN")
@@ -82,7 +87,7 @@ async def _analyze_mutations(report_file: Path, min_score: float) -> dict[str, A
             line = int(mutation.findtext("lineNumber", "0"))
             mutator = mutation.findtext("mutator", "").split(".")[-1]
             description = mutation.findtext("description", "")
-            killing_test = mutation.findtext("killingTest", "")
+            _ = mutation.findtext("killingTest", "")  # killingTest extracted but not used currently
 
             analysis["summary"]["total_mutants"] += 1
             mutator_stats[mutator] += 1
@@ -115,7 +120,7 @@ async def _analyze_mutations(report_file: Path, min_score: float) -> dict[str, A
             elif status == "NO_COVERAGE":
                 analysis["summary"]["no_coverage"] += 1
                 class_stats[class_name]["no_coverage"] += 1
-                no_coverage.append({"class": class_name, "method": method, "line": line})
+                no_coverage_list.append({"class": class_name, "method": method, "line": line})
 
         # Calculate mutation score
         total = analysis["summary"]["total_mutants"]
@@ -128,14 +133,14 @@ async def _analyze_mutations(report_file: Path, min_score: float) -> dict[str, A
         analysis["by_mutator"] = dict(mutator_stats.most_common())
 
         # Identify hard-to-kill mutants (patterns)
-        analysis["hard_to_kill"] = _identify_hard_to_kill(surviving)
+        hard_to_kill.extend(_identify_hard_to_kill(surviving))
 
         # Class-level analysis
         for class_name, stats in class_stats.items():
             total_class = stats["killed"] + stats["survived"] + stats["no_coverage"]
             score = (stats["killed"] / total_class * 100) if total_class > 0 else 0
 
-            analysis["by_class"].append(
+            by_class.append(
                 {
                     "class": class_name,
                     "score": round(score, 1),
@@ -147,15 +152,15 @@ async def _analyze_mutations(report_file: Path, min_score: float) -> dict[str, A
             )
 
         # Sort classes by score
-        analysis["by_class"].sort(key=lambda x: x["score"])
+        by_class.sort(key=lambda x: x["score"])
 
         # Generate recommendations
-        analysis["recommendations"] = _generate_recommendations(analysis, surviving, no_coverage)
+        recommendations.extend(_generate_recommendations(analysis, surviving, no_coverage_list))
 
         # Identify priority improvements
-        analysis["priority_improvements"] = _identify_priorities(
-            surviving, no_coverage, class_stats
-        )
+        priority_improvements.extend(_identify_priorities(
+            surviving, no_coverage_list, class_stats
+        ))
 
     except ET.ParseError as e:
         analysis["success"] = False
@@ -164,9 +169,9 @@ async def _analyze_mutations(report_file: Path, min_score: float) -> dict[str, A
     return analysis
 
 
-def _identify_hard_to_kill(surviving: list[dict]) -> list[dict]:
+def _identify_hard_to_kill(surviving: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Identify patterns in hard-to-kill mutants."""
-    patterns = {}
+    patterns: dict[str, dict[str, Any]] = {}
 
     for mutant in surviving:
         mutator = mutant["mutator"]
@@ -189,7 +194,7 @@ def _identify_hard_to_kill(surviving: list[dict]) -> list[dict]:
 
 
 def _generate_recommendations(
-    analysis: dict, surviving: list[dict], no_coverage: list[dict]
+    analysis: dict[str, Any], surviving: list[dict[str, Any]], no_coverage: list[dict[str, Any]]
 ) -> list[str]:
     """Generate test improvement recommendations."""
     recommendations = []
@@ -242,13 +247,13 @@ def _generate_recommendations(
 
 
 def _identify_priorities(
-    surviving: list[dict], no_coverage: list[dict], class_stats: dict
-) -> list[dict]:
+    surviving: list[dict[str, Any]], no_coverage: list[dict[str, Any]], class_stats: dict[str, dict[str, Any]]
+) -> list[dict[str, Any]]:
     """Identify priority test improvements."""
-    priorities = []
+    priorities: list[dict[str, Any]] = []
 
     # Group surviving mutants by class and method
-    by_method = {}
+    by_method: dict[str, list[dict[str, Any]]] = {}
     for mutant in surviving:
         key = f"{mutant['class']}#{mutant['method']}"
         if key not in by_method:

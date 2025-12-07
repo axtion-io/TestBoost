@@ -5,6 +5,8 @@ Provides tools for analyzing projects, detecting test conventions,
 generating various test types, and running mutation testing.
 """
 
+from typing import Any
+
 from mcp.server import Server
 from mcp.types import Tool
 
@@ -21,7 +23,7 @@ from .tools.mutation import run_mutation_testing
 server = Server("test-generator")
 
 
-@server.list_tools()
+@server.list_tools()  # type: ignore
 async def list_tools() -> list[Tool]:
     """List all available test generation tools."""
     return [
@@ -235,8 +237,8 @@ async def list_tools() -> list[Tool]:
     ]
 
 
-@server.call_tool()
-async def call_tool(name: str, arguments: dict) -> str:
+@server.call_tool()  # type: ignore
+async def call_tool(name: str, arguments: dict[str, Any]) -> str:
     """Route tool calls to appropriate handlers."""
     if name == "analyze-project-context":
         return await analyze_project_context(**arguments)
@@ -258,7 +260,7 @@ async def call_tool(name: str, arguments: dict) -> str:
         raise ValueError(f"Unknown tool: {name}")
 
 
-async def main():
+async def main() -> None:
     """Run the MCP server."""
     from mcp.server.stdio import stdio_server
 

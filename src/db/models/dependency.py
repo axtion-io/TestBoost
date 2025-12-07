@@ -6,7 +6,7 @@ Stores dependency information, versions, and update status.
 
 import enum
 from datetime import datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 from uuid import UUID, uuid4
 
 from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, String
@@ -90,13 +90,13 @@ class Dependency(Base):
 
     is_managed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
-    vulnerabilities: Mapped[list | None] = mapped_column(JSON, nullable=True, default=list)
+    vulnerabilities: Mapped[list[Any] | None] = mapped_column(JSON, nullable=True, default=list)
 
     release_notes_url: Mapped[str | None] = mapped_column(String(1024), nullable=True)
 
     last_checked: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
-    dep_metadata: Mapped[dict | None] = mapped_column(JSON, nullable=True, default=dict)
+    dep_metadata: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True, default=dict)
 
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
 
@@ -128,7 +128,7 @@ class Dependency(Base):
         """Check if dependency has known vulnerabilities."""
         return bool(self.vulnerabilities)
 
-    def to_dict(self) -> dict:
+    def to_dict(self) -> dict[str, Any]:
         """Convert dependency to dictionary representation."""
         return {
             "id": str(self.id),

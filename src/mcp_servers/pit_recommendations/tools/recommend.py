@@ -7,11 +7,12 @@ test effectiveness based on mutation analysis.
 
 import json
 from pathlib import Path
+from typing import Any
 
 
 async def recommend_test_improvements(
     project_path: str,
-    mutation_analysis: dict | None = None,
+    mutation_analysis: dict[str, Any] | None = None,
     target_score: float = 80,
     max_recommendations: int = 20,
 ) -> str:
@@ -65,14 +66,13 @@ async def recommend_test_improvements(
 
 
 def _generate_recommendations(
-    analysis: dict, target_score: float, max_recommendations: int
-) -> list[dict]:
+    analysis: dict[str, Any], target_score: float, max_recommendations: int
+) -> list[dict[str, Any]]:
     """Generate actionable test improvement recommendations."""
-    recommendations = []
+    recommendations: list[dict[str, Any]] = []
 
     summary = analysis.get("summary", {})
     current_score = summary.get("mutation_score", 0)
-    survived = summary.get("survived", 0)
     no_coverage = summary.get("no_coverage", 0)
 
     # Calculate how many mutants need to be killed
@@ -141,7 +141,7 @@ def _generate_recommendations(
     return unique_recs[:max_recommendations]
 
 
-def _pattern_to_recommendation(pattern: dict) -> dict | None:
+def _pattern_to_recommendation(pattern: dict[str, Any]) -> dict[str, Any] | None:
     """Convert a pattern to a recommendation."""
     pattern_type = pattern.get("type")
 
@@ -180,7 +180,7 @@ def _pattern_to_recommendation(pattern: dict) -> dict | None:
     return None
 
 
-def _hot_spot_to_recommendation(hot_spot: dict) -> dict:
+def _hot_spot_to_recommendation(hot_spot: dict[str, Any]) -> dict[str, Any]:
     """Convert a hot spot to a recommendation."""
     class_name = hot_spot.get("class", "")
     method = hot_spot.get("method", "")
@@ -203,7 +203,7 @@ def _hot_spot_to_recommendation(hot_spot: dict) -> dict:
     }
 
 
-def _group_to_recommendation(group_key: str, group_data: dict) -> dict | None:
+def _group_to_recommendation(group_key: str, group_data: dict[str, Any]) -> dict[str, Any] | None:
     """Convert grouped analysis to a recommendation."""
     count = group_data.get("count", 0)
     if count < 2:
@@ -284,10 +284,10 @@ def _get_mutator_action(mutator: str) -> str:
     )
 
 
-def _generate_summary(recommendations: list[dict]) -> dict:
+def _generate_summary(recommendations: list[dict[str, Any]]) -> dict[str, Any]:
     """Generate a summary of recommendations."""
-    by_priority = {"critical": 0, "high": 0, "medium": 0, "low": 0}
-    by_type = {}
+    by_priority: dict[str, int] = {"critical": 0, "high": 0, "medium": 0, "low": 0}
+    by_type: dict[str, int] = {}
     total_effort = 0
     effort_map = {"low": 1, "medium": 2, "high": 3}
 

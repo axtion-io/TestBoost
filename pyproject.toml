@@ -34,6 +34,7 @@ pytest-cov = "^6.0"
 black = "^24.10"
 ruff = "^0.8"
 mypy = "^1.13"
+types-PyYAML = "^6.0"
 
 [tool.poetry.scripts]
 boost = "src.cli.main:app"
@@ -79,6 +80,12 @@ exclude = '''
 python_version = "3.11"
 strict = true
 ignore_missing_imports = true
+plugins = ["pydantic.mypy"]
+
+[tool.pydantic-mypy]
+init_forbid_extra = true
+init_typed = true
+warn_required_dynamic_aliases = true
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

@@ -175,7 +175,8 @@ async def _run_maintenance_task(session_id: str, request: MaintenanceRequest) ->
         # Import and run workflow
         from src.workflows.maven_maintenance import maven_maintenance_graph
 
-        final_state = await maven_maintenance_graph.ainvoke(initial_state)
+        result = await maven_maintenance_graph.ainvoke(initial_state)  # type: ignore[arg-type]
+        final_state = result if isinstance(result, MavenMaintenanceState) else initial_state
 
         # Update session with final state
         _sessions[session_id] = final_state
@@ -447,14 +448,15 @@ async def _run_test_generation_task(session_id: str, request: TestGenerateReques
         )
 
         _test_sessions[session_id] = initial_state
-        final_state = await test_generation_graph.ainvoke(initial_state)
+        result = await test_generation_graph.ainvoke(initial_state)  # type: ignore[arg-type]
+        final_state = result if isinstance(result, TestGenerationState) else initial_state
         _test_sessions[session_id] = final_state
 
         logger.info(
             "test_generation_complete",
             session_id=session_id,
-            unit_tests=len(final_state.generated_unit_tests),
-            mutation_score=final_state.mutation_score,
+            unit_tests=len(getattr(final_state, "generated_unit_tests", [])),
+            mutation_score=getattr(final_state, "mutation_score", 0.0),
         )
 
     except Exception as e:

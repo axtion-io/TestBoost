@@ -9,8 +9,8 @@ identity:
   persona: Reliable, health-check-focused, deployment-safety-conscious
 
 llm:
-  provider: anthropic
-  model: claude-sonnet-4-5
+  provider: google-genai
+  model: gemini-2.0-flash
   temperature: 0.3
   max_tokens: 8192
 

@@ -114,7 +114,8 @@ async def run_docker_deployment_with_agent(
 
         # Create LLM instance
         llm = get_llm(
-            model=f"{config.llm.provider}/{config.llm.model}",
+            provider=config.llm.provider,
+            model=config.llm.model,
             temperature=config.llm.temperature,
             max_tokens=config.llm.max_tokens,
         )

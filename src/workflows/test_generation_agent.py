@@ -113,7 +113,8 @@ async def run_test_generation_with_agent(
 
     # Get LLM instance (T055)
     llm = get_llm(
-        model=f"{config.llm.provider}/{config.llm.model}",
+        provider=config.llm.provider,
+        model=config.llm.model,
         temperature=config.llm.temperature,
         max_tokens=config.llm.max_tokens,
         timeout=config.error_handling.timeout_seconds,

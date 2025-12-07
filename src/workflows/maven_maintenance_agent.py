@@ -259,7 +259,8 @@ async def run_maven_maintenance_with_agent(
         logger.info(
             "agent_config_loaded",
             agent=config.name,
-            model=f"{config.llm.provider}/{config.llm.model}",
+            provider=config.llm.provider,
+            model=config.llm.model,
             temperature=config.llm.temperature
         )
 
@@ -289,7 +290,8 @@ async def run_maven_maintenance_with_agent(
 
         # T035: Create LLM instance
         llm = get_llm(
-            model=f"{config.llm.provider}/{config.llm.model}",
+            provider=config.llm.provider,
+            model=config.llm.model,
             temperature=config.llm.temperature,
             max_tokens=config.llm.max_tokens
         )

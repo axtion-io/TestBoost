@@ -1,7 +1,7 @@
 """Integration tests for config management features."""
 
 import time
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import yaml
 
@@ -390,26 +390,30 @@ class TestProviderSwitching:
         """Test that changing provider in config works."""
         # Test switching between different providers
         providers_to_test = [
-            ("google-genai", "gemini-2.5-flash-preview-09-2025"),
+            ("google-genai", "gemini-2.0-flash"),
             ("anthropic", "claude-3-sonnet-20240229"),
             ("openai", "gpt-4"),
         ]
 
         for provider, model in providers_to_test:
-            full_model = f"{provider}/{model}"
-
-            # Mock the provider-specific functions to avoid needing API keys
-            with patch("src.lib.llm._get_google_llm") as mock_google, \
-                 patch("src.lib.llm._get_anthropic_llm") as mock_anthropic, \
-                 patch("src.lib.llm._get_openai_llm") as mock_openai:
+            # Mock the provider-specific creation functions
+            with patch("src.lib.llm._create_google_llm") as mock_google, \
+                 patch("src.lib.llm._create_anthropic_llm") as mock_anthropic, \
+                 patch("src.lib.llm._create_openai_llm") as mock_openai, \
+                 patch("src.lib.config.get_settings") as mock_settings:
 
                 # Configure mocks
-                mock_google.return_value = object()
-                mock_anthropic.return_value = object()
-                mock_openai.return_value = object()
+                mock_settings.return_value.llm_provider = provider
+                mock_settings.return_value.model = model
+                mock_settings.return_value.llm_timeout = 30
+                mock_settings.return_value.get_api_key_for_provider.return_value = "test-api-key"
+
+                mock_google.return_value = MagicMock()
+                mock_anthropic.return_value = MagicMock()
+                mock_openai.return_value = MagicMock()
 
                 # Get LLM (should call correct provider function)
-                get_llm(model=full_model)
+                get_llm(provider=provider, model=model)
 
                 # Verify correct provider was called
                 if provider == "google-genai":

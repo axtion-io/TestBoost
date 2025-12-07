@@ -1,5 +1,6 @@
 """Integration tests for Docker deployment agent workflow (US5)."""
 
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -11,15 +12,19 @@ class TestDockerWorkflowUsesAgent:
     """Test that Docker workflow uses DeepAgents create_deep_agent()."""
 
     @pytest.mark.asyncio
-    async def test_docker_workflow_uses_agent(self):
+    async def test_docker_workflow_uses_agent(self, tmp_path):
         """Test Docker workflow creates and invokes agent with MCP tools."""
         from src.workflows.docker_deployment_agent import run_docker_deployment_with_agent
+
+        # Create a temporary project directory
+        project_dir = tmp_path / "test_project"
+        project_dir.mkdir()
 
         # Mock agent config
         mock_config = MagicMock()
         mock_config.name = "deployment_agent"
         mock_config.llm.provider = "google-genai"
-        mock_config.llm.model = "gemini-2.5-flash-preview-09-2025"
+        mock_config.llm.model = "gemini-2.0-flash"
         mock_config.llm.temperature = 0.1
         mock_config.llm.max_tokens = 4096
         mock_config.tools.mcp_servers = ["docker-deployment", "container-runtime"]
@@ -42,12 +47,12 @@ class TestDockerWorkflowUsesAgent:
                     tool_calls=[
                         {
                             "name": "docker_create_dockerfile",
-                            "args": {"project_path": "/test/project", "java_version": "17"},
+                            "args": {"project_path": str(project_dir), "java_version": "17"},
                             "id": "call_1"
                         },
                         {
                             "name": "docker_create_compose",
-                            "args": {"project_path": "/test/project", "dependencies": ["postgres"]},
+                            "args": {"project_path": str(project_dir), "dependencies": ["postgres"]},
                             "id": "call_2"
                         }
                     ]
@@ -75,7 +80,7 @@ class TestDockerWorkflowUsesAgent:
 
             # Execute workflow
             result = await run_docker_deployment_with_agent(
-                project_path="/test/project",
+                project_path=str(project_dir),
                 session_id="test-session-docker-123"
             )
 
@@ -101,9 +106,13 @@ class TestDockerWorkflowUsesAgent:
             assert "agent_response" in result
 
     @pytest.mark.asyncio
-    async def test_docker_workflow_loads_config_from_yaml(self):
+    async def test_docker_workflow_loads_config_from_yaml(self, tmp_path):
         """Test workflow loads agent config from deployment_agent.yaml."""
         from src.workflows.docker_deployment_agent import run_docker_deployment_with_agent
+
+        # Create a temporary project directory
+        project_dir = tmp_path / "test_project"
+        project_dir.mkdir()
 
         with patch("src.workflows.docker_deployment_agent.AgentLoader") as mock_loader_class, \
              patch("src.workflows.docker_deployment_agent.get_tools_for_servers") as mock_get_tools, \
@@ -115,7 +124,7 @@ class TestDockerWorkflowUsesAgent:
             mock_config = MagicMock()
             mock_config.tools.mcp_servers = ["docker-deployment", "container-runtime"]
             mock_config.llm.provider = "google-genai"
-            mock_config.llm.model = "gemini-2.5-flash"
+            mock_config.llm.model = "gemini-2.0-flash"
             mock_config.llm.temperature = 0.1
             mock_config.llm.max_tokens = 4096
             mock_loader.load_agent.return_value = mock_config
@@ -130,7 +139,7 @@ class TestDockerWorkflowUsesAgent:
             mock_checkpointer.return_value = MagicMock()
 
             await run_docker_deployment_with_agent(
-                project_path="/test/project",
+                project_path=str(project_dir),
                 session_id="test-session-456"
             )
 
@@ -138,9 +147,13 @@ class TestDockerWorkflowUsesAgent:
             mock_loader.load_agent.assert_called_once_with("deployment_agent")
 
     @pytest.mark.asyncio
-    async def test_docker_workflow_loads_prompt_template(self):
+    async def test_docker_workflow_loads_prompt_template(self, tmp_path):
         """Test workflow loads system prompt from config/prompts/deployment/docker_guidelines.md."""
         from src.workflows.docker_deployment_agent import run_docker_deployment_with_agent
+
+        # Create a temporary project directory
+        project_dir = tmp_path / "test_project"
+        project_dir.mkdir()
 
         with patch("src.workflows.docker_deployment_agent.AgentLoader") as mock_loader_class, \
              patch("src.workflows.docker_deployment_agent.get_tools_for_servers") as mock_get_tools, \
@@ -152,7 +165,7 @@ class TestDockerWorkflowUsesAgent:
             mock_config = MagicMock()
             mock_config.tools.mcp_servers = ["docker-deployment"]
             mock_config.llm.provider = "google-genai"
-            mock_config.llm.model = "gemini-2.5-flash"
+            mock_config.llm.model = "gemini-2.0-flash"
             mock_config.llm.temperature = 0.1
             mock_config.llm.max_tokens = None
             mock_loader.load_agent.return_value = mock_config
@@ -167,7 +180,7 @@ class TestDockerWorkflowUsesAgent:
             mock_checkpointer.return_value = MagicMock()
 
             await run_docker_deployment_with_agent(
-                project_path="/test/project",
+                project_path=str(project_dir),
                 session_id="test-session-789"
             )
 
@@ -176,12 +189,16 @@ class TestDockerWorkflowUsesAgent:
 
 
 class TestDockerWorkflowStoresArtifacts:
-    """Test that Docker workflow stores agent artifacts in database."""
+    """Test that Docker workflow returns agent artifacts in response."""
 
     @pytest.mark.asyncio
-    async def test_docker_workflow_stores_artifacts(self, db_session):
-        """Test workflow stores agent reasoning, tool calls, and metrics as artifacts."""
+    async def test_docker_workflow_stores_artifacts(self, tmp_path):
+        """Test workflow returns agent reasoning, tool calls, and metrics in response."""
         from src.workflows.docker_deployment_agent import run_docker_deployment_with_agent
+
+        # Create a temporary project directory
+        project_dir = tmp_path / "test_project"
+        project_dir.mkdir()
 
         # Mock agent response with tool calls
         mock_agent_response = {
@@ -191,7 +208,7 @@ class TestDockerWorkflowStoresArtifacts:
                     tool_calls=[
                         {
                             "name": "docker_create_dockerfile",
-                            "args": {"project_path": "/test/project", "java_version": "17"},
+                            "args": {"project_path": str(project_dir), "java_version": "17"},
                             "id": "call_1"
                         }
                     ]
@@ -209,7 +226,7 @@ class TestDockerWorkflowStoresArtifacts:
             mock_config = MagicMock()
             mock_config.tools.mcp_servers = ["docker-deployment"]
             mock_config.llm.provider = "google-genai"
-            mock_config.llm.model = "gemini-2.5-flash"
+            mock_config.llm.model = "gemini-2.0-flash"
             mock_config.llm.temperature = 0.1
             mock_config.llm.max_tokens = 4096
             mock_loader.load_agent.return_value = mock_config
@@ -226,12 +243,11 @@ class TestDockerWorkflowStoresArtifacts:
             # Execute workflow
             session_id = "test-session-artifacts"
             result = await run_docker_deployment_with_agent(
-                project_path="/test/project",
+                project_path=str(project_dir),
                 session_id=session_id
             )
 
-            # Note: Artifact storage would be tested with actual database
-            # This test verifies the workflow completes successfully
+            # Verify workflow completes successfully and returns agent response
             assert result["success"] is True
             assert "java" in result["agent_response"].lower() or "docker" in result["agent_response"].lower()
 
@@ -240,9 +256,13 @@ class TestDockerAgentHealthCheckMonitoring:
     """Test that agent monitors health checks with proper waiting."""
 
     @pytest.mark.asyncio
-    async def test_docker_agent_health_check_monitoring(self):
+    async def test_docker_agent_health_check_monitoring(self, tmp_path):
         """Test agent waits for health checks to pass before declaring success."""
         from src.workflows.docker_deployment_agent import run_docker_deployment_with_agent
+
+        # Create a temporary project directory
+        project_dir = tmp_path / "test_project"
+        project_dir.mkdir()
 
         # Mock agent response with health check monitoring
         mock_agent_response = {
@@ -252,13 +272,13 @@ class TestDockerAgentHealthCheckMonitoring:
                     tool_calls=[
                         {
                             "name": "docker_deploy_compose",
-                            "args": {"compose_path": "/test/project/docker-compose.yml"},
+                            "args": {"compose_path": str(project_dir / "docker-compose.yml")},
                             "id": "call_1"
                         },
                         {
                             "name": "docker_health_check",
                             "args": {
-                                "compose_path": "/test/project/docker-compose.yml",
+                                "compose_path": str(project_dir / "docker-compose.yml"),
                                 "timeout": 120,
                                 "check_interval": 5
                             },
@@ -279,7 +299,7 @@ class TestDockerAgentHealthCheckMonitoring:
             mock_config = MagicMock()
             mock_config.tools.mcp_servers = ["docker-deployment", "container-runtime"]
             mock_config.llm.provider = "google-genai"
-            mock_config.llm.model = "gemini-2.5-flash"
+            mock_config.llm.model = "gemini-2.0-flash"
             mock_config.llm.temperature = 0.1
             mock_config.llm.max_tokens = 4096
             mock_loader.load_agent.return_value = mock_config
@@ -294,7 +314,7 @@ class TestDockerAgentHealthCheckMonitoring:
             mock_checkpointer.return_value = MagicMock()
 
             result = await run_docker_deployment_with_agent(
-                project_path="/test/project",
+                project_path=str(project_dir),
                 health_endpoints=[{"url": "http://localhost:8080/actuator/health"}],
                 session_id="test-session-health"
             )
@@ -303,11 +323,3 @@ class TestDockerAgentHealthCheckMonitoring:
             assert result["success"] is True
             response_text = result["agent_response"].lower()
             assert "health" in response_text or "deployed" in response_text
-
-
-# Fixtures
-@pytest.fixture
-async def db_session():
-    """Provide a mock database session for testing."""
-    mock_session = MagicMock()
-    return mock_session

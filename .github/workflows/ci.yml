@@ -44,6 +44,7 @@ jobs:
         poetry run pytest tests/integration/test_llm_connectivity.py -v --tb=short -k "not test_llm_connection_success"
         poetry run pytest tests/integration/test_agent_config_loading.py -v --tb=short
         poetry run pytest tests/integration/test_agent_config_validation.py -v --tb=short
+        poetry run pytest tests/integration/test_provider_switching.py -v --tb=short
       continue-on-error: false
 
     - name: Run Regression Tests (T097a)

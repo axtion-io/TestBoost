@@ -90,7 +90,7 @@ def get_logger(name: str | None = None, **initial_context: Any) -> structlog.std
     if initial_context:
         logger = logger.bind(**initial_context)
 
-    return logger  # type: ignore[return-value]
+    return logger
 
 
 def bind_context(**context: Any) -> None:

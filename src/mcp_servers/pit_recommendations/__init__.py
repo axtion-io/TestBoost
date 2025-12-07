@@ -106,11 +106,11 @@ async def list_tools() -> list[Tool]:
 async def call_tool(name: str, arguments: dict[str, Any]) -> str:
     """Route tool calls to appropriate handlers."""
     if name == "analyze-hard-mutants":
-        return await analyze_hard_mutants(**arguments)  # type: ignore[no-untyped-call]
+        return await analyze_hard_mutants(**arguments)
     elif name == "recommend-test-improvements":
-        return await recommend_test_improvements(**arguments)  # type: ignore[no-untyped-call]
+        return await recommend_test_improvements(**arguments)
     elif name == "prioritize-test-efforts":
-        return await prioritize_test_efforts(**arguments)  # type: ignore[no-untyped-call]
+        return await prioritize_test_efforts(**arguments)
     else:
         raise ValueError(f"Unknown tool: {name}")
 
@@ -120,7 +120,7 @@ async def main() -> None:
     from mcp.server.stdio import stdio_server
 
     async with stdio_server() as (read_stream, write_stream):
-        await server.run(read_stream, write_stream, server.create_initialization_options())  # type: ignore[no-untyped-call]
+        await server.run(read_stream, write_stream, server.create_initialization_options())
 
 
 if __name__ == "__main__":

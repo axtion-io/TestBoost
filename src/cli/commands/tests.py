@@ -20,7 +20,7 @@ app = typer.Typer(
 )
 
 
-@app.command("generate")
+@app.command("generate")  # type: ignore[untyped-decorator]
 def generate_tests(
     mode: str = typer.Option(
         "interactive",
@@ -119,7 +119,7 @@ def generate_tests(
     )
 
 
-@app.command("analyze")
+@app.command("analyze")  # type: ignore[untyped-decorator]
 def analyze_project(
     project_path: str = typer.Argument(
         ".",
@@ -149,7 +149,7 @@ def analyze_project(
     _run_analysis(project_dir, verbose)
 
 
-@app.command("mutation")
+@app.command("mutation")  # type: ignore[untyped-decorator]
 def run_mutation(
     project_path: str = typer.Argument(
         ".",
@@ -190,7 +190,7 @@ def run_mutation(
     asyncio.run(_run_mutation_testing(project_dir, target_classes, target_tests, verbose))
 
 
-@app.command("recommendations")
+@app.command("recommendations")  # type: ignore[untyped-decorator]
 def show_recommendations(
     project_path: str = typer.Argument(
         ".",

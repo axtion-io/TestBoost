@@ -45,7 +45,7 @@ class AgentTimeoutError(MavenAgentError):
 
 async def _invoke_agent_with_retry(
     agent: Any,
-    input_data: dict | list[BaseMessage],
+    input_data: dict[str, Any] | list[BaseMessage],
     max_retries: int = 3,
     expected_tools: list[str] | None = None
 ) -> AIMessage:
@@ -90,7 +90,7 @@ async def _invoke_agent_with_retry(
             start_time = time.time()
 
             # Invoke agent
-            response = await agent.ainvoke({"messages": messages})  # type: ignore[arg-type]
+            response = await agent.ainvoke({"messages": messages})
 
             duration_ms = int((time.time() - start_time) * 1000)
             logger.info("agent_invoke_success", attempt=attempt, duration_ms=duration_ms)
@@ -100,7 +100,7 @@ async def _invoke_agent_with_retry(
                 "llm_raw_response",
                 attempt=attempt,
                 response_type=type(response).__name__,
-                response_keys=list(response.keys()) if isinstance(response, dict) else "not_dict"  # type: ignore[arg-type]
+                response_keys=list(response.keys()) if isinstance(response, dict) else "not_dict"
             )
 
             # Extract AIMessage from response
@@ -120,16 +120,16 @@ async def _invoke_agent_with_retry(
             logger.info(
                 "llm_response_content",
                 attempt=attempt,
-                content_preview=str(ai_message.content)[:500] if hasattr(ai_message, 'content') else "no_content",  # type: ignore[attr-defined]
-                has_tool_calls=hasattr(ai_message, "tool_calls") and bool(ai_message.tool_calls),  # type: ignore[attr-defined]
-                tool_calls_count=len(ai_message.tool_calls) if hasattr(ai_message, "tool_calls") and ai_message.tool_calls else 0  # type: ignore[attr-defined]
+                content_preview=str(ai_message.content)[:500] if hasattr(ai_message, 'content') else "no_content",
+                has_tool_calls=hasattr(ai_message, "tool_calls") and bool(ai_message.tool_calls),
+                tool_calls_count=len(ai_message.tool_calls) if hasattr(ai_message, "tool_calls") and ai_message.tool_calls else 0
             )
 
             # A2 Edge Case: Verify expected tools were called
             if expected_tools:
                 called_tools = []
-                if hasattr(ai_message, "tool_calls") and ai_message.tool_calls:  # type: ignore[attr-defined]
-                    called_tools = [tc.get("name") or tc.get("tool") for tc in ai_message.tool_calls]  # type: ignore[attr-defined,union-attr]
+                if hasattr(ai_message, "tool_calls") and ai_message.tool_calls:
+                    called_tools = [tc.get("name") or tc.get("tool") for tc in ai_message.tool_calls]
                     logger.info(
                         "llm_tool_calls_detected",
                         attempt=attempt,
@@ -354,19 +354,19 @@ Remember: You have access to these tools:
         # T044: Store agent reasoning in session result
         agent_reasoning = {
             "agent": config.name,
-            "reasoning": response.content,  # type: ignore[attr-defined]
+            "reasoning": response.content,
             "model": config.llm.model,
             "timestamp": datetime.utcnow().isoformat(),
             "tool_calls": []
         }
 
         # T045: Store tool calls
-        if hasattr(response, "tool_calls") and response.tool_calls:  # type: ignore[attr-defined]
-            for tool_call in response.tool_calls:  # type: ignore[attr-defined]
+        if hasattr(response, "tool_calls") and response.tool_calls:
+            for tool_call in response.tool_calls:
                 tool_call_data = {
-                    "tool_name": tool_call.get("name") or tool_call.get("tool"),  # type: ignore[union-attr]
-                    "arguments": tool_call.get("args") or tool_call.get("arguments", {}),  # type: ignore[union-attr]
-                    "id": tool_call.get("id"),  # type: ignore[union-attr]
+                    "tool_name": tool_call.get("name") or tool_call.get("tool"),
+                    "arguments": tool_call.get("args") or tool_call.get("arguments", {}),
+                    "id": tool_call.get("id"),
                     "timestamp": datetime.utcnow().isoformat()
                 }
                 agent_reasoning["tool_calls"].append(tool_call_data)
@@ -379,7 +379,7 @@ Remember: You have access to these tools:
 
         # T046: Add LLM metrics (estimated - real metrics come from LangSmith)
         agent_reasoning["llm_metrics"] = {
-            "estimated_tokens": len(response.content.split()) * 1.3,  # type: ignore[attr-defined] # Rough estimate
+            "estimated_tokens": len(response.content.split()) * 1.3,  # Rough estimate
             "model": config.llm.model,
             "provider": config.llm.provider
         }
@@ -388,14 +388,14 @@ Remember: You have access to these tools:
             "maven_agent_workflow_complete",
             session_id=session_id,
             tool_calls_count=len(agent_reasoning["tool_calls"]),
-            response_length=len(response.content)  # type: ignore[attr-defined,arg-type]
+            response_length=len(response.content)
         )
 
         # Return both the reasoning and the structured data
         # The calling code will store this in session.result JSONB field
         return json.dumps({
             "success": True,
-            "analysis": response.content,  # type: ignore[attr-defined]
+            "analysis": response.content,
             "agent_reasoning": agent_reasoning,
             "session_id": session_id
         }, indent=2)

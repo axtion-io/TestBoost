@@ -7,7 +7,7 @@ from typing import Any, Generic, TypeVar
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.db import Base
+from src.db.base import Base
 from src.db.models import Artifact, Event, ProjectLock, Session, Step
 
 T = TypeVar("T", bound=Base)

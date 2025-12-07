@@ -673,6 +673,6 @@ async def run_docker_deployment(
         health_endpoints=health_endpoints or [],
     )
 
-    final_state = await docker_deployment_graph.ainvoke(initial_state)  # type: ignore[arg-type]
+    final_state = await docker_deployment_graph.ainvoke(initial_state)
 
-    return final_state
+    return final_state  # type: ignore[no-any-return]

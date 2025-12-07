@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-import yaml
+import yaml  # type: ignore[import-untyped]
 from pydantic import BaseModel, Field, ValidationError
 
 from src.lib.logging import get_logger
@@ -194,7 +194,7 @@ class AgentLoader:
             cached = self._cache.get(cache_key, file_path)
             if cached:
                 logger.debug("agent_loaded_from_cache", name=name)
-                return cached  # type: ignore[return-value]
+                return cached  # type: ignore[no-any-return]
 
         logger.info("loading_agent", name=name, path=str(file_path), force_reload=force_reload)
 
@@ -292,7 +292,7 @@ class AgentLoader:
             cached = self._cache.get(cache_key, file_path)
             if cached:
                 logger.debug("prompt_loaded_from_cache", name=name, category=category)
-                return cached  # type: ignore[return-value]
+                return cached  # type: ignore[no-any-return]
 
         logger.info("loading_prompt", name=name, category=category, force_reload=force_reload)
 

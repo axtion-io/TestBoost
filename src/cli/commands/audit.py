@@ -27,7 +27,7 @@ app = typer.Typer(
 )
 
 
-@app.command("scan")
+@app.command("scan")  # type: ignore[untyped-decorator]
 def scan_vulnerabilities(
     mode: str = typer.Option(
         "interactive",
@@ -100,7 +100,7 @@ def scan_vulnerabilities(
 
             progress.update(task, completed=True)
 
-            return json.loads(result)
+            return json.loads(result)  # type: ignore[no-any-return]
 
     analysis = asyncio.run(_scan())
 
@@ -249,7 +249,7 @@ def scan_vulnerabilities(
             raise typer.Exit(1)
 
 
-@app.command("report")
+@app.command("report")  # type: ignore[untyped-decorator]
 def generate_report(
     project_path: str = typer.Argument(
         ".",
@@ -299,7 +299,7 @@ def generate_report(
 
             progress.update(task, completed=True)
 
-            return json.loads(result)
+            return json.loads(result)  # type: ignore[no-any-return]
 
     analysis = asyncio.run(_analyze())
 

@@ -36,10 +36,10 @@ async def health_check(db: AsyncSession = Depends(get_db)) -> JSONResponse:
     # Check database connectivity
     try:
         await db.execute(text("SELECT 1"))
-        health_status["checks"]["database"] = "healthy"  # type: ignore[index]
+        health_status["checks"]["database"] = "healthy"
     except Exception as e:
         logger.error("database_health_check_failed", error=str(e))
-        health_status["checks"]["database"] = "unhealthy"  # type: ignore[index]
+        health_status["checks"]["database"] = "unhealthy"
         health_status["status"] = "unhealthy"
         return JSONResponse(
             status_code=503,

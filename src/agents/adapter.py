@@ -1,6 +1,6 @@
 """LangGraph agent adapter for DeepAgents configurations."""
 
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from typing import Any
 
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -31,7 +31,7 @@ class AgentAdapter:
         system_prompt: str,
         input_mapper: Callable[[WorkflowState], str] | None = None,
         output_mapper: Callable[[str, WorkflowState], WorkflowState] | None = None,
-    ) -> Callable[[WorkflowState], WorkflowState]:
+    ) -> Callable[[WorkflowState], Awaitable[WorkflowState]]:
         """Convert agent config to a LangGraph node function.
 
         Args:
@@ -64,7 +64,7 @@ class AgentAdapter:
 
         # Bind tools to LLM if available
         if tools:
-            llm = llm.bind_tools(tools)  # type: ignore[assignment]
+            llm = llm.bind_tools(tools)
             logger.info(
                 "tools_bound",
                 agent=config.name,
@@ -96,8 +96,8 @@ class AgentAdapter:
 
             # Invoke LLM
             try:
-                response = await llm.ainvoke(messages)  # type: ignore[no-untyped-call]
-                response_text = response.content if hasattr(response, "content") else str(response)  # type: ignore[union-attr]
+                response = await llm.ainvoke(messages)
+                response_text = response.content if hasattr(response, "content") else str(response)
 
                 logger.info(
                     "agent_node_completed",
@@ -129,7 +129,7 @@ class AgentAdapter:
     def create_tool_node(
         self,
         tools: list[BaseTool],
-    ) -> Callable[[WorkflowState], WorkflowState]:
+    ) -> Callable[[WorkflowState], Awaitable[WorkflowState]]:
         """Create a tool execution node.
 
         Args:
@@ -145,8 +145,8 @@ class AgentAdapter:
         async def node(state: WorkflowState) -> WorkflowState:
             """Execute tool calls from messages."""
             # ToolNode expects messages in state
-            result = await tool_node.ainvoke(state)  # type: ignore[no-untyped-call]
-            return {**state, **result}  # type: ignore[return-value]
+            result = await tool_node.ainvoke(state)
+            return {**state, **result}
 
         return node
 
@@ -170,10 +170,10 @@ def _default_input_mapper(input_data: dict[str, Any]) -> str:
 
 def _default_output_mapper(response: str, state: WorkflowState) -> WorkflowState:
     """Default mapping from LLM response to state updates."""
-    output_data: dict[str, Any] = state.get("output_data", {}).copy()  # type: ignore[assignment]
+    output_data: dict[str, Any] = state.get("output_data", {}).copy()
     output_data["last_response"] = response
 
-    results: list[dict[str, Any]] = state.get("results", []).copy()  # type: ignore[assignment]
+    results: list[dict[str, Any]] = state.get("results", []).copy()
     results.append(
         {
             "step": state.get("current_step"),

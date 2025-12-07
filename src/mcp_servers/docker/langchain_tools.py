@@ -12,7 +12,7 @@ from src.mcp_servers.docker.tools.health import health_check
 from src.mcp_servers.docker.tools.logs import collect_logs
 
 
-@tool
+@tool  # type: ignore[untyped-decorator]
 async def docker_create_dockerfile(
     project_path: str,
     java_version: str = "",
@@ -45,7 +45,7 @@ async def docker_create_dockerfile(
     )
 
 
-@tool
+@tool  # type: ignore[untyped-decorator]
 async def docker_create_compose(
     project_path: str,
     service_name: str = "app",
@@ -81,7 +81,7 @@ async def docker_create_compose(
     )
 
 
-@tool
+@tool  # type: ignore[untyped-decorator]
 async def docker_deploy_compose(
     compose_path: str,
     project_name: str = "",
@@ -117,7 +117,7 @@ async def docker_deploy_compose(
     )
 
 
-@tool
+@tool  # type: ignore[untyped-decorator]
 async def docker_health_check(
     compose_path: str,
     project_name: str = "",
@@ -153,7 +153,7 @@ async def docker_health_check(
     )
 
 
-@tool
+@tool  # type: ignore[untyped-decorator]
 async def docker_collect_logs(
     compose_path: str,
     project_name: str = "",

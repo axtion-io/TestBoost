@@ -241,21 +241,21 @@ async def list_tools() -> list[Tool]:
 async def call_tool(name: str, arguments: dict[str, Any]) -> str:
     """Route tool calls to appropriate handlers."""
     if name == "analyze-project-context":
-        return await analyze_project_context(**arguments)  # type: ignore[no-untyped-call]
+        return await analyze_project_context(**arguments)
     elif name == "detect-test-conventions":
-        return await detect_test_conventions(**arguments)  # type: ignore[no-untyped-call]
+        return await detect_test_conventions(**arguments)
     elif name == "generate-adaptive-tests":
-        return await generate_adaptive_tests(**arguments)  # type: ignore[no-untyped-call]
+        return await generate_adaptive_tests(**arguments)
     elif name == "generate-integration-tests":
-        return await generate_integration_tests(**arguments)  # type: ignore[no-untyped-call]
+        return await generate_integration_tests(**arguments)
     elif name == "generate-snapshot-tests":
-        return await generate_snapshot_tests(**arguments)  # type: ignore[no-untyped-call]
+        return await generate_snapshot_tests(**arguments)
     elif name == "run-mutation-testing":
-        return await run_mutation_testing(**arguments)  # type: ignore[no-untyped-call]
+        return await run_mutation_testing(**arguments)
     elif name == "analyze-mutants":
-        return await analyze_mutants(**arguments)  # type: ignore[no-untyped-call]
+        return await analyze_mutants(**arguments)
     elif name == "generate-killer-tests":
-        return await generate_killer_tests(**arguments)  # type: ignore[no-untyped-call]
+        return await generate_killer_tests(**arguments)
     else:
         raise ValueError(f"Unknown tool: {name}")
 
@@ -265,7 +265,7 @@ async def main() -> None:
     from mcp.server.stdio import stdio_server
 
     async with stdio_server() as (read_stream, write_stream):
-        await server.run(read_stream, write_stream, server.create_initialization_options())  # type: ignore[no-untyped-call]
+        await server.run(read_stream, write_stream, server.create_initialization_options())
 
 
 if __name__ == "__main__":

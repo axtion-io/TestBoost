@@ -21,7 +21,7 @@ app = typer.Typer(
 )
 
 
-@app.command("validate")
+@app.command("validate")  # type: ignore[untyped-decorator]
 def validate_config(
     agent_name: str = typer.Option(None, "--agent", "-a", help="Specific agent to validate"),
     config_dir: Path = typer.Option(
@@ -100,7 +100,7 @@ def validate_config(
         raise typer.Exit(ExitCode.CONFIG_ERROR)
 
 
-@app.command("reload")
+@app.command("reload")  # type: ignore[untyped-decorator]
 def reload_config(
     agent_name: str = typer.Option(None, "--agent", "-a", help="Specific agent to reload"),
     all_configs: bool = typer.Option(False, "--all", help="Reload all configurations"),
@@ -148,7 +148,7 @@ def reload_config(
         raise typer.Exit(ExitCode.CONFIG_ERROR)
 
 
-@app.command("backup")
+@app.command("backup")  # type: ignore[untyped-decorator]
 def backup_config(
     agent_name: str = typer.Argument(..., help="Agent name to backup"),
     config_dir: Path = typer.Option(
@@ -181,7 +181,7 @@ def backup_config(
         raise typer.Exit(ExitCode.CONFIG_ERROR)
 
 
-@app.command("list-backups")
+@app.command("list-backups")  # type: ignore[untyped-decorator]
 def list_backups(
     agent_name: str = typer.Option(None, "--agent", "-a", help="Filter by specific agent"),
     config_dir: Path = typer.Option(
@@ -228,7 +228,7 @@ def list_backups(
         raise typer.Exit(ExitCode.CONFIG_ERROR)
 
 
-@app.command("rollback")
+@app.command("rollback")  # type: ignore[untyped-decorator]
 def rollback_config(
     agent_name: str = typer.Argument(..., help="Agent name to rollback"),
     config_dir: Path = typer.Option(
@@ -294,7 +294,7 @@ def rollback_config(
         raise typer.Exit(ExitCode.CONFIG_ERROR)
 
 
-@app.command("show")
+@app.command("show")  # type: ignore[untyped-decorator]
 def show_config(
     agent_name: str = typer.Argument(..., help="Agent name to display"),
     config_dir: Path = typer.Option(
@@ -320,7 +320,7 @@ def show_config(
             console.print(json.dumps(config.model_dump(), indent=2))
         elif format == "yaml":
             # YAML output
-            import yaml
+            import yaml  # type: ignore[import-untyped]
             console.print(yaml.dump(config.model_dump(), default_flow_style=False))
         else:
             # Pretty table output

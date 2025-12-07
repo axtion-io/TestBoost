@@ -10,7 +10,7 @@ from src.mcp_servers.pit_recommendations.tools.prioritize import prioritize_test
 from src.mcp_servers.pit_recommendations.tools.recommend import recommend_test_improvements
 
 
-@tool
+@tool  # type: ignore[untyped-decorator]
 async def pit_analyze_hard_mutants(
     project_path: str,
     report_path: str | None = None,
@@ -40,7 +40,7 @@ async def pit_analyze_hard_mutants(
     )
 
 
-@tool
+@tool  # type: ignore[untyped-decorator]
 async def pit_recommend_test_improvements(
     project_path: str,
     mutation_analysis: dict[str, Any] | None = None,
@@ -73,7 +73,7 @@ async def pit_recommend_test_improvements(
     )
 
 
-@tool
+@tool  # type: ignore[untyped-decorator]
 async def pit_prioritize_test_efforts(
     project_path: str,
     recommendations: list[dict[str, Any]] | None = None,

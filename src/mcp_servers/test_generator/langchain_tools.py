@@ -15,7 +15,7 @@ from src.mcp_servers.test_generator.tools.analyze_mutants import analyze_mutants
 from src.mcp_servers.test_generator.tools.killer_tests import generate_killer_tests
 
 
-@tool
+@tool  # type: ignore[untyped-decorator]
 async def test_gen_analyze_project(
     project_path: str,
     include_dependencies: bool = True,
@@ -45,7 +45,7 @@ async def test_gen_analyze_project(
     )
 
 
-@tool
+@tool  # type: ignore[untyped-decorator]
 async def test_gen_detect_conventions(
     project_path: str,
     sample_size: int = 20
@@ -72,7 +72,7 @@ async def test_gen_detect_conventions(
     )
 
 
-@tool
+@tool  # type: ignore[untyped-decorator]
 async def test_gen_generate_unit_tests(
     project_path: str,
     source_file: str,
@@ -108,7 +108,7 @@ async def test_gen_generate_unit_tests(
     )
 
 
-@tool
+@tool  # type: ignore[untyped-decorator]
 async def test_gen_generate_integration_tests(
     project_path: str,
     source_file: str,
@@ -141,7 +141,7 @@ async def test_gen_generate_integration_tests(
     )
 
 
-@tool
+@tool  # type: ignore[untyped-decorator]
 async def test_gen_generate_snapshot_tests(
     project_path: str,
     source_file: str,
@@ -171,7 +171,7 @@ async def test_gen_generate_snapshot_tests(
     )
 
 
-@tool
+@tool  # type: ignore[untyped-decorator]
 async def test_gen_run_mutation_testing(
     project_path: str,
     target_classes: list[str] | None = None,
@@ -207,7 +207,7 @@ async def test_gen_run_mutation_testing(
     )
 
 
-@tool
+@tool  # type: ignore[untyped-decorator]
 async def test_gen_analyze_mutants(
     project_path: str,
     report_path: str | None = None,
@@ -237,7 +237,7 @@ async def test_gen_analyze_mutants(
     )
 
 
-@tool
+@tool  # type: ignore[untyped-decorator]
 async def test_gen_generate_killer_tests(
     project_path: str,
     surviving_mutants: list[dict[str, Any]],

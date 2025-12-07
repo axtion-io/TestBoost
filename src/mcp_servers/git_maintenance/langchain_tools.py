@@ -12,7 +12,7 @@ from src.mcp_servers.git_maintenance.tools.status import get_status
 logger = get_logger(__name__)
 
 
-@tool
+@tool  # type: ignore[untyped-decorator]
 async def git_create_maintenance_branch(
     repo_path: str,
     branch_name: str,
@@ -58,7 +58,7 @@ async def git_create_maintenance_branch(
     return result
 
 
-@tool
+@tool  # type: ignore[untyped-decorator]
 async def git_commit_changes(
     repo_path: str,
     message: str,
@@ -104,7 +104,7 @@ async def git_commit_changes(
     return result
 
 
-@tool
+@tool  # type: ignore[untyped-decorator]
 async def git_get_status(
     repo_path: str,
     include_untracked: bool = True

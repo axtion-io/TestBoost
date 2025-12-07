@@ -260,7 +260,7 @@ async def _invoke_agent_with_retry(
     """
     try:
         logger.debug("agent_invoke_start", session_id=str(session_id))
-        response = await agent.ainvoke(input_data)
+        response = await agent.ainvoke(input_data)  # type: ignore[arg-type]
 
         # Handle both dict (LangGraph state) and AIMessage responses
         if isinstance(response, dict):
@@ -436,7 +436,7 @@ Please fix these compilation errors while maintaining test logic and coverage.""
 
         correction_response = await _invoke_agent_with_retry(
             agent=agent,
-            input_data={"messages": [HumanMessage(content=correction_prompt)]},
+            input_data={"messages": [HumanMessage(content=correction_prompt)]},  # type: ignore[arg-type]
             session_id=session_id,
             artifact_repo=artifact_repo,
         )
@@ -589,7 +589,7 @@ async def _store_agent_reasoning(
 async def _store_tool_calls(
     session_id: UUID,
     artifact_repo: ArtifactRepository,
-    tool_calls: list[dict[str, Any]],
+    tool_calls: list[Any],
 ) -> None:
     """Store LLM tool calls as artifacts (T061)."""
     for i, tool_call in enumerate(tool_calls):
@@ -615,12 +615,23 @@ async def _store_llm_metrics(
     session_id: UUID,
     artifact_repo: ArtifactRepository,
     metrics: dict[str, Any],
-    response: AIMessage,
+    response: dict[str, Any] | AIMessage,
 ) -> None:
     """Store LLM metrics as artifact (T061)."""
     # Extract token usage if available
     token_usage = {}
-    if hasattr(response, "usage_metadata"):
+    # Handle both dict (LangGraph state) and AIMessage responses
+    if isinstance(response, dict):
+        messages = response.get("messages", [])
+        if messages:
+            last_message = messages[-1]
+            if hasattr(last_message, "usage_metadata"):
+                token_usage = {
+                    "prompt_tokens": getattr(last_message.usage_metadata, "input_tokens", 0),
+                    "completion_tokens": getattr(last_message.usage_metadata, "output_tokens", 0),
+                    "total_tokens": getattr(last_message.usage_metadata, "total_tokens", 0),
+                }
+    elif hasattr(response, "usage_metadata"):
         token_usage = {
             "prompt_tokens": getattr(response.usage_metadata, "input_tokens", 0),
             "completion_tokens": getattr(response.usage_metadata, "output_tokens", 0),

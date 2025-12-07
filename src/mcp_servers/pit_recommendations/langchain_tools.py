@@ -1,5 +1,7 @@
 """LangChain BaseTool wrappers for PIT Recommendations MCP tools."""
 
+from typing import Any
+
 from langchain_core.tools import BaseTool, tool
 
 # Import existing MCP tool implementations
@@ -41,7 +43,7 @@ async def pit_analyze_hard_mutants(
 @tool
 async def pit_recommend_test_improvements(
     project_path: str,
-    mutation_analysis: dict | None = None,
+    mutation_analysis: dict[str, Any] | None = None,
     target_score: float = 80.0,
     max_recommendations: int = 20
 ) -> str:
@@ -74,7 +76,7 @@ async def pit_recommend_test_improvements(
 @tool
 async def pit_prioritize_test_efforts(
     project_path: str,
-    recommendations: list[dict] | None = None,
+    recommendations: list[dict[str, Any]] | None = None,
     strategy: str = "balanced"
 ) -> str:
     """

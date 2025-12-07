@@ -148,7 +148,7 @@ def _create_anthropic_llm(
 
     logger.debug("creating_anthropic_llm", model=model)
 
-    return ChatAnthropic(
+    return ChatAnthropic(  # type: ignore[call-arg]
         api_key=api_key,
         model=model,
         temperature=temperature,
@@ -198,7 +198,7 @@ def _create_openai_llm(
 
     logger.debug("creating_openai_llm", model=model)
 
-    return ChatOpenAI(
+    return ChatOpenAI(  # type: ignore[call-arg]
         api_key=api_key,
         model=model,
         temperature=temperature,

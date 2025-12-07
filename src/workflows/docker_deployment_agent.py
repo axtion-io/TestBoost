@@ -42,7 +42,7 @@ def get_checkpointer() -> MemorySaver:
 async def run_docker_deployment_with_agent(
     project_path: str,
     service_dependencies: list[str] | None = None,
-    health_endpoints: list[dict] | None = None,
+    health_endpoints: list[dict[str, Any]] | None = None,
     session_id: str | None = None,
 ) -> dict[str, Any]:
     """
@@ -203,7 +203,7 @@ Please proceed with the deployment workflow.
 
         response = await agent.ainvoke(
             {"messages": [HumanMessage(content=user_message)]},
-            config=config_dict,
+            config=config_dict,  # type: ignore[arg-type]
         )
 
         logger.info(
@@ -218,14 +218,14 @@ Please proceed with the deployment workflow.
         # Find the last AIMessage with actual content (not just tool calls)
         final_message = None
         for msg in reversed(messages):
-            if hasattr(msg, 'type') and msg.type == "ai" and msg.content:
-                final_message = msg.content
+            if hasattr(msg, 'type') and msg.type == "ai" and msg.content:  # type: ignore[attr-defined]
+                final_message = msg.content  # type: ignore[attr-defined]
                 break
 
         # If no AI message with content found, create a summary from tool results
         if not final_message:
             # Count tool calls to show activity
-            tool_calls = [m for m in messages if hasattr(m, 'type') and m.type == "tool"]
+            tool_calls = [m for m in messages if hasattr(m, 'type') and m.type == "tool"]  # type: ignore[attr-defined]
 
             # Generate a summary message
             final_message = (
@@ -243,7 +243,7 @@ Please proceed with the deployment workflow.
             "project_path": project_path,
             "project_name": project_name,
             "agent_response": final_message,
-            "messages": [{"role": msg.type, "content": msg.content} for msg in messages],
+            "messages": [{"role": msg.type, "content": msg.content} for msg in messages],  # type: ignore[attr-defined]
         }
 
         # Check if agent reported any errors

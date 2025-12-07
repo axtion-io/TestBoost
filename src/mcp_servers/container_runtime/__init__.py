@@ -4,6 +4,8 @@ MCP Server for Container Runtime operations.
 Provides tools for creating and managing Docker containers for Maven builds.
 """
 
+from typing import Any
+
 from mcp.server import Server
 from mcp.types import Tool
 
@@ -15,7 +17,7 @@ from .tools.maven import create_maven_container
 server = Server("container-runtime")
 
 
-@server.list_tools()
+@server.list_tools()  # type: ignore[untyped-decorator]
 async def list_tools() -> list[Tool]:
     """List all available container runtime tools."""
     return [
@@ -103,25 +105,25 @@ async def list_tools() -> list[Tool]:
     ]
 
 
-@server.call_tool()
-async def call_tool(name: str, arguments: dict) -> str:
+@server.call_tool()  # type: ignore[untyped-decorator]
+async def call_tool(name: str, arguments: dict[str, Any]) -> str:
     """Route tool calls to appropriate handlers."""
     if name == "create-maven-container":
-        return await create_maven_container(**arguments)
+        return await create_maven_container(**arguments)  # type: ignore[no-untyped-call]
     elif name == "execute-in-container":
-        return await execute_in_container(**arguments)
+        return await execute_in_container(**arguments)  # type: ignore[no-untyped-call]
     elif name == "destroy-container":
-        return await destroy_container(**arguments)
+        return await destroy_container(**arguments)  # type: ignore[no-untyped-call]
     else:
         raise ValueError(f"Unknown tool: {name}")
 
 
-async def main():
+async def main() -> None:
     """Run the MCP server."""
     from mcp.server.stdio import stdio_server
 
     async with stdio_server() as (read_stream, write_stream):
-        await server.run(read_stream, write_stream, server.create_initialization_options())
+        await server.run(read_stream, write_stream, server.create_initialization_options())  # type: ignore[no-untyped-call]
 
 
 if __name__ == "__main__":

@@ -1,5 +1,7 @@
 """LangChain BaseTool wrappers for Test Generator MCP tools."""
 
+from typing import Any
+
 from langchain_core.tools import BaseTool, tool
 
 # Import existing MCP tool implementations
@@ -75,7 +77,7 @@ async def test_gen_generate_unit_tests(
     project_path: str,
     source_file: str,
     class_type: str | None = None,
-    conventions: dict | None = None,
+    conventions: dict[str, Any] | None = None,
     coverage_target: float = 80.0
 ) -> str:
     """
@@ -238,7 +240,7 @@ async def test_gen_analyze_mutants(
 @tool
 async def test_gen_generate_killer_tests(
     project_path: str,
-    surviving_mutants: list[dict],
+    surviving_mutants: list[dict[str, Any]],
     source_file: str,
     max_tests: int = 10
 ) -> str:

@@ -86,6 +86,24 @@ class Settings(BaseSettings):
         description="Maximum retry attempts for transient errors",
     )
 
+    # Data retention settings
+    session_retention_days: int = Field(
+        default=365,
+        description="Number of days to retain session data",
+    )
+
+    # Locking settings
+    project_lock_timeout_seconds: int = Field(
+        default=300,
+        description="Project lock timeout in seconds",
+    )
+
+    # API authentication
+    api_key: str | None = Field(
+        default=None,
+        description="API key for authentication",
+    )
+
     def get_api_key_for_provider(self, provider: str | None = None) -> str | None:
         """
         Get API key for the specified or default provider.

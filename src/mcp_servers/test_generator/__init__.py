@@ -5,6 +5,8 @@ Provides tools for analyzing projects, detecting test conventions,
 generating various test types, and running mutation testing.
 """
 
+from typing import Any
+
 from mcp.server import Server
 from mcp.types import Tool
 
@@ -21,7 +23,7 @@ from .tools.mutation import run_mutation_testing
 server = Server("test-generator")
 
 
-@server.list_tools()
+@server.list_tools()  # type: ignore[untyped-decorator]
 async def list_tools() -> list[Tool]:
     """List all available test generation tools."""
     return [
@@ -235,35 +237,35 @@ async def list_tools() -> list[Tool]:
     ]
 
 
-@server.call_tool()
-async def call_tool(name: str, arguments: dict) -> str:
+@server.call_tool()  # type: ignore[untyped-decorator]
+async def call_tool(name: str, arguments: dict[str, Any]) -> str:
     """Route tool calls to appropriate handlers."""
     if name == "analyze-project-context":
-        return await analyze_project_context(**arguments)
+        return await analyze_project_context(**arguments)  # type: ignore[no-untyped-call]
     elif name == "detect-test-conventions":
-        return await detect_test_conventions(**arguments)
+        return await detect_test_conventions(**arguments)  # type: ignore[no-untyped-call]
     elif name == "generate-adaptive-tests":
-        return await generate_adaptive_tests(**arguments)
+        return await generate_adaptive_tests(**arguments)  # type: ignore[no-untyped-call]
     elif name == "generate-integration-tests":
-        return await generate_integration_tests(**arguments)
+        return await generate_integration_tests(**arguments)  # type: ignore[no-untyped-call]
     elif name == "generate-snapshot-tests":
-        return await generate_snapshot_tests(**arguments)
+        return await generate_snapshot_tests(**arguments)  # type: ignore[no-untyped-call]
     elif name == "run-mutation-testing":
-        return await run_mutation_testing(**arguments)
+        return await run_mutation_testing(**arguments)  # type: ignore[no-untyped-call]
     elif name == "analyze-mutants":
-        return await analyze_mutants(**arguments)
+        return await analyze_mutants(**arguments)  # type: ignore[no-untyped-call]
     elif name == "generate-killer-tests":
-        return await generate_killer_tests(**arguments)
+        return await generate_killer_tests(**arguments)  # type: ignore[no-untyped-call]
     else:
         raise ValueError(f"Unknown tool: {name}")
 
 
-async def main():
+async def main() -> None:
     """Run the MCP server."""
     from mcp.server.stdio import stdio_server
 
     async with stdio_server() as (read_stream, write_stream):
-        await server.run(read_stream, write_stream, server.create_initialization_options())
+        await server.run(read_stream, write_stream, server.create_initialization_options())  # type: ignore[no-untyped-call]
 
 
 if __name__ == "__main__":

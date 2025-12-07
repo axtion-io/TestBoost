@@ -3,6 +3,7 @@
 import uuid
 from datetime import datetime
 from enum import Enum
+from typing import Any
 
 from sqlalchemy import DateTime, ForeignKey, Index, Integer, String, Text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
@@ -36,8 +37,8 @@ class Step(Base):
         String(20), nullable=False, default=StepStatus.PENDING.value
     )
     sequence: Mapped[int] = mapped_column(Integer, nullable=False)
-    inputs: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
-    outputs: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    inputs: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
+    outputs: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     retry_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

@@ -16,7 +16,7 @@ logger = get_logger(__name__)
 class ConfigCache:
     """Cache for loaded configurations with timestamp tracking."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize empty cache."""
         self._cache: dict[str, tuple[Any, float]] = {}
 
@@ -158,7 +158,7 @@ class WorkflowGraphConfig(BaseModel):
 class AgentLoader:
     """Load and validate DeepAgents YAML configurations with hot-reload support."""
 
-    def __init__(self, config_dir: str | Path, enable_cache: bool = True):
+    def __init__(self, config_dir: str | Path, enable_cache: bool = True) -> None:
         """Initialize loader with configuration directory.
 
         Args:
@@ -167,7 +167,7 @@ class AgentLoader:
         """
         self.config_dir = Path(config_dir)
         self.enable_cache = enable_cache
-        self._cache = ConfigCache() if enable_cache else None
+        self._cache: ConfigCache | None = ConfigCache() if enable_cache else None
 
     def load_agent(self, name: str, force_reload: bool = False) -> AgentConfig:
         """Load a single agent configuration with hot-reload support.
@@ -194,7 +194,7 @@ class AgentLoader:
             cached = self._cache.get(cache_key, file_path)
             if cached:
                 logger.debug("agent_loaded_from_cache", name=name)
-                return cached
+                return cached  # type: ignore[return-value]
 
         logger.info("loading_agent", name=name, path=str(file_path), force_reload=force_reload)
 
@@ -292,7 +292,7 @@ class AgentLoader:
             cached = self._cache.get(cache_key, file_path)
             if cached:
                 logger.debug("prompt_loaded_from_cache", name=name, category=category)
-                return cached
+                return cached  # type: ignore[return-value]
 
         logger.info("loading_prompt", name=name, category=category, force_reload=force_reload)
 

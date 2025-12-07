@@ -20,7 +20,7 @@ warnings.warn(
 
 import json
 from datetime import datetime
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 from uuid import uuid4
 
 from langchain_core.messages import AIMessage, BaseMessage
@@ -38,37 +38,37 @@ class TestGenerationState(BaseModel):
     project_name: str = ""
 
     # Project analysis
-    project_context: dict = Field(default_factory=dict)
-    test_conventions: dict = Field(default_factory=dict)
-    source_files: list[dict] = Field(default_factory=list)
-    classified_classes: list[dict] = Field(default_factory=list)
+    project_context: dict[str, Any] = Field(default_factory=dict)
+    test_conventions: dict[str, Any] = Field(default_factory=dict)
+    source_files: list[dict[str, Any]] = Field(default_factory=list)
+    classified_classes: list[dict[str, Any]] = Field(default_factory=list)
 
     # Test generation tracking
-    generated_unit_tests: list[dict] = Field(default_factory=list)
-    generated_integration_tests: list[dict] = Field(default_factory=list)
-    generated_snapshot_tests: list[dict] = Field(default_factory=list)
-    generated_e2e_tests: list[dict] = Field(default_factory=list)
+    generated_unit_tests: list[dict[str, Any]] = Field(default_factory=list)
+    generated_integration_tests: list[dict[str, Any]] = Field(default_factory=list)
+    generated_snapshot_tests: list[dict[str, Any]] = Field(default_factory=list)
+    generated_e2e_tests: list[dict[str, Any]] = Field(default_factory=list)
 
     # Compilation results
-    compilation_results: dict = Field(default_factory=dict)
+    compilation_results: dict[str, Any] = Field(default_factory=dict)
     compilation_retries: int = 0
     max_retries: int = 3
 
     # Docker/E2E state
     docker_deployed: bool = False
-    app_health: dict = Field(default_factory=dict)
+    app_health: dict[str, Any] = Field(default_factory=dict)
 
     # Mutation testing
-    mutation_results: dict = Field(default_factory=dict)
+    mutation_results: dict[str, Any] = Field(default_factory=dict)
     mutation_score: float = 0.0
     target_mutation_score: float = 80.0
-    surviving_mutants: list[dict] = Field(default_factory=list)
+    surviving_mutants: list[dict[str, Any]] = Field(default_factory=list)
 
     # Killer tests
-    killer_tests_generated: list[dict] = Field(default_factory=list)
+    killer_tests_generated: list[dict[str, Any]] = Field(default_factory=list)
 
     # Quality report
-    quality_report: dict = Field(default_factory=dict)
+    quality_report: dict[str, Any] = Field(default_factory=dict)
 
     # Workflow state
     current_step: str = ""
@@ -83,7 +83,7 @@ class TestGenerationState(BaseModel):
         arbitrary_types_allowed = True
 
 
-async def analyze_project_structure(state: TestGenerationState) -> dict:
+async def analyze_project_structure(state: TestGenerationState) -> dict[str, Any]:
     """
     Analyze the project structure and context.
 
@@ -140,7 +140,7 @@ async def analyze_project_structure(state: TestGenerationState) -> dict:
     }
 
 
-async def detect_conventions(state: TestGenerationState) -> dict:
+async def detect_conventions(state: TestGenerationState) -> dict[str, Any]:
     """
     Detect test conventions used in the project.
 
@@ -174,7 +174,7 @@ async def detect_conventions(state: TestGenerationState) -> dict:
     }
 
 
-async def classify_classes(state: TestGenerationState) -> dict:
+async def classify_classes(state: TestGenerationState) -> dict[str, Any]:
     """
     Classify source classes by type (Controller, Service, Repository, etc.).
 
@@ -202,7 +202,7 @@ async def classify_classes(state: TestGenerationState) -> dict:
             classified.append({**source, "class_type": "utility"})
 
     # Count by type
-    type_counts = {}
+    type_counts: dict[str, int] = {}
     for item in classified:
         t = item["class_type"]
         type_counts[t] = type_counts.get(t, 0) + 1
@@ -218,7 +218,7 @@ async def classify_classes(state: TestGenerationState) -> dict:
     }
 
 
-async def generate_unit_tests(state: TestGenerationState) -> dict:
+async def generate_unit_tests(state: TestGenerationState) -> dict[str, Any]:
     """
     Generate unit tests for classified classes.
 
@@ -263,7 +263,7 @@ async def generate_unit_tests(state: TestGenerationState) -> dict:
     }
 
 
-async def compile_and_fix_unit(state: TestGenerationState) -> dict:
+async def compile_and_fix_unit(state: TestGenerationState) -> dict[str, Any]:
     """
     Compile unit tests and fix errors with retries.
 
@@ -305,7 +305,7 @@ async def compile_and_fix_unit(state: TestGenerationState) -> dict:
     }
 
 
-async def generate_integration_tests(state: TestGenerationState) -> dict:
+async def generate_integration_tests(state: TestGenerationState) -> dict[str, Any]:
     """
     Generate integration tests for services and repositories.
 
@@ -344,7 +344,7 @@ async def generate_integration_tests(state: TestGenerationState) -> dict:
     }
 
 
-async def compile_and_fix_integration(state: TestGenerationState) -> dict:
+async def compile_and_fix_integration(state: TestGenerationState) -> dict[str, Any]:
     """
     Compile integration tests and fix errors.
 
@@ -368,7 +368,7 @@ async def compile_and_fix_integration(state: TestGenerationState) -> dict:
     }
 
 
-async def generate_snapshot_tests(state: TestGenerationState) -> dict:
+async def generate_snapshot_tests(state: TestGenerationState) -> dict[str, Any]:
     """
     Generate snapshot tests for API responses.
 
@@ -403,7 +403,7 @@ async def generate_snapshot_tests(state: TestGenerationState) -> dict:
     }
 
 
-async def compile_and_fix_snapshot(state: TestGenerationState) -> dict:
+async def compile_and_fix_snapshot(state: TestGenerationState) -> dict[str, Any]:
     """
     Compile snapshot tests.
 
@@ -427,7 +427,7 @@ async def compile_and_fix_snapshot(state: TestGenerationState) -> dict:
     }
 
 
-async def deploy_docker(state: TestGenerationState) -> dict:
+async def deploy_docker(state: TestGenerationState) -> dict[str, Any]:
     """
     Deploy application to Docker for E2E testing.
 
@@ -447,7 +447,7 @@ async def deploy_docker(state: TestGenerationState) -> dict:
     }
 
 
-async def check_app_health(state: TestGenerationState) -> dict:
+async def check_app_health(state: TestGenerationState) -> dict[str, Any]:
     """
     Check application health after Docker deployment.
 
@@ -467,7 +467,7 @@ async def check_app_health(state: TestGenerationState) -> dict:
     }
 
 
-async def generate_e2e_tests(state: TestGenerationState) -> dict:
+async def generate_e2e_tests(state: TestGenerationState) -> dict[str, Any]:
     """
     Generate E2E tests based on API endpoints.
 
@@ -487,7 +487,7 @@ async def generate_e2e_tests(state: TestGenerationState) -> dict:
     }
 
 
-async def run_mutation_testing(state: TestGenerationState) -> dict:
+async def run_mutation_testing(state: TestGenerationState) -> dict[str, Any]:
     """
     Run mutation testing to measure test effectiveness.
 
@@ -523,7 +523,7 @@ async def run_mutation_testing(state: TestGenerationState) -> dict:
     }
 
 
-async def generate_killer_tests(state: TestGenerationState) -> dict:
+async def generate_killer_tests(state: TestGenerationState) -> dict[str, Any]:
     """
     Generate tests to kill surviving mutants if score is below target.
 
@@ -559,7 +559,7 @@ async def generate_killer_tests(state: TestGenerationState) -> dict:
     }
 
 
-async def finalize(state: TestGenerationState) -> dict:
+async def finalize(state: TestGenerationState) -> dict[str, Any]:
     """
     Finalize workflow and generate quality report.
 
@@ -632,7 +632,7 @@ def should_generate_killer(state: TestGenerationState) -> Literal["generate", "s
     return "skip"
 
 
-def create_test_generation_workflow() -> StateGraph:
+def create_test_generation_workflow() -> StateGraph[Any]:
     """
     Create the test generation workflow graph.
 
@@ -699,7 +699,7 @@ def create_test_generation_workflow() -> StateGraph:
 test_generation_graph = create_test_generation_workflow().compile()
 
 
-async def run_test_generation(project_path: str, target_mutation_score: float = 80.0) -> dict:
+async def run_test_generation(project_path: str, target_mutation_score: float = 80.0) -> dict[str, Any]:
     """
     Run the test generation workflow.
 
@@ -714,7 +714,7 @@ async def run_test_generation(project_path: str, target_mutation_score: float = 
         project_path=project_path, target_mutation_score=target_mutation_score
     )
 
-    final_state = await test_generation_graph.ainvoke(initial_state)
+    final_state = await test_generation_graph.ainvoke(initial_state)  # type: ignore[arg-type]
 
     return final_state
 

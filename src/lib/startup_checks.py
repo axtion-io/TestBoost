@@ -104,7 +104,7 @@ async def _ping_llm_with_retry(llm: Any, timeout: int = STARTUP_TIMEOUT, max_ret
         LLMConnectionError: If ping fails after retries
         asyncio.TimeoutError: If request times out
     """
-    last_error = None
+    last_error: Exception | None = None
 
     for attempt in range(1, max_retries + 1):
         try:

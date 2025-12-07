@@ -22,8 +22,8 @@ class WorkflowExecutor:
     def __init__(
         self,
         session: AsyncSession,
-        graph: StateGraph,
-        checkpointer: BaseCheckpointSaver | None = None,
+        graph: StateGraph[Any],
+        checkpointer: BaseCheckpointSaver[Any] | None = None,
     ):
         """Initialize workflow executor.
 
@@ -87,14 +87,14 @@ class WorkflowExecutor:
                 }
 
             # Execute workflow
-            final_state = await compiled.ainvoke(initial_state, run_config)
+            final_state = await compiled.ainvoke(initial_state, run_config)  # type: ignore[arg-type]
 
             # Handle completion
-            await self._handle_completion(session_id, final_state)
-            return final_state
+            await self._handle_completion(session_id, final_state)  # type: ignore[arg-type]
+            return final_state  # type: ignore[return-value]
 
         except Exception as e:
-            await self._handle_error(session_id, initial_state, e)
+            await self._handle_error(session_id, dict(initial_state), e)
             raise
 
     async def resume(
@@ -153,11 +153,11 @@ class WorkflowExecutor:
             }
 
             # Resume execution
-            final_state = await compiled.ainvoke(updated_state, run_config)
+            final_state = await compiled.ainvoke(updated_state, run_config)  # type: ignore[arg-type]
 
             # Handle completion
-            await self._handle_completion(session_id, final_state)
-            return final_state
+            await self._handle_completion(session_id, final_state)  # type: ignore[arg-type]
+            return final_state  # type: ignore[return-value]
 
         except Exception as e:
             await self._handle_error(session_id, {}, e)
@@ -206,7 +206,8 @@ class WorkflowExecutor:
         )
 
         # Return checkpoint ID (would be set by checkpointer)
-        return state.get("checkpoint_id", str(uuid.uuid4()))
+        checkpoint_id = state.get("checkpoint_id")
+        return checkpoint_id if checkpoint_id is not None else str(uuid.uuid4())
 
     async def _handle_completion(
         self,

@@ -8,7 +8,7 @@ from src.mcp_servers.container_runtime.tools.execute import execute_in_container
 from src.mcp_servers.container_runtime.tools.destroy import destroy_container
 
 
-@tool  # type: ignore[untyped-decorator]
+@tool
 async def container_create_maven(
     project_path: str,
     java_version: str = "17",
@@ -44,7 +44,7 @@ async def container_create_maven(
     )
 
 
-@tool  # type: ignore[untyped-decorator]
+@tool
 async def container_execute(
     container_id: str,
     command: list[str],
@@ -77,7 +77,7 @@ async def container_execute(
     )
 
 
-@tool  # type: ignore[untyped-decorator]
+@tool
 async def container_destroy(
     container_id: str,
     force: bool = False,

@@ -27,7 +27,7 @@ app = typer.Typer(
 )
 
 
-@app.command("scan")  # type: ignore[untyped-decorator]
+@app.command("scan")
 def scan_vulnerabilities(
     mode: str = typer.Option(
         "interactive",
@@ -249,7 +249,7 @@ def scan_vulnerabilities(
             raise typer.Exit(1)
 
 
-@app.command("report")  # type: ignore[untyped-decorator]
+@app.command("report")
 def generate_report(
     project_path: str = typer.Argument(
         ".",

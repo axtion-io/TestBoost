@@ -27,7 +27,7 @@ app = typer.Typer(
 )
 
 
-@app.command("run")  # type: ignore[untyped-decorator]
+@app.command("run")
 def run_maintenance(
     mode: str = typer.Option(
         "interactive",
@@ -217,7 +217,7 @@ def run_maintenance(
             console.print(table)
 
 
-@app.command("status")  # type: ignore[untyped-decorator]
+@app.command("status")
 def check_status(
     session_id: str = typer.Argument(
         ...,
@@ -287,7 +287,7 @@ def check_status(
         raise typer.Exit(1)
 
 
-@app.command("list")  # type: ignore[untyped-decorator]
+@app.command("list")
 def list_updates(
     project_path: str = typer.Argument(
         ".",

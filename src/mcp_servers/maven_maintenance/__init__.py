@@ -19,7 +19,7 @@ from .tools.run_tests import run_tests
 server = Server("maven-maintenance")
 
 
-@server.list_tools()  # type: ignore[untyped-decorator]
+@server.list_tools()  # type: ignore
 async def list_tools() -> list[Tool]:
     """List all available Maven maintenance tools."""
     return [
@@ -135,7 +135,7 @@ async def list_tools() -> list[Tool]:
     ]
 
 
-@server.call_tool()  # type: ignore[untyped-decorator]
+@server.call_tool()  # type: ignore
 async def call_tool(name: str, arguments: dict[str, Any]) -> str:
     """Route tool calls to appropriate handlers."""
     if name == "analyze-dependencies":

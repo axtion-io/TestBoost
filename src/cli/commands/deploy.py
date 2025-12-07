@@ -27,7 +27,7 @@ app = typer.Typer(
 )
 
 
-@app.command("run")  # type: ignore[untyped-decorator]
+@app.command("run")
 def run_deployment(
     mode: str = typer.Option(
         "interactive",
@@ -194,7 +194,7 @@ def run_deployment(
                 console.print(f"  - {warning}")
 
 
-@app.command("stop")  # type: ignore[untyped-decorator]
+@app.command("stop")
 def stop_deployment(
     project_path: str = typer.Argument(
         ".",
@@ -261,7 +261,7 @@ def stop_deployment(
         raise typer.Exit(1)
 
 
-@app.command("logs")  # type: ignore[untyped-decorator]
+@app.command("logs")
 def show_logs(
     project_path: str = typer.Argument(
         ".",
@@ -319,7 +319,7 @@ def show_logs(
         console.print(log_data.get("content", "No logs available"))
 
 
-@app.command("status")  # type: ignore[untyped-decorator]
+@app.command("status")
 def check_status(
     project_path: str = typer.Argument(
         ".",
@@ -380,7 +380,7 @@ def check_status(
         console.print("\n[yellow]Some containers may have health issues[/yellow]")
 
 
-@app.command("build")  # type: ignore[untyped-decorator]
+@app.command("build")
 def build_only(
     project_path: str = typer.Argument(
         ".",

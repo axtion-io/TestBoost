@@ -224,7 +224,7 @@ Provide detailed reasoning for your approach."""
         raise TestGenerationError(f"Test generation failed: {e}") from e
 
 
-@retry(  # type: ignore[untyped-decorator]
+@retry(
     stop=stop_after_attempt(MAX_CORRECTION_RETRIES),
     wait=wait_exponential(multiplier=1, min=MIN_WAIT, max=MAX_WAIT),
     retry=retry_if_exception_type((ConnectionError, asyncio.TimeoutError)),
@@ -275,7 +275,7 @@ async def _invoke_agent_with_retry(
             await _store_tool_calls(session_id, artifact_repo, response.tool_calls)
 
         logger.debug("agent_invoke_success", session_id=str(session_id))
-        return response
+        return response  # type: ignore[no-any-return]
 
     except ConnectionError as e:
         logger.warning("agent_invoke_connection_error", error=str(e))

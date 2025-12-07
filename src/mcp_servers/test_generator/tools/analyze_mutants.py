@@ -87,7 +87,7 @@ async def _analyze_mutations(report_file: Path, min_score: float) -> dict[str, A
             line = int(mutation.findtext("lineNumber", "0"))
             mutator = mutation.findtext("mutator", "").split(".")[-1]
             description = mutation.findtext("description", "")
-            killing_test = mutation.findtext("killingTest", "")
+            _ = mutation.findtext("killingTest", "")  # killingTest extracted but not used currently
 
             analysis["summary"]["total_mutants"] += 1
             mutator_stats[mutator] += 1

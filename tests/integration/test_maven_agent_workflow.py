@@ -1,11 +1,10 @@
 """Integration tests for Maven maintenance agent workflow (US2)."""
 
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
-from langchain_core.messages import AIMessage, ToolMessage
-from langchain_core.tools import BaseTool
 
-from src.db.models.session import SessionStatus
+import pytest
+from langchain_core.messages import AIMessage
+from langchain_core.tools import BaseTool
 
 
 class TestMavenWorkflowUsesAgent:
@@ -153,8 +152,8 @@ class TestMavenWorkflowStoresArtifacts:
     @pytest.mark.asyncio
     async def test_maven_workflow_stores_artifacts(self, db_session):
         """Test workflow stores agent reasoning, tool calls, and metrics as artifacts."""
-        from src.workflows.maven_maintenance_agent import run_maven_maintenance_with_agent
         from src.db.repository import Repository
+        from src.workflows.maven_maintenance_agent import run_maven_maintenance_with_agent
 
         # Mock agent response with tool calls
         mock_agent_response = AIMessage(
@@ -219,8 +218,8 @@ class TestMavenWorkflowStoresArtifacts:
     @pytest.mark.asyncio
     async def test_maven_workflow_stores_multiple_tool_calls(self, db_session):
         """Test workflow stores multiple tool calls as separate artifacts."""
-        from src.workflows.maven_maintenance_agent import run_maven_maintenance_with_agent
         from src.db.repository import Repository
+        from src.workflows.maven_maintenance_agent import run_maven_maintenance_with_agent
 
         # Mock agent response with multiple tool calls
         mock_agent_response = AIMessage(

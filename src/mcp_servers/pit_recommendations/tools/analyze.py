@@ -146,7 +146,7 @@ def _group_by_mutator(surviving: list[dict[str, Any]]) -> dict[str, Any]:
     for mutator, mutants in sorted(groups.items(), key=lambda x: -len(x[1])):
         result[mutator] = {
             "count": len(mutants),
-            "affected_classes": list(set(m["class"].split(".")[-1] for m in mutants)),
+            "affected_classes": list({m["class"].split(".")[-1] for m in mutants}),
             "examples": mutants[:5],
         }
 
@@ -166,9 +166,9 @@ def _group_by_class(surviving: list[dict[str, Any]]) -> dict[str, Any]:
         result[simple_name] = {
             "full_name": class_name,
             "count": len(mutants),
-            "methods": list(set(m["method"] for m in mutants)),
-            "mutators": list(set(m["mutator"] for m in mutants)),
-            "lines": sorted(set(m["line"] for m in mutants)),
+            "methods": list({m["method"] for m in mutants}),
+            "mutators": list({m["mutator"] for m in mutants}),
+            "lines": sorted({m["line"] for m in mutants}),
         }
 
     return result
@@ -187,7 +187,7 @@ def _group_by_method(surviving: list[dict[str, Any]]) -> dict[str, Any]:
         result[method_key] = {
             "count": len(mutants),
             "mutators": Counter(m["mutator"] for m in mutants).most_common(),
-            "lines": sorted(set(m["line"] for m in mutants)),
+            "lines": sorted({m["line"] for m in mutants}),
             "examples": mutants[:5],
         }
 
@@ -261,7 +261,7 @@ def _find_hot_spots(surviving: list[dict[str, Any]]) -> list[dict[str, Any]]:
                     "method": method,
                     "surviving_count": len(mutants),
                     "line_range": f"{min(lines)}-{max(lines)}",
-                    "mutators": list(set(m["mutator"] for m in mutants)),
+                    "mutators": list({m["mutator"] for m in mutants}),
                     "severity": "high" if len(mutants) >= 5 else "medium",
                 }
             )

@@ -194,7 +194,7 @@ async def _analyze_source_structure(project_dir: Path, scan_depth: int) -> dict[
                 except Exception:
                     pass
 
-            structure["packages"] = sorted(list(packages))[:50]
+            structure["packages"] = sorted(packages)[:50]
             structure["main_sources"] = [str(src_dir)]
             break
 
@@ -226,7 +226,7 @@ async def _analyze_test_structure(project_dir: Path, scan_depth: int) -> dict[st
                 except Exception:
                     pass
 
-            structure["test_packages"] = sorted(list(packages))[:30]
+            structure["test_packages"] = sorted(packages)[:30]
             structure["test_sources"] = [str(test_dir)]
             break
 
@@ -262,7 +262,7 @@ async def _detect_frameworks(project_dir: Path) -> list[str]:
             except Exception:
                 pass
 
-    return sorted(list(frameworks))
+    return sorted(frameworks)
 
 
 async def _detect_test_frameworks(project_dir: Path) -> list[str]:
@@ -299,7 +299,7 @@ async def _detect_test_frameworks(project_dir: Path) -> list[str]:
             except Exception:
                 pass
 
-    return sorted(list(test_frameworks))
+    return sorted(test_frameworks)
 
 
 def _determine_project_type(frameworks: list[str]) -> str:

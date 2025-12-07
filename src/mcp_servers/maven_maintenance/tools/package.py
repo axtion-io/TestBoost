@@ -5,6 +5,7 @@ Packages a Maven project into its distributable format.
 """
 
 import asyncio
+import contextlib
 import json
 import subprocess
 from pathlib import Path
@@ -159,10 +160,8 @@ def _extract_build_errors(output: str) -> list[dict[str, Any]]:
                     parts = message.split(":")
                     if len(parts) >= 2:
                         current_error["file"] = parts[0]
-                        try:
+                        with contextlib.suppress(ValueError):
                             current_error["line"] = int(parts[1])
-                        except ValueError:
-                            pass
         elif in_error_block and line.strip() and not line.strip().startswith("["):
             # Continuation of error message
             if "context" not in current_error:

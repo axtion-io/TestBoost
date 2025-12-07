@@ -91,8 +91,9 @@ def run_maintenance(
     # Run the maintenance workflow
     async def _run() -> Any:
         # Use new agent-based workflow (US2)
-        from src.workflows.maven_maintenance_agent import run_maven_maintenance_with_agent
         from uuid import uuid4
+
+        from src.workflows.maven_maintenance_agent import run_maven_maintenance_with_agent
 
         session_id = str(uuid4())
 
@@ -135,7 +136,7 @@ def run_maintenance(
                 progress.stop()
                 console.print(f"[red]Error:[/red] {str(e)}")
                 logger.error("maintenance_workflow_failed", error=str(e))
-                raise typer.Exit(1)
+                raise typer.Exit(1) from None
 
     result = asyncio.run(_run())
 
@@ -281,10 +282,10 @@ def check_status(
         console.print(
             "[red]Error:[/red] Could not connect to TestBoost API. Is the server running?"
         )
-        raise typer.Exit(1)
+        raise typer.Exit(1) from None
     except Exception as e:
         console.print(f"[red]Error:[/red] {str(e)}")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from None
 
 
 @app.command("list")

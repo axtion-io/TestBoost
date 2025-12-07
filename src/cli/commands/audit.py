@@ -13,8 +13,8 @@ import typer
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
-from src.cli.progress import create_progress
 
+from src.cli.progress import create_progress
 from src.lib.logging import get_logger
 
 logger = get_logger(__name__)
@@ -89,9 +89,9 @@ def scan_vulnerabilities(
         from src.mcp_servers.maven_maintenance.tools.analyze import analyze_dependencies
 
         with create_progress(console) as progress:
-            
-            
-        
+
+
+
             task = progress.add_task("Scanning for vulnerabilities...", total=None)
 
             result = await analyze_dependencies(
@@ -288,9 +288,9 @@ def generate_report(
         from src.mcp_servers.maven_maintenance.tools.analyze import analyze_dependencies
 
         with create_progress(console) as progress:
-            
-            
-        
+
+
+
             task = progress.add_task("Generating security report...", total=None)
 
             result = await analyze_dependencies(

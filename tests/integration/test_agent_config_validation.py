@@ -1,7 +1,6 @@
 """Integration tests for agent configuration validation at startup (US3)."""
 
 import shutil
-import tempfile
 from pathlib import Path
 
 import pytest

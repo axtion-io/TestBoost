@@ -5,13 +5,12 @@ Validates that YAML configs load correctly and changes take effect.
 """
 
 import shutil
-import tempfile
 from pathlib import Path
 
 import pytest
 import yaml
 
-from src.agents.loader import AgentLoader, AgentConfig
+from src.agents.loader import AgentConfig, AgentLoader
 
 
 class TestYAMLConfigLoading:
@@ -134,14 +133,14 @@ class TestYAMLChangesEffect:
 
         # First load - cache the config
         agent_name = "maven_maintenance_agent"
-        config1 = loader.load_agent(agent_name)
+        _ = loader.load_agent(agent_name)  # Initial load to populate cache
 
         # Modify file and wait (mtime must change)
         yaml_path = temp_config_dir / f"{agent_name}.yaml"
         with open(yaml_path, encoding="utf-8") as f:
             config_data = yaml.safe_load(f)
 
-        original_temp = config_data["llm"]["temperature"]
+        _ = config_data["llm"]["temperature"]  # Note original value
         config_data["llm"]["temperature"] = 1.5
 
         # Write with updated timestamp

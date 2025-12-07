@@ -4,12 +4,6 @@ import asyncio
 from typing import Any
 
 from langchain_core.messages import HumanMessage
-from tenacity import (
-    retry,
-    retry_if_exception_type,
-    stop_after_attempt,
-    wait_exponential,
-)
 
 from src.lib.config import get_settings
 from src.lib.llm import LLMError, LLMProviderError, LLMTimeoutError, get_llm
@@ -84,11 +78,8 @@ def _is_retryable_error(exception: Exception) -> bool:
         return False
 
     # Check for provider configuration errors (non-retryable)
-    if "not configured" in error_msg or "missing" in error_msg:
-        return False
-
-    # Default: retry for unknown errors
-    return True
+    # Default: retry for unknown errors (not configuration related)
+    return "not configured" not in error_msg and "missing" not in error_msg
 
 
 async def _ping_llm_with_retry(llm: Any, timeout: int = STARTUP_TIMEOUT, max_retries: int = MAX_RETRIES) -> None:
@@ -123,7 +114,7 @@ async def _ping_llm_with_retry(llm: Any, timeout: int = STARTUP_TIMEOUT, max_ret
             logger.debug("llm_ping_success", response_length=len(str(response)), attempt=attempt)
             return  # Success!
 
-        except asyncio.TimeoutError as e:
+        except TimeoutError as e:
             logger.warning("llm_ping_timeout", timeout=timeout, attempt=attempt, max_retries=max_retries)
             last_error = LLMTimeoutError(f"LLM ping timed out after {timeout}s")
 
@@ -250,6 +241,7 @@ def validate_agent_infrastructure() -> None:
         AgentConfigError: If any agent config is invalid or missing
     """
     from pathlib import Path
+
     from pydantic import ValidationError
 
     from src.agents.loader import AgentLoader

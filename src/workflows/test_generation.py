@@ -8,17 +8,8 @@ Implements a full workflow for analyzing Java projects, generating tests,
 running mutation testing, and generating killer tests if needed.
 """
 
-import warnings
-
-warnings.warn(
-    "test_generation.py workflow is deprecated. "
-    "Use test_generation_agent.py with DeepAgents LLM integration instead. "
-    "See 002-deepagents-integration spec for details.",
-    DeprecationWarning,
-    stacklevel=2,
-)
-
 import json
+import warnings
 from datetime import datetime
 from typing import Annotated, Any, Literal
 from uuid import uuid4
@@ -27,6 +18,14 @@ from langchain_core.messages import AIMessage, BaseMessage
 from langgraph.graph import END, StateGraph
 from langgraph.graph.message import add_messages
 from pydantic import BaseModel, Field
+
+warnings.warn(
+    "test_generation.py workflow is deprecated. "
+    "Use test_generation_agent.py with DeepAgents LLM integration instead. "
+    "See 002-deepagents-integration spec for details.",
+    DeprecationWarning,
+    stacklevel=2,
+)
 
 
 class TestGenerationState(BaseModel):
@@ -112,7 +111,6 @@ async def analyze_project_structure(state: TestGenerationState) -> dict[str, Any
     project_name = module_info.get("artifactId") or Path(state.project_path).name
 
     # Find source files to test
-    source_structure = context.get("source_structure", {})
     source_files = []
     src_dir = Path(state.project_path) / "src" / "main" / "java"
     if src_dir.exists():

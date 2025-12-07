@@ -1,12 +1,9 @@
 """End-to-end tests for Maven maintenance with real LLM invocations (US2)."""
 
 import os
-import pytest
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from src.lib.config import get_settings
-
+import pytest
 
 # Skip E2E tests if no API key configured
 pytestmark = pytest.mark.skipif(
@@ -159,7 +156,7 @@ class TestMavenWorkflowLLMCalls:
             mock_maven_tools.return_value = [mock_analyze, mock_compile]
 
             try:
-                result = await run_maven_maintenance_with_agent(
+                await run_maven_maintenance_with_agent(
                     project_path=str(project_path),
                     session_id="e2e-test-tools"
                 )
@@ -187,8 +184,9 @@ class TestLangSmithTraceValidation:
     )
     async def test_langsmith_trace_validation(self, tmp_path):
         """Test LangSmith captures all agent invocations and tool calls."""
-        from src.workflows.maven_maintenance_agent import run_maven_maintenance_with_agent
         import os
+
+        from src.workflows.maven_maintenance_agent import run_maven_maintenance_with_agent
 
         # Ensure LangSmith tracing is enabled
         os.environ["LANGSMITH_TRACING"] = "true"
@@ -234,12 +232,12 @@ class TestLangSmithTraceValidation:
             print("\n" + "="*80)
             print("MANUAL LANGSMITH VALIDATION REQUIRED:")
             print("="*80)
-            print(f"1. Go to: https://smith.langchain.com/")
-            print(f"2. Search for session_id: e2e-langsmith-test")
-            print(f"3. Verify trace shows:")
-            print(f"   - Agent invocations (≥3)")
-            print(f"   - Tool calls (analyze_dependencies, compile_tests, etc.)")
-            print(f"   - Input/output for each step")
+            print("1. Go to: https://smith.langchain.com/")
+            print("2. Search for session_id: e2e-langsmith-test")
+            print("3. Verify trace shows:")
+            print("   - Agent invocations (≥3)")
+            print("   - Tool calls (analyze_dependencies, compile_tests, etc.)")
+            print("   - Input/output for each step")
             print("="*80 + "\n")
 
         finally:
@@ -251,8 +249,9 @@ class TestLangSmithTraceValidation:
     @pytest.mark.e2e
     async def test_maven_workflow_without_langsmith(self, tmp_path):
         """Test workflow works even if LangSmith is not configured (optional)."""
-        from src.workflows.maven_maintenance_agent import run_maven_maintenance_with_agent
         import os
+
+        from src.workflows.maven_maintenance_agent import run_maven_maintenance_with_agent
 
         # Ensure LangSmith is disabled
         os.environ.pop("LANGSMITH_API_KEY", None)
@@ -505,12 +504,13 @@ class TestDockerWorkflowLLMCalls:
                 async def wrapper(*args, **kwargs):
                     tool_calls.append(tool_name)
                     # Return mock data for faster testing
-                    if tool_name == "docker_create_dockerfile":
-                        return {"success": True, "dockerfile_path": f"{project_path}/Dockerfile"}
-                    elif tool_name == "docker_create_compose":
-                        return {"success": True, "compose_path": f"{project_path}/docker-compose.yml"}
-                    elif tool_name == "docker_health_check":
-                        return {"success": True, "overall_healthy": True, "elapsed_time": 15}
+                    mock_results = {
+                        "docker_create_dockerfile": {"success": True, "dockerfile_path": f"{project_path}/Dockerfile"},
+                        "docker_create_compose": {"success": True, "compose_path": f"{project_path}/docker-compose.yml"},
+                        "docker_health_check": {"success": True, "overall_healthy": True, "elapsed_time": 15},
+                    }
+                    if tool_name in mock_results:
+                        return mock_results[tool_name]
                     return await original_method(*args, **kwargs)
                 return wrapper
             return decorator
@@ -532,7 +532,7 @@ class TestDockerWorkflowLLMCalls:
             mock_docker_tools.return_value = [mock_dockerfile, mock_compose, mock_health]
 
             try:
-                result = await run_docker_deployment_with_agent(
+                await run_docker_deployment_with_agent(
                     project_path=str(project_path),
                     session_id="e2e-docker-tools"
                 )
@@ -556,8 +556,8 @@ class TestTestGenerationWorkflowLLMCalls:
     @pytest.mark.e2e
     async def test_test_gen_workflow_llm_calls(self, tmp_path):
         """Test Test Generation workflow makes at least 3 real LLM API calls (T052, SC-002)."""
-        from uuid import uuid4
         from unittest.mock import AsyncMock, MagicMock
+        from uuid import uuid4
 
         # Create a minimal Java project for test generation
         project_path = tmp_path / "test-project"
@@ -672,26 +672,27 @@ public class Calculator {
             mock_get_llm.side_effect = get_llm_with_counter
 
             # Patch repositories to avoid database operations
-            with patch("src.workflows.test_generation_agent.ArtifactRepository", return_value=mock_artifact_repo):
-                with patch("src.workflows.test_generation_agent.SessionRepository", return_value=mock_session_repo):
+            with (
+                patch("src.workflows.test_generation_agent.ArtifactRepository", return_value=mock_artifact_repo),
+                patch("src.workflows.test_generation_agent.SessionRepository", return_value=mock_session_repo),
+            ):
+                # Import workflow function AFTER patch is applied (critical!)
+                from src.workflows.test_generation_agent import run_test_generation_with_agent
 
-                    # Import workflow function AFTER patch is applied (critical!)
-                    from src.workflows.test_generation_agent import run_test_generation_with_agent
+                # Execute workflow with real LLM (wrapped with counter)
+                session_id = uuid4()
+                result = await run_test_generation_with_agent(
+                    session_id=session_id,
+                    project_path=str(project_path),
+                    db_session=mock_db_session,
+                    coverage_target=80.0
+                )
 
-                    # Execute workflow with real LLM (wrapped with counter)
-                    session_id = uuid4()
-                    result = await run_test_generation_with_agent(
-                        session_id=session_id,
-                        project_path=str(project_path),
-                        db_session=mock_db_session,
-                        coverage_target=80.0
-                    )
+                # Verify at least 3 LLM calls (SC-002)
+                assert counter.count >= 3, f"Expected ≥3 LLM calls, got {counter.count}"
 
-                    # Verify at least 3 LLM calls (SC-002)
-                    assert counter.count >= 3, f"Expected ≥3 LLM calls, got {counter.count}"
-
-                    # Verify result contains expected data
-                    assert result is not None
-                    assert "success" in result or "generated_tests" in result
-                    # Result should have test generation information
-                    assert result.get("agent_name") == "test_gen_agent" or "metrics" in result
+                # Verify result contains expected data
+                assert result is not None
+                assert "success" in result or "generated_tests" in result
+                # Result should have test generation information
+                assert result.get("agent_name") == "test_gen_agent" or "metrics" in result

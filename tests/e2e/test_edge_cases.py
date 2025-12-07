@@ -8,10 +8,10 @@ These tests validate the error handling and retry logic for various edge cases:
 - A6: Context window overflow
 """
 
-import asyncio
 import json
+from unittest.mock import AsyncMock
+
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
 from langchain_core.messages import AIMessage
 
 from src.lib.llm import LLMRateLimitError
@@ -63,7 +63,6 @@ class TestRateLimitErrorHandling:
 
     def test_rate_limit_error_class_exists(self):
         """Test that LLMRateLimitError class is available."""
-        from src.lib.llm import LLMRateLimitError
 
         error = LLMRateLimitError(
             message="Rate limit exceeded",
@@ -124,8 +123,8 @@ class TestMissingToolCallsRetry:
         A2 edge case: After 3 attempts, should fail with clear error.
         """
         from src.workflows.maven_maintenance_agent import (
-            _invoke_agent_with_retry,
             MavenAgentError,
+            _invoke_agent_with_retry,
         )
 
         # Always return response without tool calls
@@ -157,13 +156,13 @@ class TestIntermittentConnectivityRetry:
 
         T105d: Mock network timeout, assert exponential backoff retry.
         """
-        from src.lib.startup_checks import _ping_llm_with_retry, LLMTimeoutError
+        from src.lib.startup_checks import _ping_llm_with_retry
 
         # First two calls timeout, third succeeds
         mock_llm = AsyncMock()
         mock_llm.ainvoke.side_effect = [
-            asyncio.TimeoutError("Connection timed out"),
-            asyncio.TimeoutError("Connection timed out"),
+            TimeoutError("Connection timed out"),
+            TimeoutError("Connection timed out"),
             AIMessage(content="pong"),
         ]
 
@@ -191,7 +190,7 @@ class TestIntermittentConnectivityRetry:
     @pytest.mark.asyncio
     async def test_max_retries_exceeded_for_connectivity(self):
         """Test failure after max retries on persistent connectivity issues."""
-        from src.lib.startup_checks import _ping_llm_with_retry, LLMConnectionError
+        from src.lib.startup_checks import LLMConnectionError, _ping_llm_with_retry
 
         mock_llm = AsyncMock()
         mock_llm.ainvoke.side_effect = ConnectionError("Network unreachable")
@@ -242,9 +241,7 @@ class TestMalformedJSONValidation:
             required = ["name", "args", "id"]
             if not all(k in tool_call for k in required):
                 return False
-            if not isinstance(tool_call["args"], dict):
-                return False
-            return True
+            return isinstance(tool_call["args"], dict)
 
         # Valid tool call
         valid = {"name": "analyze", "args": {"path": "/test"}, "id": "1"}
@@ -265,7 +262,7 @@ class TestAuthenticationErrors:
     @pytest.mark.asyncio
     async def test_auth_error_not_retried(self):
         """Test that authentication errors fail immediately (no retry)."""
-        from src.lib.startup_checks import _ping_llm_with_retry, LLMConnectionError
+        from src.lib.startup_checks import LLMConnectionError, _ping_llm_with_retry
 
         mock_llm = AsyncMock()
         mock_llm.ainvoke.side_effect = Exception(
@@ -282,14 +279,14 @@ class TestAuthenticationErrors:
     @pytest.mark.asyncio
     async def test_forbidden_error_not_retried(self):
         """Test that 403 Forbidden errors fail immediately."""
-        from src.lib.startup_checks import _ping_llm_with_retry, LLMConnectionError
+        from src.lib.startup_checks import LLMConnectionError, _ping_llm_with_retry
 
         mock_llm = AsyncMock()
         mock_llm.ainvoke.side_effect = Exception(
             "403 Forbidden - Access denied"
         )
 
-        with pytest.raises(LLMConnectionError) as exc_info:
+        with pytest.raises(LLMConnectionError):
             await _ping_llm_with_retry(mock_llm, timeout=5, max_retries=3)
 
         assert mock_llm.ainvoke.call_count == 1
@@ -303,7 +300,7 @@ class TestRetryableErrorClassification:
         from src.lib.startup_checks import _is_retryable_error
 
         assert _is_retryable_error(TimeoutError()) is True
-        assert _is_retryable_error(asyncio.TimeoutError()) is True
+        assert _is_retryable_error(TimeoutError()) is True
 
     def test_connection_error_is_retryable(self):
         """Test that connection errors are classified as retryable."""
@@ -339,7 +336,7 @@ class TestZeroComplaisance:
 
     def test_agent_config_validation_is_mandatory(self):
         """Test that validate_agent_infrastructure raises on failure."""
-        from src.lib.startup_checks import validate_agent_infrastructure, AgentConfigError
+        from src.lib.startup_checks import validate_agent_infrastructure
 
         # The function should raise AgentConfigError on invalid configs
         assert callable(validate_agent_infrastructure)
@@ -347,9 +344,9 @@ class TestZeroComplaisance:
     def test_startup_check_error_hierarchy(self):
         """Test that all startup errors inherit from StartupCheckError."""
         from src.lib.startup_checks import (
-            StartupCheckError,
-            LLMConnectionError,
             AgentConfigError,
+            LLMConnectionError,
+            StartupCheckError,
         )
 
         assert issubclass(LLMConnectionError, StartupCheckError)

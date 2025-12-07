@@ -1,8 +1,9 @@
 """Integration tests for Test Generation workflow with DeepAgents (US4, T050-T051)."""
 
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
+
+import pytest
 
 
 class TestTestGenAgentWorkflow:
@@ -67,25 +68,26 @@ public class Calculator {
             return mock_agent
 
         # Patch create_deep_agent to track usage
-        with patch("src.workflows.test_generation_agent.create_deep_agent", side_effect=mock_create_deep_agent):
-            with patch("src.workflows.test_generation_agent.ArtifactRepository", return_value=mock_artifact_repo):
-                with patch("src.workflows.test_generation_agent.SessionRepository", return_value=mock_session_repo):
+        with (
+            patch("src.workflows.test_generation_agent.create_deep_agent", side_effect=mock_create_deep_agent),
+            patch("src.workflows.test_generation_agent.ArtifactRepository", return_value=mock_artifact_repo),
+            patch("src.workflows.test_generation_agent.SessionRepository", return_value=mock_session_repo),
+        ):
+            # Run workflow
+            session_id = uuid4()
+            result = await run_test_generation_with_agent(
+                session_id=session_id,
+                project_path=str(project_path),
+                db_session=mock_db_session,
+                coverage_target=80.0
+            )
 
-                    # Run workflow
-                    session_id = uuid4()
-                    result = await run_test_generation_with_agent(
-                        session_id=session_id,
-                        project_path=str(project_path),
-                        db_session=mock_db_session,
-                        coverage_target=80.0
-                    )
+            # Verify agent was created
+            assert agent_created, "create_deep_agent should have been called"
 
-                    # Verify agent was created
-                    assert agent_created, "create_deep_agent should have been called"
-
-                    # Verify result structure
-                    assert result is not None
-                    assert isinstance(result, dict)
+            # Verify result structure
+            assert result is not None
+            assert isinstance(result, dict)
 
     @pytest.mark.asyncio
     async def test_test_gen_workflow_stores_artifacts(self, tmp_path):
@@ -135,31 +137,32 @@ public class Calculator {
             mock_agent.ainvoke = AsyncMock(return_value=mock_response)
             return mock_agent
 
-        with patch("src.workflows.test_generation_agent.create_deep_agent", side_effect=mock_create_deep_agent):
-            with patch("src.workflows.test_generation_agent.ArtifactRepository", return_value=mock_artifact_repo):
-                with patch("src.workflows.test_generation_agent.SessionRepository", return_value=mock_session_repo):
+        with (
+            patch("src.workflows.test_generation_agent.create_deep_agent", side_effect=mock_create_deep_agent),
+            patch("src.workflows.test_generation_agent.ArtifactRepository", return_value=mock_artifact_repo),
+            patch("src.workflows.test_generation_agent.SessionRepository", return_value=mock_session_repo),
+        ):
+            # Run workflow
+            session_id = uuid4()
+            result = await run_test_generation_with_agent(
+                session_id=session_id,
+                project_path=str(project_path),
+                db_session=mock_db_session,
+                coverage_target=80.0
+            )
 
-                    # Run workflow
-                    session_id = uuid4()
-                    result = await run_test_generation_with_agent(
-                        session_id=session_id,
-                        project_path=str(project_path),
-                        db_session=mock_db_session,
-                        coverage_target=80.0
-                    )
+            # Verify artifacts were stored
+            assert len(artifact_calls) > 0, "Should have stored at least one artifact"
 
-                    # Verify artifacts were stored
-                    assert len(artifact_calls) > 0, "Should have stored at least one artifact"
+            # Check for reasoning artifact
+            reasoning_artifacts = [a for a in artifact_calls if a.get("artifact_type") == "agent_reasoning"]
+            assert len(reasoning_artifacts) > 0, "Should have stored agent reasoning artifact"
 
-                    # Check for reasoning artifact
-                    reasoning_artifacts = [a for a in artifact_calls if a.get("artifact_type") == "agent_reasoning"]
-                    assert len(reasoning_artifacts) > 0, "Should have stored agent reasoning artifact"
+            # Check for metrics artifact
+            metrics_artifacts = [a for a in artifact_calls if a.get("artifact_type") == "llm_metrics"]
+            assert len(metrics_artifacts) > 0, "Should have stored LLM metrics artifact"
 
-                    # Check for metrics artifact
-                    metrics_artifacts = [a for a in artifact_calls if a.get("artifact_type") == "llm_metrics"]
-                    assert len(metrics_artifacts) > 0, "Should have stored LLM metrics artifact"
-
-                    # Verify result
-                    assert result is not None
-                    assert "metrics" in result
-                    assert "duration_seconds" in result["metrics"]
+            # Verify result
+            assert result is not None
+            assert "metrics" in result
+            assert "duration_seconds" in result["metrics"]

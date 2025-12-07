@@ -1,9 +1,8 @@
 """Centralized registry of MCP tools as LangChain BaseTool instances."""
 
-from typing import Callable
+from collections.abc import Callable
 
 from langchain_core.tools import BaseTool
-
 
 # Tool registry will be populated after importing tool modules
 TOOL_REGISTRY: dict[str, Callable[[], list[BaseTool]]] = {}
@@ -56,12 +55,12 @@ def list_available_servers() -> list[str]:
 def _initialize_registry() -> None:
     """Initialize the tool registry with all MCP servers."""
     # Import after registry is defined to avoid circular imports
-    from src.mcp_servers.maven_maintenance.langchain_tools import get_maven_tools
-    from src.mcp_servers.test_generator.langchain_tools import get_test_gen_tools
+    from src.mcp_servers.container_runtime.langchain_tools import get_container_runtime_tools
     from src.mcp_servers.docker.langchain_tools import get_docker_tools
     from src.mcp_servers.git_maintenance.langchain_tools import get_git_tools
+    from src.mcp_servers.maven_maintenance.langchain_tools import get_maven_tools
     from src.mcp_servers.pit_recommendations.langchain_tools import get_pit_tools
-    from src.mcp_servers.container_runtime.langchain_tools import get_container_runtime_tools
+    from src.mcp_servers.test_generator.langchain_tools import get_test_gen_tools
 
     register_tools("maven-maintenance", get_maven_tools)
     register_tools("test-generator", get_test_gen_tools)

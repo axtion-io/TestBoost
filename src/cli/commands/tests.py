@@ -6,8 +6,8 @@ from pathlib import Path
 import typer
 from rich.console import Console
 from rich.table import Table
-from src.cli.progress import create_progress
 
+from src.cli.progress import create_progress
 from src.lib.logging import get_logger
 
 logger = get_logger(__name__)
@@ -236,9 +236,9 @@ def _run_analysis(project_dir: Path, verbose: bool) -> None:
         from src.mcp_servers.test_generator.tools.conventions import detect_test_conventions
 
         with create_progress(console) as progress:
-            
-            
-        
+
+
+
             # Analyze project
             task = progress.add_task("Analyzing project structure...", total=None)
             result = await analyze_project_context(str(project_dir))
@@ -309,8 +309,8 @@ async def _run_test_generation(
 ) -> None:
     """Run test generation workflow with LLM agent (T063)."""
     from src.db import SessionLocal
-    from src.workflows.test_generation_agent import run_test_generation_with_agent
     from src.db.repository import SessionRepository
+    from src.workflows.test_generation_agent import run_test_generation_with_agent
 
     # Show agent workflow notice
     console.print("[yellow]Using LLM-powered test generation agent[/yellow]")
@@ -351,7 +351,7 @@ async def _run_test_generation(
 
             # Display results
             if not result.get("success"):
-                console.print(f"\n[red]Test generation failed[/red]")
+                console.print("\n[red]Test generation failed[/red]")
                 raise typer.Exit(1)
 
             console.print("\n[bold green]Test Generation Complete[/bold green]\n")
@@ -392,7 +392,7 @@ async def _run_test_generation(
         except Exception as e:
             progress.remove_task(task)
             console.print(f"\n[red]Error:[/red] {str(e)}")
-            raise typer.Exit(1)
+            raise typer.Exit(1) from None
 
 
 async def _run_mutation_testing(
@@ -404,9 +404,9 @@ async def _run_mutation_testing(
     from src.mcp_servers.test_generator.tools.mutation import run_mutation_testing
 
     with create_progress(console) as progress:
-        
-        
-    
+
+
+
         task = progress.add_task("Running mutation testing (this may take a while)...", total=None)
 
         classes = [target_classes] if target_classes else None
@@ -457,9 +457,9 @@ async def _show_recommendations(project_dir: Path, target_score: float, strategy
     from src.mcp_servers.pit_recommendations.tools.recommend import recommend_test_improvements
 
     with create_progress(console) as progress:
-        
-        
-    
+
+
+
         task = progress.add_task("Analyzing mutation results...", total=None)
 
         # Get recommendations

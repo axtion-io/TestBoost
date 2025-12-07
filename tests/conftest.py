@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 from dotenv import load_dotenv
 
+from src.lib.logging import configure_logging
 
 # Load .env file before running tests
 # Use override=True to ensure .env values take precedence over system environment
@@ -14,7 +15,6 @@ if env_path.exists():
     load_dotenv(env_path, override=True)
 
 # Configure logging for tests
-from src.lib.logging import configure_logging
 configure_logging()
 
 
@@ -23,8 +23,9 @@ configure_logging()
 # DeepAgents' FilesystemMiddleware rejects Windows absolute paths (C:\...)
 # but we need to support them for MCP tools on Windows
 try:
-    from deepagents.middleware import filesystem
     import re
+
+    from deepagents.middleware import filesystem
 
     # Save original function
     _original_validate_path = filesystem._validate_path

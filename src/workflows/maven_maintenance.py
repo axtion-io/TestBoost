@@ -9,8 +9,8 @@ Implements a full workflow for analyzing and updating Maven dependencies
 with validation, rollback support, and interactive user confirmation.
 """
 
-import warnings
 import json
+import warnings
 from datetime import datetime
 from typing import Annotated, Any, Literal
 from uuid import uuid4
@@ -389,9 +389,9 @@ async def apply_update_batch(state: MavenMaintenanceState) -> dict[str, Any]:
 
     pom_file = Path(state.project_path) / "pom.xml"
 
-    # Read current pom.xml for rollback
+    # Read current pom.xml for rollback (content read for potential future rollback feature)
     with open(pom_file) as f:
-        original_content = f.read()
+        _ = f.read()
 
     applied = []
     failed = []

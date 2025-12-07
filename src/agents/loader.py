@@ -1,7 +1,7 @@
 """DeepAgents YAML configuration loader with hot-reload support."""
 
 import shutil
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -473,7 +473,7 @@ class AgentLoader:
         backups_dir.mkdir(exist_ok=True)
 
         # Create timestamped backup filename
-        timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+        timestamp = datetime.now(UTC).strftime("%Y%m%d_%H%M%S")
         backup_path = backups_dir / f"{name}_{timestamp}.yaml"
 
         # Copy file to backup location
@@ -554,7 +554,7 @@ class AgentLoader:
             logger.info("rollback_to_latest", name=name, timestamp=backups[0][1])
         else:
             # Find specific timestamp
-            for agent_name, backup_time, backup_path in backups:
+            for _agent_name, backup_time, backup_path in backups:
                 if backup_time == timestamp:
                     backup_to_restore = backup_path
                     break

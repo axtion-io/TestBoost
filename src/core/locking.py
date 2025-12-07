@@ -79,10 +79,7 @@ class LockService:
         """Check if a project is currently locked."""
         lock = await self.repository.get_by_project(project_path)
 
-        if lock and lock.expires_at > datetime.utcnow():
-            return True
-
-        return False
+        return bool(lock and lock.expires_at > datetime.utcnow())
 
     async def cleanup_expired(self) -> int:
         """Clean up expired locks."""

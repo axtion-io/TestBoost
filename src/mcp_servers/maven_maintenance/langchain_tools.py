@@ -7,8 +7,8 @@ from src.lib.logging import get_logger
 # Import existing MCP tool implementations
 from src.mcp_servers.maven_maintenance.tools.analyze import analyze_dependencies
 from src.mcp_servers.maven_maintenance.tools.compile import compile_tests
-from src.mcp_servers.maven_maintenance.tools.run_tests import run_tests
 from src.mcp_servers.maven_maintenance.tools.package import package_project
+from src.mcp_servers.maven_maintenance.tools.run_tests import run_tests
 
 logger = get_logger(__name__)
 

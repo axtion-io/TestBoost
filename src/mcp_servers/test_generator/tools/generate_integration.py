@@ -319,7 +319,7 @@ def _generate_mvc_test(endpoint: dict[str, str], class_name: str) -> list[str]:
 
 def _generate_repository_tests(class_name: str) -> list[str]:
     """Generate repository integration tests."""
-    instance = _to_camel_case(class_name)
+    _ = _to_camel_case(class_name)  # Reserved for future entity instance naming
     return [
         "    @Test",
         '    @DisplayName("Should save and retrieve entity")',

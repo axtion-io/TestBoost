@@ -13,8 +13,8 @@ import typer
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
-from src.cli.progress import create_progress
 
+from src.cli.progress import create_progress
 from src.lib.logging import get_logger
 
 logger = get_logger(__name__)
@@ -101,9 +101,9 @@ def run_deployment(
         from src.workflows.docker_deployment import run_docker_deployment
 
         with create_progress(console) as progress:
-            
-            
-        
+
+
+
             task = progress.add_task("Running Docker deployment...", total=None)
 
             try:
@@ -120,7 +120,7 @@ def run_deployment(
                 progress.stop()
                 console.print(f"[red]Error:[/red] {str(e)}")
                 logger.exception("deploy_run_error", error=str(e))
-                raise typer.Exit(1)
+                raise typer.Exit(1) from None
 
     result = asyncio.run(_run())
 
@@ -247,9 +247,9 @@ def stop_deployment(
         return stdout.decode("utf-8", errors="replace"), process.returncode or 0
 
     with create_progress(console) as progress:
-        
-        
-    
+
+
+
         task = progress.add_task("Stopping deployment...", total=None)
         output, returncode = asyncio.run(_stop())
         progress.update(task, completed=True)
@@ -455,9 +455,9 @@ def build_only(
         }
 
     with create_progress(console) as progress:
-        
-        
-    
+
+
+
         task = progress.add_task("Building Docker image...", total=None)
         result = asyncio.run(_build())
         progress.update(task, completed=True)

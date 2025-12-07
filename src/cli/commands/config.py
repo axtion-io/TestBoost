@@ -93,11 +93,11 @@ def validate_config(
         raise
     except FileNotFoundError as e:
         console.print(f"[ERROR] Error: {e}", style="red")
-        raise typer.Exit(ExitCode.PROJECT_NOT_FOUND)
+        raise typer.Exit(ExitCode.PROJECT_NOT_FOUND) from None
     except Exception as e:
         console.print(f"[ERROR] Validation error: {e}", style="red")
         logger.error("config_validation_error", error=str(e))
-        raise typer.Exit(ExitCode.CONFIG_ERROR)
+        raise typer.Exit(ExitCode.CONFIG_ERROR) from None
 
 
 @app.command("reload")
@@ -141,11 +141,11 @@ def reload_config(
 
     except FileNotFoundError as e:
         console.print(f"[ERROR] Error: {e}", style="red")
-        raise typer.Exit(ExitCode.PROJECT_NOT_FOUND)
+        raise typer.Exit(ExitCode.PROJECT_NOT_FOUND) from None
     except Exception as e:
         console.print(f"[ERROR] Reload error: {e}", style="red")
         logger.error("config_reload_error", error=str(e))
-        raise typer.Exit(ExitCode.CONFIG_ERROR)
+        raise typer.Exit(ExitCode.CONFIG_ERROR) from None
 
 
 @app.command("backup")
@@ -174,11 +174,11 @@ def backup_config(
 
     except FileNotFoundError as e:
         console.print(f"[ERROR] Error: {e}", style="red")
-        raise typer.Exit(ExitCode.PROJECT_NOT_FOUND)
+        raise typer.Exit(ExitCode.PROJECT_NOT_FOUND) from None
     except Exception as e:
         console.print(f"[ERROR] Backup error: {e}", style="red")
         logger.error("config_backup_error", error=str(e))
-        raise typer.Exit(ExitCode.CONFIG_ERROR)
+        raise typer.Exit(ExitCode.CONFIG_ERROR) from None
 
 
 @app.command("list-backups")
@@ -225,7 +225,7 @@ def list_backups(
     except Exception as e:
         console.print(f"[ERROR] Error: {e}", style="red")
         logger.error("config_list_backups_error", error=str(e))
-        raise typer.Exit(ExitCode.CONFIG_ERROR)
+        raise typer.Exit(ExitCode.CONFIG_ERROR) from None
 
 
 @app.command("rollback")
@@ -279,19 +279,19 @@ def rollback_config(
         console.print(f"Rolling back [cyan]{agent_name}[/cyan] to {timestamp_str}...")
         restored_path = loader.rollback_config(agent_name)
 
-        console.print(f"[OK] Rollback complete")
+        console.print("[OK] Rollback complete")
         console.print(f"   Restored from: [green]{restored_path.name}[/green]")
-        console.print(f"   Current config backed up to .backups/")
+        console.print("   Current config backed up to .backups/")
 
         raise typer.Exit(ExitCode.SUCCESS)
 
     except FileNotFoundError as e:
         console.print(f"[ERROR] Error: {e}", style="red")
-        raise typer.Exit(ExitCode.PROJECT_NOT_FOUND)
+        raise typer.Exit(ExitCode.PROJECT_NOT_FOUND) from None
     except Exception as e:
         console.print(f"[ERROR] Rollback error: {e}", style="red")
         logger.error("config_rollback_error", error=str(e))
-        raise typer.Exit(ExitCode.CONFIG_ERROR)
+        raise typer.Exit(ExitCode.CONFIG_ERROR) from None
 
 
 @app.command("show")
@@ -349,11 +349,11 @@ def show_config(
 
     except FileNotFoundError as e:
         console.print(f"[ERROR] Error: {e}", style="red")
-        raise typer.Exit(ExitCode.PROJECT_NOT_FOUND)
+        raise typer.Exit(ExitCode.PROJECT_NOT_FOUND) from None
     except Exception as e:
         console.print(f"[ERROR] Error: {e}", style="red")
         logger.error("config_show_error", error=str(e))
-        raise typer.Exit(ExitCode.CONFIG_ERROR)
+        raise typer.Exit(ExitCode.CONFIG_ERROR) from None
 
 
 if __name__ == "__main__":

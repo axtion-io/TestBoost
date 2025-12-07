@@ -5,10 +5,9 @@ after the DeepAgents 0.2.8 integration. They verify backward compatibility
 and proper deprecation warning logging.
 """
 
-import pytest
 import warnings
-from unittest.mock import AsyncMock, MagicMock, patch
-from langchain_core.messages import AIMessage
+
+import pytest
 
 
 class TestOldMavenMaintenanceStillWorks:
@@ -19,8 +18,9 @@ class TestOldMavenMaintenanceStillWorks:
 
         T097a: Verify old workflow entry points remain functional.
         """
-        from src.workflows.maven_maintenance_agent import run_maven_maintenance_with_agent
         import inspect
+
+        from src.workflows.maven_maintenance_agent import run_maven_maintenance_with_agent
 
         # Verify the function exists and is async
         assert callable(run_maven_maintenance_with_agent)
@@ -31,8 +31,9 @@ class TestOldMavenMaintenanceStillWorks:
 
         T097a: Verify backward compatibility of function signature.
         """
-        from src.workflows.maven_maintenance_agent import run_maven_maintenance_with_agent
         import inspect
+
+        from src.workflows.maven_maintenance_agent import run_maven_maintenance_with_agent
 
         sig = inspect.signature(run_maven_maintenance_with_agent)
         params = list(sig.parameters.keys())
@@ -44,9 +45,9 @@ class TestOldMavenMaintenanceStillWorks:
     def test_maven_agent_exceptions_available(self):
         """Test that Maven agent exception classes are available."""
         from src.workflows.maven_maintenance_agent import (
+            AgentTimeoutError,
             MavenAgentError,
             ToolCallError,
-            AgentTimeoutError,
         )
 
         # Verify exception hierarchy
@@ -62,8 +63,9 @@ class TestOldTestGenerationStillWorks:
 
         T097a: Verify test generation workflow remains functional.
         """
-        from src.workflows.test_generation_agent import run_test_generation_with_agent
         import inspect
+
+        from src.workflows.test_generation_agent import run_test_generation_with_agent
 
         # Verify the function exists and is async
         assert callable(run_test_generation_with_agent)
@@ -71,8 +73,9 @@ class TestOldTestGenerationStillWorks:
 
     def test_test_generation_accepts_expected_parameters(self):
         """Test that the workflow accepts expected parameters."""
-        from src.workflows.test_generation_agent import run_test_generation_with_agent
         import inspect
+
+        from src.workflows.test_generation_agent import run_test_generation_with_agent
 
         sig = inspect.signature(run_test_generation_with_agent)
         params = list(sig.parameters.keys())
@@ -85,8 +88,8 @@ class TestOldTestGenerationStillWorks:
     def test_test_generation_exceptions_available(self):
         """Test that test generation exception classes are available."""
         from src.workflows.test_generation_agent import (
-            TestGenerationError,
             CompilationError,
+            TestGenerationError,
         )
 
         # Verify exception hierarchy
@@ -101,8 +104,9 @@ class TestOldDockerDeploymentStillWorks:
 
         T097a: Verify deployment workflow remains functional.
         """
-        from src.workflows.docker_deployment_agent import run_docker_deployment_with_agent
         import inspect
+
+        from src.workflows.docker_deployment_agent import run_docker_deployment_with_agent
 
         # Verify the function exists and is async
         assert callable(run_docker_deployment_with_agent)
@@ -110,8 +114,9 @@ class TestOldDockerDeploymentStillWorks:
 
     def test_docker_deployment_accepts_expected_parameters(self):
         """Test that the workflow accepts expected parameters."""
-        from src.workflows.docker_deployment_agent import run_docker_deployment_with_agent
         import inspect
+
+        from src.workflows.docker_deployment_agent import run_docker_deployment_with_agent
 
         sig = inspect.signature(run_docker_deployment_with_agent)
         params = list(sig.parameters.keys())
@@ -122,8 +127,9 @@ class TestOldDockerDeploymentStillWorks:
 
     def test_checkpointer_function_available(self):
         """Test that the checkpointer function is available."""
-        from src.workflows.docker_deployment_agent import get_checkpointer
         from langgraph.checkpoint.memory import MemorySaver
+
+        from src.workflows.docker_deployment_agent import get_checkpointer
 
         # Verify checkpointer is available
         checkpointer = get_checkpointer()
@@ -141,13 +147,15 @@ class TestDeprecationWarningsLogged:
         """
         # This test verifies that when legacy patterns are used,
         # appropriate deprecation warnings are logged
-        with warnings.catch_warnings(record=True) as w:
+        with warnings.catch_warnings(record=True) as _w:
             warnings.simplefilter("always")
 
             # Import the workflow modules (using actual module names)
-            from src.workflows import maven_maintenance_agent
-            from src.workflows import test_generation_agent
-            from src.workflows import docker_deployment_agent
+            from src.workflows import (
+                docker_deployment_agent,
+                maven_maintenance_agent,
+                test_generation_agent,
+            )
 
             # Check that modules are importable (no crashes)
             assert maven_maintenance_agent is not None
@@ -256,8 +264,8 @@ class TestLibModulesRegression:
         from src.lib.llm import (
             LLMError,
             LLMProviderError,
-            LLMTimeoutError,
             LLMRateLimitError,
+            LLMTimeoutError,
         )
 
         # Verify exception hierarchy
@@ -278,9 +286,9 @@ class TestStartupChecksRegression:
     def test_startup_check_exceptions_importable(self):
         """Test that startup check exceptions are available."""
         from src.lib.startup_checks import (
-            StartupCheckError,
-            LLMConnectionError,
             AgentConfigError,
+            LLMConnectionError,
+            StartupCheckError,
         )
 
         # Verify exception hierarchy

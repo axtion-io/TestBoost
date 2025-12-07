@@ -280,7 +280,7 @@ async def _invoke_agent_with_retry(
     except ConnectionError as e:
         logger.warning("agent_invoke_connection_error", error=str(e))
         raise  # Will retry
-    except asyncio.TimeoutError as e:
+    except TimeoutError as e:
         logger.warning("agent_invoke_timeout", error=str(e))
         raise  # Will retry
     except Exception as e:
@@ -515,7 +515,7 @@ def _extract_generated_tests(response: dict[str, Any] | AIMessage) -> list[dict[
     # Look for Java code blocks
     if "```java" in content:
         code_blocks = content.split("```java")
-        for i, block in enumerate(code_blocks[1:], 1):
+        for _i, block in enumerate(code_blocks[1:], 1):
             code = block.split("```")[0].strip()
             if code:
                 # Extract class name from code

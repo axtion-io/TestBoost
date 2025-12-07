@@ -19,7 +19,7 @@ from src.api.middleware.logging import request_logging_middleware
 from src.api.routers import health, sessions
 from src.lib.config import get_settings
 from src.lib.logging import get_logger
-from src.lib.startup_checks import run_all_startup_checks, StartupCheckError
+from src.lib.startup_checks import StartupCheckError, run_all_startup_checks
 
 logger = get_logger(__name__)
 settings = get_settings()

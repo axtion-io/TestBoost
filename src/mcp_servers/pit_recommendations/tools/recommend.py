@@ -7,8 +7,6 @@ test effectiveness based on mutation analysis.
 
 import json
 from pathlib import Path
-
-
 from typing import Any
 
 
@@ -75,7 +73,6 @@ def _generate_recommendations(
 
     summary = analysis.get("summary", {})
     current_score = summary.get("mutation_score", 0)
-    survived = summary.get("survived", 0)
     no_coverage = summary.get("no_coverage", 0)
 
     # Calculate how many mutants need to be killed

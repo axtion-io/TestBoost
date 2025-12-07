@@ -1,7 +1,8 @@
 """Integration tests for Docker deployment agent workflow (US5)."""
 
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
 from langchain_core.messages import AIMessage
 from langchain_core.tools import BaseTool
 
@@ -181,7 +182,6 @@ class TestDockerWorkflowStoresArtifacts:
     async def test_docker_workflow_stores_artifacts(self, db_session):
         """Test workflow stores agent reasoning, tool calls, and metrics as artifacts."""
         from src.workflows.docker_deployment_agent import run_docker_deployment_with_agent
-        from src.db.repository import Repository
 
         # Mock agent response with tool calls
         mock_agent_response = {

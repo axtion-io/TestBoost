@@ -11,11 +11,8 @@ Patterns checked:
 """
 
 import re
+from collections.abc import Generator
 from pathlib import Path
-from typing import Generator
-
-import pytest
-
 
 # API key patterns to detect
 API_KEY_PATTERNS = {
@@ -183,8 +180,6 @@ class TestEnvFileNotCommitted:
 
     def test_no_env_file_in_repo(self):
         """Test that .env file is not tracked by git."""
-        env_path = Path(".env")
-
         # .env can exist locally, but should be in .gitignore
         gitignore_path = Path(".gitignore")
         if gitignore_path.exists():
@@ -228,8 +223,9 @@ class TestSecurityBestPractices:
 
     def test_settings_uses_pydantic_secrets(self):
         """Test that Settings class uses pydantic-settings for env loading."""
-        from src.lib.config import Settings
         from pydantic_settings import BaseSettings
+
+        from src.lib.config import Settings
 
         # Settings should inherit from BaseSettings
         assert issubclass(Settings, BaseSettings), \

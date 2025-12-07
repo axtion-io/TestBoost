@@ -1,6 +1,5 @@
 """Integration tests for LLM connectivity validation at startup."""
 
-import os
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -141,7 +140,6 @@ class TestLLMConnectionTimeout:
     @pytest.mark.asyncio
     async def test_llm_connection_retry_on_timeout(self):
         """Test connection retries on timeout (A4 edge case)."""
-        import asyncio
 
         with patch("src.lib.startup_checks.get_llm") as mock_get_llm:
             mock_llm = AsyncMock()
@@ -152,7 +150,7 @@ class TestLLMConnectionTimeout:
                 nonlocal call_count
                 call_count += 1
                 if call_count <= 2:
-                    raise asyncio.TimeoutError("Request timed out")
+                    raise TimeoutError("Request timed out")
                 return AIMessage(content="pong")
 
             mock_llm.ainvoke.side_effect = intermittent_timeout

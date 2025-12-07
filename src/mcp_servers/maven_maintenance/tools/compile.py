@@ -5,6 +5,7 @@ Compiles test sources for a Maven project.
 """
 
 import asyncio
+import contextlib
 import json
 import subprocess
 from pathlib import Path
@@ -145,10 +146,8 @@ def _extract_error_info(line: str, context_lines: list[str]) -> dict[str, Any] |
                 else:
                     line_num = line_part
 
-                try:
+                with contextlib.suppress(ValueError):
                     error_info["line"] = int(line_num)
-                except ValueError:
-                    pass
 
             error_info["file"] = file_path
 

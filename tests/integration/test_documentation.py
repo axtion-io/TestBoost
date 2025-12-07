@@ -3,10 +3,7 @@
 These tests verify that documentation is complete and accurate.
 """
 
-import re
 from pathlib import Path
-
-import pytest
 
 
 class TestReadmeCompleteness:

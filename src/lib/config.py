@@ -116,14 +116,12 @@ class Settings(BaseSettings):
         """
         provider = provider or self.llm_provider
 
-        if provider == "anthropic":
-            return self.anthropic_api_key
-        elif provider == "google-genai":
-            return self.google_api_key
-        elif provider == "openai":
-            return self.openai_api_key
-
-        return None
+        api_keys = {
+            "anthropic": self.anthropic_api_key,
+            "google-genai": self.google_api_key,
+            "openai": self.openai_api_key,
+        }
+        return api_keys.get(provider)
 
 
 @lru_cache

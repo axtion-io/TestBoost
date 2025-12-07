@@ -87,11 +87,11 @@ class WorkflowExecutor:
                 }
 
             # Execute workflow
-            final_state = await compiled.ainvoke(initial_state, run_config)  # type: ignore[arg-type]
+            final_state = await compiled.ainvoke(initial_state, run_config)
 
             # Handle completion
-            await self._handle_completion(session_id, final_state)  # type: ignore[arg-type]
-            return final_state  # type: ignore[return-value]
+            await self._handle_completion(session_id, final_state)
+            return final_state  # type: ignore[no-any-return]
 
         except Exception as e:
             await self._handle_error(session_id, dict(initial_state), e)
@@ -153,11 +153,11 @@ class WorkflowExecutor:
             }
 
             # Resume execution
-            final_state = await compiled.ainvoke(updated_state, run_config)  # type: ignore[arg-type]
+            final_state = await compiled.ainvoke(updated_state, run_config)
 
             # Handle completion
-            await self._handle_completion(session_id, final_state)  # type: ignore[arg-type]
-            return final_state  # type: ignore[return-value]
+            await self._handle_completion(session_id, final_state)
+            return final_state  # type: ignore[no-any-return]
 
         except Exception as e:
             await self._handle_error(session_id, {}, e)

@@ -175,7 +175,7 @@ async def _run_maintenance_task(session_id: str, request: MaintenanceRequest) ->
         # Import and run workflow
         from src.workflows.maven_maintenance import maven_maintenance_graph
 
-        result = await maven_maintenance_graph.ainvoke(initial_state)  # type: ignore[arg-type]
+        result = await maven_maintenance_graph.ainvoke(initial_state)
         final_state = result if isinstance(result, MavenMaintenanceState) else initial_state
 
         # Update session with final state
@@ -448,7 +448,7 @@ async def _run_test_generation_task(session_id: str, request: TestGenerateReques
         )
 
         _test_sessions[session_id] = initial_state
-        result = await test_generation_graph.ainvoke(initial_state)  # type: ignore[arg-type]
+        result = await test_generation_graph.ainvoke(initial_state)
         final_state = result if isinstance(result, TestGenerationState) else initial_state
         _test_sessions[session_id] = final_state
 

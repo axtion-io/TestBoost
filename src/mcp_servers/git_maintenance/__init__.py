@@ -82,11 +82,11 @@ async def list_tools() -> list[Tool]:
 async def call_tool(name: str, arguments: dict[str, Any]) -> str:
     """Route tool calls to appropriate handlers."""
     if name == "create-maintenance-branch":
-        return await create_maintenance_branch(**arguments)  # type: ignore[no-untyped-call]
+        return await create_maintenance_branch(**arguments)
     elif name == "commit-changes":
-        return await commit_changes(**arguments)  # type: ignore[no-untyped-call]
+        return await commit_changes(**arguments)
     elif name == "get-status":
-        return await get_status(**arguments)  # type: ignore[no-untyped-call]
+        return await get_status(**arguments)
     else:
         raise ValueError(f"Unknown tool: {name}")
 
@@ -96,8 +96,7 @@ async def main() -> None:
     from mcp.server.stdio import stdio_server
 
     async with stdio_server() as (read_stream, write_stream):
-        await server.run(read_stream, write_stream, server.create_initialization_options())  # type: ignore[no-untyped-call]
-
+        await server.run(read_stream, write_stream, server.create_initialization_options())
 
 if __name__ == "__main__":
     import asyncio

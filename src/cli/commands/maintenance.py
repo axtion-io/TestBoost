@@ -27,7 +27,7 @@ app = typer.Typer(
 )
 
 
-@app.command("run")
+@app.command("run")  # type: ignore[untyped-decorator]
 def run_maintenance(
     mode: str = typer.Option(
         "interactive",
@@ -217,7 +217,7 @@ def run_maintenance(
             console.print(table)
 
 
-@app.command("status")
+@app.command("status")  # type: ignore[untyped-decorator]
 def check_status(
     session_id: str = typer.Argument(
         ...,
@@ -287,7 +287,7 @@ def check_status(
         raise typer.Exit(1)
 
 
-@app.command("list")
+@app.command("list")  # type: ignore[untyped-decorator]
 def list_updates(
     project_path: str = typer.Argument(
         ".",
@@ -334,7 +334,7 @@ def list_updates(
 
             progress.update(task, completed=True)
 
-            return json.loads(result)
+            return json.loads(result)  # type: ignore[no-any-return]
 
     analysis = asyncio.run(_analyze())
 

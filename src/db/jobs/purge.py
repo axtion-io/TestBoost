@@ -73,28 +73,28 @@ class SessionPurgeJob:
                     }
 
                 # Delete artifacts first (foreign key constraint)
-                artifacts_result: CursorResult[Any] = await db_session.execute(
+                artifacts_result = await db_session.execute(
                     delete(Artifact).where(Artifact.session_id.in_(session_ids))
                 )
-                artifacts_purged = artifacts_result.rowcount or 0
+                artifacts_purged = artifacts_result.rowcount or 0  # type: ignore[attr-defined]
 
                 # Delete events
-                events_result: CursorResult[Any] = await db_session.execute(
+                events_result = await db_session.execute(
                     delete(Event).where(Event.session_id.in_(session_ids))
                 )
-                events_purged = events_result.rowcount or 0
+                events_purged = events_result.rowcount or 0  # type: ignore[attr-defined]
 
                 # Delete steps
-                steps_result: CursorResult[Any] = await db_session.execute(
+                steps_result = await db_session.execute(
                     delete(Step).where(Step.session_id.in_(session_ids))
                 )
-                steps_purged = steps_result.rowcount or 0
+                steps_purged = steps_result.rowcount or 0  # type: ignore[attr-defined]
 
                 # Delete sessions
-                sessions_result: CursorResult[Any] = await db_session.execute(
+                sessions_result = await db_session.execute(
                     delete(Session).where(Session.id.in_(session_ids))
                 )
-                sessions_purged = sessions_result.rowcount or 0
+                sessions_purged = sessions_result.rowcount or 0  # type: ignore[attr-defined]
 
         result = {
             "sessions_purged": sessions_purged,

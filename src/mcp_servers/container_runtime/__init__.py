@@ -109,11 +109,11 @@ async def list_tools() -> list[Tool]:
 async def call_tool(name: str, arguments: dict[str, Any]) -> str:
     """Route tool calls to appropriate handlers."""
     if name == "create-maven-container":
-        return await create_maven_container(**arguments)  # type: ignore[no-untyped-call]
+        return await create_maven_container(**arguments)
     elif name == "execute-in-container":
-        return await execute_in_container(**arguments)  # type: ignore[no-untyped-call]
+        return await execute_in_container(**arguments)
     elif name == "destroy-container":
-        return await destroy_container(**arguments)  # type: ignore[no-untyped-call]
+        return await destroy_container(**arguments)
     else:
         raise ValueError(f"Unknown tool: {name}")
 
@@ -123,8 +123,7 @@ async def main() -> None:
     from mcp.server.stdio import stdio_server
 
     async with stdio_server() as (read_stream, write_stream):
-        await server.run(read_stream, write_stream, server.create_initialization_options())  # type: ignore[no-untyped-call]
-
+        await server.run(read_stream, write_stream, server.create_initialization_options())
 
 if __name__ == "__main__":
     import asyncio

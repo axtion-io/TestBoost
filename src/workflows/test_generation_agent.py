@@ -224,7 +224,7 @@ Provide detailed reasoning for your approach."""
         raise TestGenerationError(f"Test generation failed: {e}") from e
 
 
-@retry(
+@retry(  # type: ignore[untyped-decorator]
     stop=stop_after_attempt(MAX_CORRECTION_RETRIES),
     wait=wait_exponential(multiplier=1, min=MIN_WAIT, max=MAX_WAIT),
     retry=retry_if_exception_type((ConnectionError, asyncio.TimeoutError)),
@@ -260,7 +260,7 @@ async def _invoke_agent_with_retry(
     """
     try:
         logger.debug("agent_invoke_start", session_id=str(session_id))
-        response = await agent.ainvoke(input_data)  # type: ignore[arg-type]
+        response = await agent.ainvoke(input_data)
 
         # Handle both dict (LangGraph state) and AIMessage responses
         if isinstance(response, dict):
@@ -436,7 +436,7 @@ Please fix these compilation errors while maintaining test logic and coverage.""
 
         correction_response = await _invoke_agent_with_retry(
             agent=agent,
-            input_data={"messages": [HumanMessage(content=correction_prompt)]},  # type: ignore[arg-type]
+            input_data={"messages": [HumanMessage(content=correction_prompt)]},
             session_id=session_id,
             artifact_repo=artifact_repo,
         )

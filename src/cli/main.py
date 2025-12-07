@@ -29,7 +29,7 @@ def version_callback(value: bool) -> None:
         raise typer.Exit()
 
 
-@app.callback()
+@app.callback()  # type: ignore[untyped-decorator]
 def main(
     version: bool = typer.Option(
         None,
@@ -62,7 +62,7 @@ def main(
         raise typer.Exit(code=1)
 
 
-@app.command()
+@app.command()  # type: ignore[untyped-decorator]
 def init(
     mode: str = typer.Option(
         "interactive",
@@ -87,7 +87,7 @@ def init(
     # Implementation will be added in later phases
 
 
-@app.command()
+@app.command()  # type: ignore[untyped-decorator]
 def analyze(
     mode: str = typer.Option("interactive", "--mode", "-m", help="Execution mode"),
     project_path: str = typer.Argument(
@@ -107,7 +107,7 @@ def analyze(
     # Implementation will be added in later phases
 
 
-@app.command()
+@app.command()  # type: ignore[untyped-decorator]
 def generate(
     project_path: str = typer.Argument(
         ".",
@@ -137,7 +137,7 @@ def generate(
     # Implementation will be added in later phases
 
 
-@app.command()
+@app.command()  # type: ignore[untyped-decorator]
 def maven(
     mode: str = typer.Option("interactive", "--mode", "-m", help="Execution mode"),
     project_path: str = typer.Argument(
@@ -161,7 +161,7 @@ def maven(
     # Implementation will be added in later phases
 
 
-@app.command()
+@app.command()  # type: ignore[untyped-decorator]
 def status(
     session_id: str = typer.Argument(
         None,
@@ -177,7 +177,7 @@ def status(
     # Implementation will be added in later phases
 
 
-@app.command()
+@app.command()  # type: ignore[untyped-decorator]
 def serve(
     host: str = typer.Option(
         "0.0.0.0",

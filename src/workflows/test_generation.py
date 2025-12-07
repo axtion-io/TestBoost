@@ -714,12 +714,12 @@ async def run_test_generation(project_path: str, target_mutation_score: float = 
         project_path=project_path, target_mutation_score=target_mutation_score
     )
 
-    final_state = await test_generation_graph.ainvoke(initial_state)  # type: ignore[arg-type]
+    final_state = await test_generation_graph.ainvoke(initial_state)
 
-    return final_state
+    return final_state  # type: ignore[no-any-return]
 
 
-def _extract_package(file_path) -> str:
+def _extract_package(file_path: Any) -> str:
     """Extract package from Java file path."""
     try:
         content = file_path.read_text(encoding="utf-8", errors="replace")

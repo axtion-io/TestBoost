@@ -205,15 +205,15 @@ async def list_tools() -> list[Tool]:
 async def call_tool(name: str, arguments: dict[str, Any]) -> str:
     """Route tool calls to appropriate handlers."""
     if name == "create-dockerfile":
-        return await create_dockerfile(**arguments)  # type: ignore[no-untyped-call]
+        return await create_dockerfile(**arguments)
     elif name == "create-compose":
-        return await create_compose(**arguments)  # type: ignore[no-untyped-call]
+        return await create_compose(**arguments)
     elif name == "deploy-compose":
-        return await deploy_compose(**arguments)  # type: ignore[no-untyped-call]
+        return await deploy_compose(**arguments)
     elif name == "health-check":
-        return await health_check(**arguments)  # type: ignore[no-untyped-call]
+        return await health_check(**arguments)
     elif name == "collect-logs":
-        return await collect_logs(**arguments)  # type: ignore[no-untyped-call]
+        return await collect_logs(**arguments)
     else:
         raise ValueError(f"Unknown tool: {name}")
 
@@ -223,8 +223,7 @@ async def main() -> None:
     from mcp.server.stdio import stdio_server
 
     async with stdio_server() as (read_stream, write_stream):
-        await server.run(read_stream, write_stream, server.create_initialization_options())  # type: ignore[no-untyped-call]
-
+        await server.run(read_stream, write_stream, server.create_initialization_options())
 
 if __name__ == "__main__":
     import asyncio

@@ -27,7 +27,7 @@ app = typer.Typer(
 )
 
 
-@app.command("run")
+@app.command("run")  # type: ignore[untyped-decorator]
 def run_deployment(
     mode: str = typer.Option(
         "interactive",
@@ -194,7 +194,7 @@ def run_deployment(
                 console.print(f"  - {warning}")
 
 
-@app.command("stop")
+@app.command("stop")  # type: ignore[untyped-decorator]
 def stop_deployment(
     project_path: str = typer.Argument(
         ".",
@@ -244,7 +244,7 @@ def stop_deployment(
         )
 
         stdout, _ = await process.communicate()
-        return stdout.decode("utf-8", errors="replace"), process.returncode
+        return stdout.decode("utf-8", errors="replace"), process.returncode or 0
 
     with create_progress(console) as progress:
         
@@ -261,7 +261,7 @@ def stop_deployment(
         raise typer.Exit(1)
 
 
-@app.command("logs")
+@app.command("logs")  # type: ignore[untyped-decorator]
 def show_logs(
     project_path: str = typer.Argument(
         ".",
@@ -305,7 +305,7 @@ def show_logs(
             str(compose_file), services=[service] if service else [], tail=tail, follow=follow
         )
 
-        return json.loads(result)
+        return json.loads(result)  # type: ignore[no-any-return]
 
     logs_result = asyncio.run(_logs())
 
@@ -319,7 +319,7 @@ def show_logs(
         console.print(log_data.get("content", "No logs available"))
 
 
-@app.command("status")
+@app.command("status")  # type: ignore[untyped-decorator]
 def check_status(
     project_path: str = typer.Argument(
         ".",
@@ -343,7 +343,7 @@ def check_status(
 
         result = await health_check(str(compose_file), timeout=10, check_interval=2)
 
-        return json.loads(result)
+        return json.loads(result)  # type: ignore[no-any-return]
 
     status_result = asyncio.run(_status())
 
@@ -380,7 +380,7 @@ def check_status(
         console.print("\n[yellow]Some containers may have health issues[/yellow]")
 
 
-@app.command("build")
+@app.command("build")  # type: ignore[untyped-decorator]
 def build_only(
     project_path: str = typer.Argument(
         ".",

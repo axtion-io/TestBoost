@@ -1,10 +1,22 @@
 """
 Docker Deployment Workflow using LangGraph.
 
+DEPRECATED: This workflow is deprecated in favor of docker_deployment_agent.py (T076).
+Use run_docker_deployment_with_agent() from docker_deployment_agent.py instead.
+
 Implements a full workflow for deploying Java applications with Docker,
 including project analysis, Dockerfile generation, container deployment,
 health checking, and endpoint validation.
 """
+
+import warnings
+
+warnings.warn(
+    "docker_deployment.py workflow is deprecated. "
+    "Use docker_deployment_agent.py with run_docker_deployment_with_agent() instead.",
+    DeprecationWarning,
+    stacklevel=2
+)
 
 import json
 from datetime import datetime

@@ -162,7 +162,7 @@ async def _invoke_agent_with_retry(
                             f"Expected: {expected_tools}, Called: {called_tools}"
                         )
 
-            return ai_message
+            return ai_message  # type: ignore[no-any-return]
 
         except json.JSONDecodeError as e:
             # A5 Edge Case: Malformed JSON
@@ -369,7 +369,7 @@ Remember: You have access to these tools:
                     "id": tool_call.get("id"),
                     "timestamp": datetime.utcnow().isoformat()
                 }
-                agent_reasoning["tool_calls"].append(tool_call_data)
+                agent_reasoning["tool_calls"].append(tool_call_data)  # type: ignore[union-attr]
 
                 logger.info(
                     "agent_tool_call",
@@ -378,8 +378,8 @@ Remember: You have access to these tools:
                 )
 
         # T046: Add LLM metrics (estimated - real metrics come from LangSmith)
-        agent_reasoning["llm_metrics"] = {
-            "estimated_tokens": len(response.content.split()) * 1.3,  # Rough estimate
+        agent_reasoning["llm_metrics"] = {  # type: ignore[assignment]
+            "estimated_tokens": len(str(response.content).split()) * 1.3,  # Rough estimate
             "model": config.llm.model,
             "provider": config.llm.provider
         }

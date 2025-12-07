@@ -714,9 +714,9 @@ async def run_test_generation(project_path: str, target_mutation_score: float = 
         project_path=project_path, target_mutation_score=target_mutation_score
     )
 
-    final_state = await test_generation_graph.ainvoke(initial_state)
+    final_state = await test_generation_graph.ainvoke(initial_state)  # type: ignore
 
-    return final_state  # type: ignore[no-any-return]
+    return final_state
 
 
 def _extract_package(file_path: Any) -> str:

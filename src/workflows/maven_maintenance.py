@@ -793,6 +793,6 @@ async def run_maven_maintenance(project_path: str, user_approved: bool = False) 
 
     initial_state = MavenMaintenanceState(project_path=project_path, user_approved=user_approved)
 
-    final_state = await maven_maintenance_graph.ainvoke(initial_state)
+    final_state = await maven_maintenance_graph.ainvoke(initial_state)  # type: ignore
 
-    return final_state  # type: ignore[no-any-return]
+    return final_state

@@ -64,7 +64,7 @@ class AgentAdapter:
 
         # Bind tools to LLM if available
         if tools:
-            llm = llm.bind_tools(tools)
+            llm = llm.bind_tools(tools)  # type: ignore[assignment]
             logger.info(
                 "tools_bound",
                 agent=config.name,
@@ -92,7 +92,7 @@ class AgentAdapter:
                 input_data = state.get("input_data", {})
                 user_input = _default_input_mapper(input_data)
 
-            messages.append(HumanMessage(content=user_input))
+            messages.append(HumanMessage(content=user_input))  # type: ignore[arg-type]
 
             # Invoke LLM
             try:
@@ -107,9 +107,9 @@ class AgentAdapter:
 
                 # Map output to state
                 if output_mapper:
-                    return output_mapper(response_text, state)
+                    return output_mapper(response_text, state)  # type: ignore[arg-type]
                 else:
-                    return _default_output_mapper(response_text, state)
+                    return _default_output_mapper(response_text, state)  # type: ignore[arg-type]
 
             except Exception as e:
                 logger.error(

@@ -13,7 +13,7 @@ from src.mcp_servers.maven_maintenance.tools.package import package_project
 logger = get_logger(__name__)
 
 
-@tool  # type: ignore[untyped-decorator]
+@tool
 async def maven_analyze_dependencies(
     project_path: str,
     include_snapshots: bool = False,
@@ -60,7 +60,7 @@ async def maven_analyze_dependencies(
     return result
 
 
-@tool  # type: ignore[untyped-decorator]
+@tool
 async def maven_compile_tests(
     project_path: str,
     profiles: list[str] | None = None,
@@ -105,7 +105,7 @@ async def maven_compile_tests(
     return result
 
 
-@tool  # type: ignore[untyped-decorator]
+@tool
 async def maven_run_tests(
     project_path: str,
     test_pattern: str = "**/Test*.java",
@@ -158,7 +158,7 @@ async def maven_run_tests(
     return result
 
 
-@tool  # type: ignore[untyped-decorator]
+@tool
 async def maven_package(
     project_path: str,
     skip_tests: bool = False,

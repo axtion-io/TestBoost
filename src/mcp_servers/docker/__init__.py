@@ -20,7 +20,7 @@ from .tools.logs import collect_logs
 server = Server("docker-deployment")
 
 
-@server.list_tools()  # type: ignore[untyped-decorator]
+@server.list_tools()  # type: ignore
 async def list_tools() -> list[Tool]:
     """List all available Docker deployment tools."""
     return [
@@ -201,7 +201,7 @@ async def list_tools() -> list[Tool]:
     ]
 
 
-@server.call_tool()  # type: ignore[untyped-decorator]
+@server.call_tool()  # type: ignore
 async def call_tool(name: str, arguments: dict[str, Any]) -> str:
     """Route tool calls to appropriate handlers."""
     if name == "create-dockerfile":

@@ -7,14 +7,14 @@ Provides the 'boost audit' command for dependency security scanning.
 import asyncio
 import json
 from pathlib import Path
+from typing import Any
 
 import typer
 from rich.console import Console
 from rich.panel import Panel
-from rich.progress import Progress, TextColumn
 from rich.table import Table
-from src.cli.progress import create_progress
 
+from src.cli.progress import create_progress
 from src.lib.logging import get_logger
 
 logger = get_logger(__name__)
@@ -85,13 +85,13 @@ def scan_vulnerabilities(
         console.print(f"[red]Error:[/red] Not a Maven project: pom.xml not found in {project_dir}")
         raise typer.Exit(1)
 
-    async def _scan():
+    async def _scan() -> dict[str, Any]:
         from src.mcp_servers.maven_maintenance.tools.analyze import analyze_dependencies
 
         with create_progress(console) as progress:
-            
-            
-        
+
+
+
             task = progress.add_task("Scanning for vulnerabilities...", total=None)
 
             result = await analyze_dependencies(
@@ -100,7 +100,7 @@ def scan_vulnerabilities(
 
             progress.update(task, completed=True)
 
-            return json.loads(result)
+            return json.loads(result)  # type: ignore[no-any-return]
 
     analysis = asyncio.run(_scan())
 
@@ -284,13 +284,13 @@ def generate_report(
         console.print(f"[red]Error:[/red] Project path not found: {project_dir}")
         raise typer.Exit(1)
 
-    async def _analyze():
+    async def _analyze() -> dict[str, Any]:
         from src.mcp_servers.maven_maintenance.tools.analyze import analyze_dependencies
 
         with create_progress(console) as progress:
-            
-            
-        
+
+
+
             task = progress.add_task("Generating security report...", total=None)
 
             result = await analyze_dependencies(
@@ -299,7 +299,7 @@ def generate_report(
 
             progress.update(task, completed=True)
 
-            return json.loads(result)
+            return json.loads(result)  # type: ignore[no-any-return]
 
     analysis = asyncio.run(_analyze())
 
@@ -321,7 +321,7 @@ def generate_report(
     console.print(f"[green]Security report generated:[/green] {output_path.absolute()}")
 
 
-def _generate_html_report(project_path: str, vulnerabilities: list, dependencies: list) -> str:
+def _generate_html_report(project_path: str, vulnerabilities: list[Any], dependencies: list[Any]) -> str:
     """Generate an HTML security report."""
     from datetime import datetime
 

@@ -33,16 +33,20 @@ async def analyze_project_context(
             {"success": False, "error": f"Project path does not exist: {project_path}"}
         )
 
-    results = {
+    frameworks: list[str] = []
+    test_frameworks: list[str] = []
+    dependencies: list[dict[str, Any]] = []
+
+    results: dict[str, Any] = {
         "success": True,
         "project_path": str(project_dir.absolute()),
         "project_type": "unknown",
         "build_system": "unknown",
-        "frameworks": [],
-        "test_frameworks": [],
+        "frameworks": frameworks,
+        "test_frameworks": test_frameworks,
         "source_structure": {},
         "test_structure": {},
-        "dependencies": [],
+        "dependencies": dependencies,
         "java_version": None,
         "module_info": {},
     }
@@ -66,11 +70,11 @@ async def analyze_project_context(
     results["test_structure"] = await _analyze_test_structure(project_dir, scan_depth)
 
     # Detect frameworks from imports
-    results["frameworks"] = await _detect_frameworks(project_dir)
-    results["test_frameworks"] = await _detect_test_frameworks(project_dir)
+    frameworks.extend(await _detect_frameworks(project_dir))
+    test_frameworks.extend(await _detect_test_frameworks(project_dir))
 
     # Determine project type
-    results["project_type"] = _determine_project_type(results["frameworks"])
+    results["project_type"] = _determine_project_type(frameworks)
 
     return json.dumps(results, indent=2)
 
@@ -190,7 +194,7 @@ async def _analyze_source_structure(project_dir: Path, scan_depth: int) -> dict[
                 except Exception:
                     pass
 
-            structure["packages"] = sorted(list(packages))[:50]
+            structure["packages"] = sorted(packages)[:50]
             structure["main_sources"] = [str(src_dir)]
             break
 
@@ -222,7 +226,7 @@ async def _analyze_test_structure(project_dir: Path, scan_depth: int) -> dict[st
                 except Exception:
                     pass
 
-            structure["test_packages"] = sorted(list(packages))[:30]
+            structure["test_packages"] = sorted(packages)[:30]
             structure["test_sources"] = [str(test_dir)]
             break
 
@@ -258,7 +262,7 @@ async def _detect_frameworks(project_dir: Path) -> list[str]:
             except Exception:
                 pass
 
-    return sorted(list(frameworks))
+    return sorted(frameworks)
 
 
 async def _detect_test_frameworks(project_dir: Path) -> list[str]:
@@ -295,7 +299,7 @@ async def _detect_test_frameworks(project_dir: Path) -> list[str]:
             except Exception:
                 pass
 
-    return sorted(list(test_frameworks))
+    return sorted(test_frameworks)
 
 
 def _determine_project_type(frameworks: list[str]) -> str:

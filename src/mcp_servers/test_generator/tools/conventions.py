@@ -98,7 +98,7 @@ async def _analyze_naming_conventions(test_files: list[Path]) -> dict[str, Any]:
 
     # Determine dominant pattern
     total = sum(naming_patterns.values())
-    dominant_pattern = max(naming_patterns, key=naming_patterns.get) if total > 0 else "unknown"
+    dominant_pattern = max(naming_patterns, key=lambda k: naming_patterns[k]) if total > 0 else "unknown"
 
     return {
         "dominant_pattern": dominant_pattern,
@@ -140,7 +140,7 @@ async def _analyze_assertion_styles(test_files: list[Path]) -> dict[str, Any]:
             pass
 
     dominant_style = (
-        max(assertion_styles, key=assertion_styles.get)
+        max(assertion_styles, key=lambda k: assertion_styles[k])
         if sum(assertion_styles.values()) > 0
         else "junit_assertions"
     )
@@ -236,8 +236,8 @@ async def _analyze_setup_patterns(test_files: list[Path]) -> dict[str, Any]:
 
 async def _analyze_test_organization(test_files: list[Path]) -> dict[str, Any]:
     """Analyze how tests are organized."""
-    organization = {
-        "avg_tests_per_file": 0,
+    organization: dict[str, int | float] = {
+        "avg_tests_per_file": 0.0,
         "uses_display_name": 0,
         "uses_tags": 0,
         "groups_by_method": 0,
@@ -270,7 +270,7 @@ async def _analyze_test_organization(test_files: list[Path]) -> dict[str, Any]:
 
 async def _analyze_annotation_usage(test_files: list[Path]) -> dict[str, Any]:
     """Analyze common test annotations used."""
-    annotations = Counter()
+    annotations: Counter[str] = Counter()
 
     for test_file in test_files:
         try:
@@ -316,14 +316,14 @@ async def _analyze_annotation_usage(test_files: list[Path]) -> dict[str, Any]:
 
 async def _analyze_documentation_patterns(test_files: list[Path]) -> dict[str, Any]:
     """Analyze test documentation patterns."""
-    documentation = {
+    documentation: dict[str, int | float] = {
         "has_javadoc": 0,
         "has_comments": 0,
         "uses_display_name": 0,
-        "avg_display_name_length": 0,
+        "avg_display_name_length": 0.0,
     }
 
-    display_name_lengths = []
+    display_name_lengths: list[int] = []
 
     for test_file in test_files:
         try:

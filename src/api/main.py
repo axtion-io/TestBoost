@@ -5,11 +5,13 @@ import uuid
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import Any
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
+from starlette.responses import Response
 
 from src.api.middleware.auth import api_key_auth_middleware
 from src.api.middleware.error import ErrorHandlerMiddleware
@@ -17,6 +19,7 @@ from src.api.middleware.logging import request_logging_middleware
 from src.api.routers import health, sessions
 from src.lib.config import get_settings
 from src.lib.logging import get_logger
+from src.lib.startup_checks import StartupCheckError, run_all_startup_checks
 
 logger = get_logger(__name__)
 settings = get_settings()
@@ -24,8 +27,23 @@ settings = get_settings()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
-    """Application lifespan events."""
+    """
+    Application lifespan events.
+
+    Implements T008: Check LLM connectivity at startup before accepting commands.
+    Constitutional principle: "Zéro Complaisance" - No workflows execute without LLM.
+    """
     logger.info("application_startup", version=app.version)
+
+    try:
+        # T008: Run all startup checks (currently LLM connectivity only)
+        await run_all_startup_checks()
+        logger.info("startup_checks_passed")
+    except StartupCheckError as e:
+        logger.error("startup_checks_failed", error=str(e))
+        # Application MUST fail if startup checks fail (FR-010)
+        raise RuntimeError(f"Application startup failed: {e}") from e
+
     yield
     logger.info("application_shutdown")
 
@@ -54,7 +72,7 @@ app.add_middleware(
 class RequestIDMiddleware(BaseHTTPMiddleware):
     """Add request ID to each request."""
 
-    async def dispatch(self, request: Request, call_next):
+    async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
         request_id = request.headers.get("X-Request-ID", str(uuid.uuid4()))
         request.state.request_id = request_id
         response = await call_next(request)
@@ -104,7 +122,7 @@ async def value_error_handler(request: Request, exc: ValueError) -> JSONResponse
     )
 
 
-def export_openapi_schema(output_path: str | None = None) -> dict:
+def export_openapi_schema(output_path: str | None = None) -> dict[str, Any]:
     """
     Export the OpenAPI schema to a file.
 
@@ -144,7 +162,7 @@ def export_openapi_schema(output_path: str | None = None) -> dict:
     return schema
 
 
-def generate_openapi_schema() -> dict:
+def generate_openapi_schema() -> dict[str, Any]:
     """
     Generate the OpenAPI schema without writing to file.
 

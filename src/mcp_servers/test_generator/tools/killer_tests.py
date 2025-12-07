@@ -8,11 +8,12 @@ based on mutation testing analysis.
 import json
 import re
 from pathlib import Path
+from typing import Any
 
 
 async def generate_killer_tests(
     project_path: str,
-    surviving_mutants: list[dict],
+    surviving_mutants: list[dict[str, Any]],
     source_file: str | None = None,
     max_tests: int = 10,
 ) -> str:
@@ -39,7 +40,7 @@ async def generate_killer_tests(
         return json.dumps({"success": False, "error": "No surviving mutants provided"})
 
     # Group mutants by class
-    by_class = {}
+    by_class: dict[str, list[dict[str, Any]]] = {}
     for mutant in surviving_mutants[:max_tests]:
         class_name = mutant.get("class", "")
         if class_name not in by_class:
@@ -47,16 +48,17 @@ async def generate_killer_tests(
         by_class[class_name].append(mutant)
 
     # Generate killer tests for each class
-    generated_tests = []
+    generated_tests: list[dict[str, Any]] = []
 
     for class_name, mutants in by_class.items():
         # Find source file if not provided
+        src_path: Path | None
         if source_file:
             src_path = Path(source_file)
         else:
             src_path = _find_source_file(project_dir, class_name)
 
-        if src_path and src_path.exists():
+        if src_path is not None and src_path.exists():
             source_code = src_path.read_text(encoding="utf-8", errors="replace")
         else:
             source_code = None
@@ -113,7 +115,7 @@ def _get_killer_test_path(project_dir: Path, class_name: str) -> Path:
 
 
 def _generate_killer_test_class(
-    class_name: str, mutants: list[dict], source_code: str | None
+    class_name: str, mutants: list[dict[str, Any]], source_code: str | None
 ) -> str:
     """Generate killer test class for surviving mutants."""
     # Extract package and simple class name
@@ -165,7 +167,7 @@ def _generate_killer_test_class(
 
 
 def _generate_killer_test_method(
-    mutant: dict, class_name: str, index: int, source_code: str | None
+    mutant: dict[str, Any], class_name: str, index: int, source_code: str | None
 ) -> list[str]:
     """Generate a killer test for a specific mutant."""
     method = mutant.get("method", "unknownMethod")

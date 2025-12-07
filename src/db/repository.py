@@ -2,12 +2,12 @@
 
 import uuid
 from datetime import datetime
-from typing import Generic, TypeVar
+from typing import Any, Generic, TypeVar
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.db import Base
+from src.db.base import Base
 from src.db.models import Artifact, Event, ProjectLock, Session, Step
 
 T = TypeVar("T", bound=Base)
@@ -20,7 +20,7 @@ class BaseRepository(Generic[T]):
         self.session = session
         self.model = model
 
-    async def create(self, **kwargs) -> T:
+    async def create(self, **kwargs: Any) -> T:
         """Create a new entity."""
         entity = self.model(**kwargs)
         self.session.add(entity)
@@ -36,7 +36,7 @@ class BaseRepository(Generic[T]):
         result = await self.session.execute(select(self.model))
         return list(result.scalars().all())
 
-    async def update(self, id: uuid.UUID, **kwargs) -> T | None:
+    async def update(self, id: uuid.UUID, **kwargs: Any) -> T | None:
         """Update entity by ID."""
         entity = await self.get(id)
         if entity:

@@ -5,6 +5,8 @@ Provides tools for creating Dockerfiles, docker-compose configurations,
 deploying containers, and managing container health and logs.
 """
 
+from typing import Any
+
 from mcp.server import Server
 from mcp.types import Tool
 
@@ -18,7 +20,7 @@ from .tools.logs import collect_logs
 server = Server("docker-deployment")
 
 
-@server.list_tools()
+@server.list_tools()  # type: ignore
 async def list_tools() -> list[Tool]:
     """List all available Docker deployment tools."""
     return [
@@ -199,8 +201,8 @@ async def list_tools() -> list[Tool]:
     ]
 
 
-@server.call_tool()
-async def call_tool(name: str, arguments: dict) -> str:
+@server.call_tool()  # type: ignore
+async def call_tool(name: str, arguments: dict[str, Any]) -> str:
     """Route tool calls to appropriate handlers."""
     if name == "create-dockerfile":
         return await create_dockerfile(**arguments)
@@ -216,13 +218,12 @@ async def call_tool(name: str, arguments: dict) -> str:
         raise ValueError(f"Unknown tool: {name}")
 
 
-async def main():
+async def main() -> None:
     """Run the MCP server."""
     from mcp.server.stdio import stdio_server
 
     async with stdio_server() as (read_stream, write_stream):
         await server.run(read_stream, write_stream, server.create_initialization_options())
-
 
 if __name__ == "__main__":
     import asyncio

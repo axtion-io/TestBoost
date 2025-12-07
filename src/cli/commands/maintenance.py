@@ -7,6 +7,7 @@ Provides the 'boost maintenance' command for dependency updates.
 import asyncio
 import json
 from pathlib import Path
+from typing import Any
 
 import typer
 from rich.console import Console
@@ -88,26 +89,54 @@ def run_maintenance(
         raise typer.Exit(1)
 
     # Run the maintenance workflow
-    async def _run():
-        from src.workflows.maven_maintenance import run_maven_maintenance
+    async def _run() -> Any:
+        # Use new agent-based workflow (US2)
+        from uuid import uuid4
+
+        from src.workflows.maven_maintenance_agent import run_maven_maintenance_with_agent
+
+        session_id = str(uuid4())
 
         with create_progress(console) as progress:
             if dry_run:
-                task = progress.add_task("Analyzing dependencies...", total=None)
+                task = progress.add_task("Analyzing dependencies with AI agent...", total=None)
             else:
-                task = progress.add_task("Running maintenance workflow...", total=None)
+                task = progress.add_task("Running AI-powered maintenance workflow...", total=None)
 
             try:
-                result = await run_maven_maintenance(str(project_dir), user_approved=auto_approve)
+                # Convert mode to agent-compatible format
+                agent_mode = mode if mode in ["autonomous", "interactive", "analysis_only", "debug"] else "autonomous"
+
+                result_json = await run_maven_maintenance_with_agent(
+                    project_path=str(project_dir),
+                    session_id=session_id,
+                    mode=agent_mode
+                )
 
                 progress.update(task, completed=True)
 
-                return result
+                # Parse JSON result
+                result_data = json.loads(result_json)
+
+                # Create a result object compatible with old format
+                class AgentResult:
+                    def __init__(self, data: dict[str, Any]) -> None:
+                        self.completed = data.get("success", False)
+                        self.errors: list[str] = [] if self.completed else ["Workflow failed"]
+                        self.warnings: list[str] = []
+                        self.applied_updates: list[dict[str, Any]] = []
+                        self.failed_updates: list[dict[str, Any]] = []
+                        self.maintenance_branch = "agent-maintenance"
+                        self.session_id = data.get("session_id", session_id)
+                        self.analysis = data.get("analysis", "")
+
+                return AgentResult(result_data)
 
             except Exception as e:
                 progress.stop()
                 console.print(f"[red]Error:[/red] {str(e)}")
-                raise typer.Exit(1)
+                logger.error("maintenance_workflow_failed", error=str(e))
+                raise typer.Exit(1) from None
 
     result = asyncio.run(_run())
 
@@ -116,6 +145,8 @@ def run_maintenance(
         output = {
             "success": result.completed and len(result.errors) == 0,
             "project_path": str(project_dir),
+            "session_id": getattr(result, "session_id", "unknown"),
+            "analysis": getattr(result, "analysis", ""),
             "applied_updates": result.applied_updates,
             "failed_updates": result.failed_updates,
             "errors": result.errors,
@@ -126,9 +157,19 @@ def run_maintenance(
     else:
         # Rich formatted output
         if result.completed and len(result.errors) == 0:
+            # Show AI agent analysis
+            if hasattr(result, "analysis") and result.analysis:
+                console.print(
+                    Panel(
+                        f"[green]AI Agent Analysis[/green]\n\n{result.analysis}",
+                        title="Maven Maintenance Analysis",
+                    )
+                )
+
             console.print(
                 Panel(
                     f"[green]Maintenance Complete[/green]\n\n"
+                    f"Session ID: {getattr(result, 'session_id', 'unknown')}\n"
                     f"Branch: {result.maintenance_branch}\n"
                     f"Applied: {len(result.applied_updates)} updates\n"
                     f"Failed: {len(result.failed_updates)} updates",
@@ -241,10 +282,10 @@ def check_status(
         console.print(
             "[red]Error:[/red] Could not connect to TestBoost API. Is the server running?"
         )
-        raise typer.Exit(1)
+        raise typer.Exit(1) from None
     except Exception as e:
         console.print(f"[red]Error:[/red] {str(e)}")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from None
 
 
 @app.command("list")
@@ -282,7 +323,7 @@ def list_updates(
         console.print(f"[red]Error:[/red] Project path not found: {project_dir}")
         raise typer.Exit(1)
 
-    async def _analyze():
+    async def _analyze() -> dict[str, Any]:
         from src.mcp_servers.maven_maintenance.tools.analyze import analyze_dependencies
 
         with create_progress(console) as progress:
@@ -294,7 +335,7 @@ def list_updates(
 
             progress.update(task, completed=True)
 
-            return json.loads(result)
+            return json.loads(result)  # type: ignore[no-any-return]
 
     analysis = asyncio.run(_analyze())
 

@@ -6,7 +6,7 @@ Stores information about dependency updates and other modifications.
 
 import enum
 from datetime import datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 from uuid import UUID, uuid4
 
 from sqlalchemy import JSON, DateTime, ForeignKey, String, Text
@@ -96,13 +96,13 @@ class Modification(Base):
 
     reason: Mapped[str | None] = mapped_column(Text, nullable=True)
 
-    validation_result: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    validation_result: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
 
     rolled_back_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     applied_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
-    mod_metadata: Mapped[dict | None] = mapped_column(JSON, nullable=True, default=dict)
+    mod_metadata: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True, default=dict)
 
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
 
@@ -130,7 +130,7 @@ class Modification(Base):
         """Check if modification was rolled back."""
         return self.status == ModificationStatus.ROLLED_BACK
 
-    def to_dict(self) -> dict:
+    def to_dict(self) -> dict[str, Any]:
         """Convert modification to dictionary representation."""
         return {
             "id": str(self.id),

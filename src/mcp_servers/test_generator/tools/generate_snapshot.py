@@ -63,11 +63,13 @@ async def generate_snapshot_tests(
 
 def _analyze_for_snapshot(source_code: str) -> dict[str, Any]:
     """Analyze source for snapshot test generation."""
-    info = {
+    endpoints: list[dict[str, str]] = []
+    dto_methods: list[dict[str, str]] = []
+    info: dict[str, Any] = {
         "class_name": "",
         "package": "",
-        "endpoints": [],
-        "dto_methods": [],
+        "endpoints": endpoints,
+        "dto_methods": dto_methods,
         "is_controller": False,
         "is_dto": False,
     }
@@ -92,7 +94,7 @@ def _analyze_for_snapshot(source_code: str) -> dict[str, Any]:
             re.MULTILINE,
         )
         for match in endpoint_pattern.finditer(source_code):
-            info["endpoints"].append(
+            endpoints.append(
                 {"method": match.group(1).replace("Mapping", "").upper(), "path": match.group(2)}
             )
 
@@ -108,7 +110,7 @@ def _analyze_for_snapshot(source_code: str) -> dict[str, Any]:
             return_type = match.group(1)
             method_name = match.group(2)
             if return_type not in ["void", "boolean"]:
-                info["dto_methods"].append({"name": method_name, "return_type": return_type})
+                dto_methods.append({"name": method_name, "return_type": return_type})
 
     return info
 
@@ -129,7 +131,7 @@ def _get_snapshot_test_path(project_dir: Path, source_path: Path) -> Path:
     return project_dir / Path(*parts)
 
 
-def _generate_snapshot_code(class_info: dict, snapshot_format: str) -> str:
+def _generate_snapshot_code(class_info: dict[str, Any], snapshot_format: str) -> str:
     """Generate snapshot test code."""
     class_name = class_info["class_name"]
     package = class_info["package"]
@@ -228,7 +230,7 @@ def _generate_snapshot_code(class_info: dict, snapshot_format: str) -> str:
 
 
 def _generate_endpoint_snapshot_test(
-    endpoint: dict, class_name: str, snapshot_format: str
+    endpoint: dict[str, str], class_name: str, snapshot_format: str
 ) -> list[str]:
     """Generate snapshot test for an endpoint."""
     method = endpoint["method"]

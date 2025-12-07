@@ -1,0 +1,110 @@
+name: CI - TestBoost Tests
+
+on:
+  push:
+    branches: [ main, develop, '002-deepagents-integration' ]
+  pull_request:
+    branches: [ main, develop ]
+  workflow_dispatch:
+
+jobs:
+  test:
+    name: Run Tests
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        python-version: ['3.11', '3.12']
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ matrix.python-version }}
+
+    - name: Cache pip dependencies
+      uses: actions/cache@v4
+      with:
+        path: ~/.cache/pip
+        key: ${{ runner.os }}-pip-${{ hashFiles('**/pyproject.toml') }}
+        restore-keys: |
+          ${{ runner.os }}-pip-
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install poetry
+        poetry install --no-interaction
+
+    - name: Run Integration Tests (no LLM required)
+      run: |
+        poetry run pytest tests/integration/test_llm_connectivity.py -v --tb=short -k "not test_llm_connection_success"
+        poetry run pytest tests/integration/test_agent_config_loading.py -v --tb=short
+        poetry run pytest tests/integration/test_agent_config_validation.py -v --tb=short
+        poetry run pytest tests/integration/test_provider_switching.py -v --tb=short
+      continue-on-error: false
+
+    - name: Run Regression Tests (T097a)
+      run: |
+        poetry run pytest tests/regression/test_old_workflows.py -v --tb=short
+      continue-on-error: false
+
+    - name: Run Security Audit Tests (T101a)
+      run: |
+        poetry run pytest tests/security/test_api_key_audit.py -v --tb=short
+      continue-on-error: false
+
+    - name: Run Documentation Tests (T103b-e)
+      run: |
+        poetry run pytest tests/integration/test_documentation.py -v --tb=short
+      continue-on-error: false
+
+    - name: Run Edge Case Tests (T105b-f)
+      run: |
+        poetry run pytest tests/e2e/test_edge_cases.py -v --tb=short
+      continue-on-error: false
+
+  lint:
+    name: Code Quality
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Python 3.12
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+
+    - name: Cache pip dependencies
+      uses: actions/cache@v4
+      with:
+        path: ~/.cache/pip
+        key: ${{ runner.os }}-pip-lint-${{ hashFiles('**/pyproject.toml') }}
+        restore-keys: |
+          ${{ runner.os }}-pip-lint-
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install poetry
+        poetry install --no-interaction
+
+    - name: Run Ruff linter
+      run: |
+        poetry run ruff check src/ tests/
+      continue-on-error: true
+
+    - name: Run type checking with mypy
+      run: |
+        poetry run mypy src/ --ignore-missing-imports
+      continue-on-error: true
+
+  # E2E Tests with Real LLM are NOT run in CI
+  # Reason: Requires paid API keys (Google Gemini, LangSmith)
+  # These tests are run manually during development with local API keys
+  # See .github/README.md for details on running E2E tests locally

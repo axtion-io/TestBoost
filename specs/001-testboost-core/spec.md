@@ -40,7 +40,7 @@ Un système qui exécute ces tâches automatiquement via des agents MCP tout en 
 ### Session 2025-11-23
 
 - Q: Stratégie d'orchestration des agents MCP → A: LangGraph avec DeepAgents pour la configuration des agents
-- Q: Fournisseur LLM pour les agents → A: Multi-provider configurable (défaut: gemini-2.5-flash-preview-09-2025, support: Claude 4.5 Sonnet, Gemini 3 Pro, GPT-4o)
+- Q: Fournisseur LLM pour les agents → A: Multi-provider configurable via variable MODEL (défaut: gemini-2.0-flash, support: claude-sonnet-4-20250514, gpt-4o). Voir .env.example pour configuration.
 - Q: Rétention des données de session → A: 1 an
 - Q: Stratégie d'observabilité → A: LangSmith pour agents + logs structurés JSON pour application
 - Q: Gestion de la concurrence → A: Verrou exclusif par projet (file d'attente)
@@ -160,7 +160,7 @@ En tant qu'utilisateur, je veux choisir entre un mode interactif (avec confirmat
 - **FR-006**: Le système DOIT orchestrer les workflows via LangGraph avec état partagé
 - **FR-007**: Les agents DOIVENT être configurés via DeepAgents (fichiers YAML + prompts Markdown)
 - **FR-008**: Le système DOIT supporter plusieurs fournisseurs LLM (Gemini, Claude, GPT-4o) via variable MODEL
-- **FR-009**: Le modèle par défaut DOIT être `google-genai/gemini-2.5-flash-preview-09-2025`
+- **FR-009**: Le modèle par défaut DOIT être configurable via MODEL env var (défaut: `gemini-2.0-flash`)
 - **FR-009A**: En cas d'erreur LLM, le système DOIT retry 3x puis échouer explicitement (pas de fallback automatique vers autre provider)
 - **FR-010A**: Le système DOIT exécuter les builds/tests Maven dans des containers Docker isolés
 - **FR-010B**: TestBoost DOIT s'exécuter dans un environnement virtuel Python (Poetry/virtualenv)
@@ -297,7 +297,6 @@ En tant qu'utilisateur, je veux choisir entre un mode interactif (avec confirmat
 
 - Projets Gradle ou Ant
 - Code Kotlin
-- Projets multi-modules (support partiel)
 - Déploiement cloud (AWS, GCP, Azure)
 - Tests d'interface graphique (Selenium/Cypress)
 
@@ -305,7 +304,11 @@ En tant qu'utilisateur, je veux choisir entre un mode interactif (avec confirmat
 
 - Dépendances BOM
 - Tests avec Spring Security (configuration manuelle)
-- Asynchronisme complexe (`@Async`, `CompletableFuture`)
+- Asynchronisme complexe (`@Async`, `CompletableFuture`) - tests générés pour méthodes sync uniquement
+
+### Supporté (ajouté v1.1)
+
+- Projets Maven multi-modules (détection automatique des sous-modules avec pom.xml)
 
 ---
 
@@ -324,11 +327,11 @@ En tant qu'utilisateur, je veux choisir entre un mode interactif (avec confirmat
 
 Les utilisateurs doivent être conscients des limites de quotas des providers LLM :
 
-| Provider | Quota Free Tier | Limite Tokens/min | Notes |
-|----------|-----------------|-------------------|-------|
-| Gemini | 1500 req/jour | 32k tokens | Défaut recommandé |
-| Claude | Selon plan | Variable | Nécessite compte Anthropic |
-| GPT-4o | Selon plan | Variable | Nécessite compte OpenAI |
+| Provider | Modèle | Quota Free Tier | Notes |
+|----------|--------|-----------------|-------|
+| Gemini | gemini-2.0-flash | 1500 req/jour | Défaut recommandé |
+| Claude | claude-sonnet-4-20250514 | Selon plan | Nécessite compte Anthropic |
+| OpenAI | gpt-4o | Selon plan | Nécessite compte OpenAI |
 
 **Important** :
 - Le système NE gère PAS les quotas automatiquement

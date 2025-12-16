@@ -19,7 +19,7 @@ TestBoost automates Java/Spring Boot project maintenance through AI-powered work
 **Project Type**: Single backend application with CLI and REST API
 **Performance Goals**: <5s interactive operations, <5min Docker deployment, <30s project analysis (200 classes)
 **Constraints**: Windows cp1252 encoding (CLI uses ASCII-safe progress), PostgreSQL port 5433 (5432 conflict), LangGraph recursion limit (25 iterations)
-**Scale/Scope**: 95 Python files, 8 database tables, 3 LangGraph workflows, 4 MCP servers, 3 validated Java test projects
+**Scale/Scope**: 112 Python files, 8 database tables, 3 LangGraph workflows, 6 MCP servers, 3 validated Java test projects
 
 ## Constitution Check
 

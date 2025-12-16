@@ -139,13 +139,34 @@ async def run_test_generation_with_agent(
 Target coverage: {coverage_target}%
 Source files: {source_files if source_files else 'all untested classes'}
 
-Steps:
-1. Use test_gen_analyze_project to understand project structure and frameworks
-2. Use test_gen_detect_conventions to identify existing test patterns
-3. Use test_gen_generate_unit_tests for each class, following conventions
-4. Ensure tests compile and follow project standards
+## Instructions
 
-Provide detailed reasoning for your approach."""
+1. First, use `test_gen_analyze_project` to understand project structure and frameworks
+2. Use `test_gen_detect_conventions` to identify existing test patterns
+3. Use `test_gen_generate_unit_tests` for each source file found, following conventions
+
+## CRITICAL OUTPUT REQUIREMENT
+
+After using the tools, you MUST include ALL generated test code in your final response.
+Format each test class in a separate ```java code block with the full test class content.
+
+Example format:
+```java
+package com.example;
+
+import org.junit.jupiter.api.Test;
+// ... imports
+
+class ExampleClassTest {{
+    @Test
+    void shouldTestMethod() {{
+        // test implementation
+    }}
+}}
+```
+
+Generate tests for at least 3-5 classes from the project.
+Include the complete test code for each class in separate ```java blocks."""
             )
         ]
     }
@@ -495,48 +516,109 @@ def _check_test_syntax(test_content: str) -> dict[str, Any]:
 
 
 def _extract_generated_tests(response: dict[str, Any] | AIMessage) -> list[dict[str, Any]]:
-    """Extract generated test files from agent response."""
-    # Parse agent response for test file content
-    # This is simplified - real implementation would parse structured output
+    """Extract generated test files from agent response.
+
+    Extracts tests from:
+    1. ```java code blocks in the response content
+    2. JSON tool results containing 'test_code' field
+    3. All messages in the conversation history
+    """
+    tests = []
+    all_content = []
 
     # Extract content from response (handle both dict and AIMessage)
     if isinstance(response, dict):
         # LangGraph returns final state as dict with 'messages' key
         messages = response.get("messages", [])
-        if messages:
-            last_message = messages[-1]
-            content = last_message.content if hasattr(last_message, "content") else str(last_message)
-        else:
-            content = str(response)
+        for msg in messages:
+            if hasattr(msg, "content"):
+                msg_content = msg.content if isinstance(msg.content, str) else str(msg.content)
+                all_content.append(msg_content)
+            elif isinstance(msg, str):
+                all_content.append(msg)
     else:
         # Direct AIMessage response
         content = response.content if isinstance(response.content, str) else str(response.content)
+        all_content.append(content)
 
-    tests = []
-    # Look for Java code blocks
-    if "```java" in content:
-        code_blocks = content.split("```java")
-        for _i, block in enumerate(code_blocks[1:], 1):
-            code = block.split("```")[0].strip()
-            if code:
-                # Extract class name from code
-                class_name = "GeneratedTest"
-                for line in code.split("\n"):
-                    if "class " in line:
-                        parts = line.split("class ")[1].split()
-                        if parts:
-                            class_name = parts[0].replace("{", "")
-                        break
+    # Process all collected content
+    for content in all_content:
+        # Strategy 1: Look for Java code blocks
+        if "```java" in content:
+            code_blocks = content.split("```java")
+            for block in code_blocks[1:]:
+                code = block.split("```")[0].strip()
+                if code and _is_valid_test_code(code):
+                    test_info = _extract_test_info(code)
+                    if test_info and test_info not in tests:
+                        tests.append(test_info)
 
-                tests.append(
-                    {
-                        "path": f"src/test/java/{class_name}.java",
-                        "content": code,
-                        "class_name": class_name,
-                    }
-                )
+        # Strategy 2: Look for JSON tool results with test_code
+        if '"test_code"' in content or "'test_code'" in content:
+            try:
+                # Try to find and parse JSON objects in the content
+                import re
+                json_pattern = r'\{[^{}]*"test_code"[^{}]*\}'
+                for match in re.finditer(json_pattern, content, re.DOTALL):
+                    try:
+                        data = json.loads(match.group())
+                        if data.get("test_code"):
+                            test_info = _extract_test_info(data["test_code"])
+                            if test_info and test_info not in tests:
+                                # Use file path from tool result if available
+                                if data.get("test_file"):
+                                    test_info["path"] = data["test_file"]
+                                tests.append(test_info)
+                    except json.JSONDecodeError:
+                        pass
+            except Exception:
+                pass
 
+    logger.debug("extracted_tests", count=len(tests))
     return tests
+
+
+def _is_valid_test_code(code: str) -> bool:
+    """Check if code is valid Java test code."""
+    return (
+        "class " in code
+        and ("@Test" in code or "@ParameterizedTest" in code)
+        and len(code) > 100  # Minimum reasonable test size
+    )
+
+
+def _extract_test_info(code: str) -> dict[str, Any] | None:
+    """Extract test info from Java code."""
+    if not code:
+        return None
+
+    # Extract class name from code
+    class_name = "GeneratedTest"
+    package = ""
+
+    for line in code.split("\n"):
+        line = line.strip()
+        if line.startswith("package ") and ";" in line:
+            package = line.replace("package ", "").replace(";", "").strip()
+        if "class " in line and "{" in line:
+            parts = line.split("class ")[1].split()
+            if parts:
+                class_name = parts[0].replace("{", "").strip()
+            break
+
+    # Build test file path
+    if package:
+        package_path = package.replace(".", "/")
+        path = f"src/test/java/{package_path}/{class_name}.java"
+    else:
+        path = f"src/test/java/{class_name}.java"
+
+    return {
+        "path": path,
+        "content": code,
+        "class_name": class_name,
+        "package": package,
+    }
 
 
 def _extract_code_from_response(content: str) -> str | None:

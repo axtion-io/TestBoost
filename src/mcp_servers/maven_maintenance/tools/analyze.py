@@ -12,6 +12,8 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Any
 
+from src.mcp_servers.maven_maintenance.utils import get_mvn_command
+
 
 async def analyze_dependencies(
     project_path: str, include_snapshots: bool = False, check_vulnerabilities: bool = True
@@ -124,8 +126,9 @@ async def _check_dependency_updates(
     project_dir: Path, include_snapshots: bool
 ) -> list[dict[str, Any]]:
     """Check for available dependency updates."""
+    mvn = get_mvn_command()
     cmd = [
-        "mvn",
+        mvn,
         "versions:display-dependency-updates",
         "-DprocessAllModules=true",
         "-DoutputEncoding=UTF-8",
@@ -173,8 +176,9 @@ async def _check_dependency_updates(
 
 async def _check_vulnerabilities(project_dir: Path) -> list[dict[str, Any]]:
     """Check for security vulnerabilities using OWASP dependency-check."""
+    mvn = get_mvn_command()
     cmd = [
-        "mvn",
+        mvn,
         "org.owasp:dependency-check-maven:check",
         "-DfailBuildOnCVSS=11",  # Don't fail, just report
         "-Dformat=JSON",
@@ -214,7 +218,8 @@ async def _check_vulnerabilities(project_dir: Path) -> list[dict[str, Any]]:
 
 async def _check_compatibility(project_dir: Path) -> list[dict[str, Any]]:
     """Check for dependency compatibility issues."""
-    cmd = ["mvn", "dependency:analyze", "-DignoreNonCompile=true"]
+    mvn = get_mvn_command()
+    cmd = [mvn, "dependency:analyze", "-DignoreNonCompile=true"]
 
     process = await asyncio.create_subprocess_exec(
         *cmd, cwd=project_dir, stdout=subprocess.PIPE, stderr=subprocess.PIPE

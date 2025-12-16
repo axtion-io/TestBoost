@@ -16,7 +16,7 @@ from starlette.responses import Response
 from src.api.middleware.auth import api_key_auth_middleware
 from src.api.middleware.error import ErrorHandlerMiddleware
 from src.api.middleware.logging import request_logging_middleware
-from src.api.routers import health, sessions
+from src.api.routers import health, metrics, sessions
 from src.lib.config import get_settings
 from src.lib.logging import get_logger
 from src.lib.startup_checks import StartupCheckError, run_all_startup_checks
@@ -92,6 +92,7 @@ app.middleware("http")(api_key_auth_middleware)
 # Include routers
 app.include_router(health.router)
 app.include_router(sessions.router)
+app.include_router(metrics.router)
 
 
 @app.exception_handler(Exception)

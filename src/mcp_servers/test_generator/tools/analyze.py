@@ -175,28 +175,47 @@ async def _analyze_source_structure(project_dir: Path, scan_depth: int) -> dict[
     """Analyze source code structure."""
     structure = {"main_sources": [], "packages": [], "class_count": 0, "interface_count": 0}
 
-    # Find main source directories
-    src_dirs = [project_dir / "src" / "main" / "java", project_dir / "src"]
+    # Find main source directories - support multi-module Maven projects
+    src_dirs = []
+    java_files = []
 
+    # Check for standard single-module structure first
+    standard_src = project_dir / "src" / "main" / "java"
+    if standard_src.exists():
+        src_dirs.append(standard_src)
+
+    # Check for multi-module Maven structure (submodules with pom.xml and src/main/java)
+    for subdir in project_dir.iterdir():
+        if subdir.is_dir() and (subdir / "pom.xml").exists():
+            module_src = subdir / "src" / "main" / "java"
+            if module_src.exists():
+                src_dirs.append(module_src)
+
+    # Fallback to generic src directory
+    if not src_dirs:
+        generic_src = project_dir / "src"
+        if generic_src.exists():
+            src_dirs.append(generic_src)
+
+    # Collect all Java files from all source directories
     for src_dir in src_dirs:
-        if src_dir.exists():
-            java_files = list(src_dir.rglob("*.java"))
-            structure["class_count"] = len(java_files)
+        java_files.extend(src_dir.rglob("*.java"))
 
-            # Extract packages
-            packages = set()
-            for java_file in java_files[:100]:  # Limit for performance
-                try:
-                    content = java_file.read_text(encoding="utf-8", errors="replace")
-                    package_match = re.search(r"package\s+([\w.]+);", content)
-                    if package_match:
-                        packages.add(package_match.group(1))
-                except Exception:
-                    pass
+    structure["class_count"] = len(java_files)
 
-            structure["packages"] = sorted(packages)[:50]
-            structure["main_sources"] = [str(src_dir)]
-            break
+    # Extract packages
+    packages = set()
+    for java_file in java_files[:200]:  # Limit for performance
+        try:
+            content = java_file.read_text(encoding="utf-8", errors="replace")
+            package_match = re.search(r"package\s+([\w.]+);", content)
+            if package_match:
+                packages.add(package_match.group(1))
+        except Exception:
+            pass
+
+    structure["packages"] = sorted(packages)[:50]
+    structure["main_sources"] = [str(d) for d in src_dirs]
 
     return structure
 
@@ -205,30 +224,50 @@ async def _analyze_test_structure(project_dir: Path, scan_depth: int) -> dict[st
     """Analyze test code structure."""
     structure = {"test_sources": [], "test_count": 0, "test_packages": []}
 
-    test_dirs = [project_dir / "src" / "test" / "java", project_dir / "test"]
+    # Find test directories - support multi-module Maven projects
+    test_dirs = []
 
+    # Check for standard single-module structure
+    standard_test = project_dir / "src" / "test" / "java"
+    if standard_test.exists():
+        test_dirs.append(standard_test)
+
+    # Check for multi-module Maven structure
+    for subdir in project_dir.iterdir():
+        if subdir.is_dir() and (subdir / "pom.xml").exists():
+            module_test = subdir / "src" / "test" / "java"
+            if module_test.exists():
+                test_dirs.append(module_test)
+
+    # Fallback to generic test directory
+    if not test_dirs:
+        generic_test = project_dir / "test"
+        if generic_test.exists():
+            test_dirs.append(generic_test)
+
+    # Collect all test files from all test directories
+    test_files = []
     for test_dir in test_dirs:
-        if test_dir.exists():
-            test_files = list(test_dir.rglob("*Test.java"))
-            test_files.extend(test_dir.rglob("*Tests.java"))
-            test_files.extend(test_dir.rglob("Test*.java"))
+        test_files.extend(test_dir.rglob("*Test.java"))
+        test_files.extend(test_dir.rglob("*Tests.java"))
+        test_files.extend(test_dir.rglob("Test*.java"))
 
-            structure["test_count"] = len(set(test_files))
+    test_files = list(set(test_files))  # Remove duplicates
+    structure["test_count"] = len(test_files)
 
-            # Extract test packages
-            packages = set()
-            for test_file in test_files[:50]:
-                try:
-                    content = test_file.read_text(encoding="utf-8", errors="replace")
-                    package_match = re.search(r"package\s+([\w.]+);", content)
-                    if package_match:
-                        packages.add(package_match.group(1))
-                except Exception:
-                    pass
+    # Extract test packages
+    packages = set()
+    for test_file in test_files[:100]:
+        try:
+            content = test_file.read_text(encoding="utf-8", errors="replace")
+            package_match = re.search(r"package\s+([\w.]+);", content)
+            if package_match:
+                packages.add(package_match.group(1))
+        except Exception:
+            pass
 
-            structure["test_packages"] = sorted(packages)[:30]
-            structure["test_sources"] = [str(test_dir)]
-            break
+    structure["test_packages"] = sorted(packages)[:30]
+    structure["test_sources"] = [str(d) for d in test_dirs]
 
     return structure
 
@@ -237,30 +276,44 @@ async def _detect_frameworks(project_dir: Path) -> list[str]:
     """Detect application frameworks from code and dependencies."""
     frameworks = set()
 
-    # Check imports in source files
-    src_dir = project_dir / "src" / "main" / "java"
-    if src_dir.exists():
-        for java_file in list(src_dir.rglob("*.java"))[:50]:
-            try:
-                content = java_file.read_text(encoding="utf-8", errors="replace")
+    # Collect source directories - support multi-module
+    src_dirs = []
+    standard_src = project_dir / "src" / "main" / "java"
+    if standard_src.exists():
+        src_dirs.append(standard_src)
 
-                if "org.springframework" in content:
-                    frameworks.add("spring")
-                    if "@SpringBootApplication" in content:
-                        frameworks.add("spring-boot")
-                if "javax.persistence" in content or "jakarta.persistence" in content:
-                    frameworks.add("jpa")
-                if "io.quarkus" in content:
-                    frameworks.add("quarkus")
-                if "io.micronaut" in content:
-                    frameworks.add("micronaut")
-                if "javax.ws.rs" in content or "jakarta.ws.rs" in content:
-                    frameworks.add("jax-rs")
-                if "org.hibernate" in content:
-                    frameworks.add("hibernate")
+    for subdir in project_dir.iterdir():
+        if subdir.is_dir() and (subdir / "pom.xml").exists():
+            module_src = subdir / "src" / "main" / "java"
+            if module_src.exists():
+                src_dirs.append(module_src)
 
-            except Exception:
-                pass
+    # Check imports in source files from all directories
+    java_files = []
+    for src_dir in src_dirs:
+        java_files.extend(list(src_dir.rglob("*.java"))[:30])
+
+    for java_file in java_files[:100]:
+        try:
+            content = java_file.read_text(encoding="utf-8", errors="replace")
+
+            if "org.springframework" in content:
+                frameworks.add("spring")
+                if "@SpringBootApplication" in content:
+                    frameworks.add("spring-boot")
+            if "javax.persistence" in content or "jakarta.persistence" in content:
+                frameworks.add("jpa")
+            if "io.quarkus" in content:
+                frameworks.add("quarkus")
+            if "io.micronaut" in content:
+                frameworks.add("micronaut")
+            if "javax.ws.rs" in content or "jakarta.ws.rs" in content:
+                frameworks.add("jax-rs")
+            if "org.hibernate" in content:
+                frameworks.add("hibernate")
+
+        except Exception:
+            pass
 
     return sorted(frameworks)
 
@@ -269,35 +322,50 @@ async def _detect_test_frameworks(project_dir: Path) -> list[str]:
     """Detect test frameworks from test code."""
     test_frameworks = set()
 
-    test_dir = project_dir / "src" / "test" / "java"
-    if test_dir.exists():
-        for test_file in list(test_dir.rglob("*.java"))[:50]:
-            try:
-                content = test_file.read_text(encoding="utf-8", errors="replace")
+    # Collect test directories - support multi-module
+    test_dirs = []
+    standard_test = project_dir / "src" / "test" / "java"
+    if standard_test.exists():
+        test_dirs.append(standard_test)
 
-                if "org.junit.jupiter" in content:
-                    test_frameworks.add("junit5")
-                elif "org.junit" in content:
-                    test_frameworks.add("junit4")
-                if "org.mockito" in content:
-                    test_frameworks.add("mockito")
-                if "org.assertj" in content:
-                    test_frameworks.add("assertj")
-                if "org.hamcrest" in content:
-                    test_frameworks.add("hamcrest")
-                if "org.testcontainers" in content:
-                    test_frameworks.add("testcontainers")
-                if "@SpringBootTest" in content:
-                    test_frameworks.add("spring-boot-test")
-                if "@WebMvcTest" in content or "@DataJpaTest" in content:
-                    test_frameworks.add("spring-test-slices")
-                if "io.rest-assured" in content or "RestAssured" in content:
-                    test_frameworks.add("rest-assured")
-                if "org.wiremock" in content or "WireMock" in content:
-                    test_frameworks.add("wiremock")
+    for subdir in project_dir.iterdir():
+        if subdir.is_dir() and (subdir / "pom.xml").exists():
+            module_test = subdir / "src" / "test" / "java"
+            if module_test.exists():
+                test_dirs.append(module_test)
 
-            except Exception:
-                pass
+    # Check imports in test files from all directories
+    test_files = []
+    for test_dir in test_dirs:
+        test_files.extend(list(test_dir.rglob("*.java"))[:30])
+
+    for test_file in test_files[:100]:
+        try:
+            content = test_file.read_text(encoding="utf-8", errors="replace")
+
+            if "org.junit.jupiter" in content:
+                test_frameworks.add("junit5")
+            elif "org.junit" in content:
+                test_frameworks.add("junit4")
+            if "org.mockito" in content:
+                test_frameworks.add("mockito")
+            if "org.assertj" in content:
+                test_frameworks.add("assertj")
+            if "org.hamcrest" in content:
+                test_frameworks.add("hamcrest")
+            if "org.testcontainers" in content:
+                test_frameworks.add("testcontainers")
+            if "@SpringBootTest" in content:
+                test_frameworks.add("spring-boot-test")
+            if "@WebMvcTest" in content or "@DataJpaTest" in content:
+                test_frameworks.add("spring-test-slices")
+            if "io.rest-assured" in content or "RestAssured" in content:
+                test_frameworks.add("rest-assured")
+            if "org.wiremock" in content or "WireMock" in content:
+                test_frameworks.add("wiremock")
+
+        except Exception:
+            pass
 
     return sorted(test_frameworks)
 

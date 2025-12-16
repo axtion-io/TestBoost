@@ -7,7 +7,7 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
-from src.cli.progress import create_progress
+from src.cli.progress import create_progress, is_windows
 from src.lib.logging import get_logger
 
 logger = get_logger(__name__)
@@ -90,10 +90,21 @@ def generate_tests(
         console.print(f"[red]Error:[/red] Project path not found: {project_path}")
         raise typer.Exit(1)
 
-    # Check for Java project
+    # Check for Java project (support multi-module Maven projects)
     src_dir = project_dir / "src" / "main" / "java"
-    if not src_dir.exists():
-        console.print("[red]Error:[/red] Not a Java project (src/main/java not found)")
+    has_java_sources = src_dir.exists()
+
+    # Check for multi-module Maven structure
+    if not has_java_sources and (project_dir / "pom.xml").exists():
+        for subdir in project_dir.iterdir():
+            if subdir.is_dir() and (subdir / "pom.xml").exists():
+                module_src = subdir / "src" / "main" / "java"
+                if module_src.exists():
+                    has_java_sources = True
+                    break
+
+    if not has_java_sources:
+        console.print("[red]Error:[/red] Not a Java project (no src/main/java found)")
         raise typer.Exit(1)
 
     console.print("\n[bold blue]TestBoost[/bold blue] - Test Generation")
@@ -375,8 +386,11 @@ async def _run_test_generation(
             # Show generated test files
             if generated_tests:
                 console.print("\n[bold]Generated Test Files:[/bold]")
+                # Use ASCII characters on Windows to avoid cp1252 encoding issues
+                check_mark = "[green]OK[/green]" if is_windows() else "[green]✓[/green]"
+                x_mark = "[red]FAIL[/red]" if is_windows() else "[red]✗[/red]"
                 for test in generated_tests:
-                    status = "[green]✓[/green]" if test.get("compiles") else "[red]✗[/red]"
+                    status = check_mark if test.get("compiles") else x_mark
                     console.print(f"  {status} {test.get('path', 'unknown')}")
                     if test.get("correction_attempts", 0) > 0:
                         console.print(

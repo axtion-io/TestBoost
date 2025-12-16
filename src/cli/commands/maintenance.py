@@ -14,7 +14,7 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
-from src.cli.progress import create_progress
+from src.cli.progress import create_progress, sanitize_for_console
 from src.lib.logging import get_logger
 
 logger = get_logger(__name__)
@@ -161,7 +161,7 @@ def run_maintenance(
             if hasattr(result, "analysis") and result.analysis:
                 console.print(
                     Panel(
-                        f"[green]AI Agent Analysis[/green]\n\n{result.analysis}",
+                        f"[green]AI Agent Analysis[/green]\n\n{sanitize_for_console(result.analysis)}",
                         title="Maven Maintenance Analysis",
                     )
                 )
@@ -224,11 +224,11 @@ def check_status(
         ...,
         help="Session ID to check status for",
     ),
-    watch: bool = typer.Option(
+    _watch: bool = typer.Option(  # noqa: ARG001 - Reserved for future continuous watch feature
         False,
         "--watch",
         "-w",
-        help="Continuously watch for updates",
+        help="Continuously watch for updates (not yet implemented)",
     ),
 ) -> None:
     """

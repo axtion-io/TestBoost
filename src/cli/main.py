@@ -1,16 +1,34 @@
 """Typer CLI application for TestBoost."""
 
-import asyncio
+# CRITICAL: Load .env file BEFORE any imports that use config
+# This ensures .env values override any stale shell environment variables
+from pathlib import Path
 
-import typer
+from dotenv import load_dotenv
 
-from src.cli.commands.audit import app as audit_app
-from src.cli.commands.config import app as config_app
-from src.cli.commands.deploy import app as deploy_app
-from src.cli.commands.maintenance import app as maintenance_app
-from src.cli.commands.tests import app as tests_app
-from src.lib.logging import get_logger
-from src.lib.startup_checks import StartupCheckError, run_all_startup_checks
+_env_path = Path(__file__).parent.parent.parent / ".env"
+if _env_path.exists():
+    load_dotenv(_env_path, override=True)
+
+# Clear any cached settings to pick up new env values
+from src.lib.config import get_settings  # noqa: E402
+
+get_settings.cache_clear()
+
+# IMPORTANT: Must be imported early to patch DeepAgents before any other module uses it
+import src.lib.deepagents_compat  # noqa: F401, E402
+
+import asyncio  # noqa: E402
+
+import typer  # noqa: E402
+
+from src.cli.commands.audit import app as audit_app  # noqa: E402
+from src.cli.commands.config import app as config_app  # noqa: E402
+from src.cli.commands.deploy import app as deploy_app  # noqa: E402
+from src.cli.commands.maintenance import app as maintenance_app  # noqa: E402
+from src.cli.commands.tests import app as tests_app  # noqa: E402
+from src.lib.logging import get_logger  # noqa: E402
+from src.lib.startup_checks import StartupCheckError, run_all_startup_checks  # noqa: E402
 
 logger = get_logger(__name__)
 
@@ -89,22 +107,28 @@ def init(
 
 @app.command()
 def analyze(
-    mode: str = typer.Option("interactive", "--mode", "-m", help="Execution mode"),
     project_path: str = typer.Argument(
         ".",
         help="Path to the Java project to analyze",
     ),
-    output: str = typer.Option(
-        None,
-        "--output",
-        "-o",
-        help="Output file for analysis results",
+    verbose: bool = typer.Option(
+        False,
+        "--verbose",
+        "-v",
+        help="Show detailed output",
     ),
 ) -> None:
-    """Analyze a Java project for test generation opportunities."""
-    logger.info("analyze_command", project_path=project_path, output=output)
-    typer.echo(f"Analyzing project: {project_path}")
-    # Implementation will be added in later phases
+    """Analyze a Java project for test generation opportunities.
+
+    This is a shortcut for 'testboost tests analyze'.
+    """
+    from src.cli.commands.tests import analyze_project
+
+    # Delegate to the full implementation in tests.py
+    analyze_project(
+        project_path=project_path,
+        verbose=verbose,
+    )
 
 
 @app.command()
@@ -125,16 +149,35 @@ def generate(
         "-m",
         help="Execution mode (interactive, autonomous, analysis_only)",
     ),
+    mutation_score: float = typer.Option(
+        80.0,
+        "--mutation-score",
+        help="Target mutation score percentage",
+    ),
+    dry_run: bool = typer.Option(
+        False,
+        "--dry-run",
+        help="Analyze without generating tests",
+    ),
 ) -> None:
-    """Generate tests for a Java project."""
-    logger.info(
-        "generate_command",
+    """Generate tests for a Java project.
+
+    This is a shortcut for 'testboost tests generate'.
+    """
+    from src.cli.commands.tests import generate_tests
+
+    # Delegate to the full implementation in tests.py
+    generate_tests(
+        mode=mode,
         project_path=project_path,
         target=target,
-        mode=mode,
+        mutation_score=mutation_score,
+        include_integration=True,
+        include_snapshot=True,
+        output_dir=None,
+        dry_run=dry_run,
+        verbose=False,
     )
-    typer.echo(f"Generating tests for: {project_path}")
-    # Implementation will be added in later phases
 
 
 @app.command()
@@ -148,17 +191,38 @@ def maven(
         False,
         "--check-updates",
         "-u",
-        help="Check for dependency updates",
+        help="Check for dependency updates (list only)",
+    ),
+    dry_run: bool = typer.Option(
+        False,
+        "--dry-run",
+        "-n",
+        help="Analyze without applying changes",
     ),
 ) -> None:
-    """Perform Maven maintenance tasks."""
-    logger.info(
-        "maven_command",
-        project_path=project_path,
-        check_updates=check_updates,
-    )
-    typer.echo(f"Maven maintenance for: {project_path}")
-    # Implementation will be added in later phases
+    """Perform Maven maintenance tasks.
+
+    This is a shortcut for 'testboost maintenance run' or 'testboost maintenance list'.
+    """
+    from src.cli.commands.maintenance import list_updates, run_maintenance
+
+    if check_updates:
+        # Just list available updates
+        list_updates(
+            project_path=project_path,
+            include_snapshots=False,
+            output_format="rich",
+        )
+    else:
+        # Run full maintenance workflow
+        run_maintenance(
+            mode=mode,
+            project_path=project_path,
+            auto_approve=False,
+            dry_run=dry_run,
+            skip_tests=False,
+            output_format="rich",
+        )
 
 
 @app.command()

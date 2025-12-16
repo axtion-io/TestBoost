@@ -29,3 +29,10 @@ workflow:
 error_handling:
   max_retries: 3
   timeout_seconds: 120
+
+# Test execution configuration (CHK015)
+test_config:
+  test_timeout_seconds: 300    # Timeout per test class execution
+  suite_timeout_seconds: 1800  # Total test suite timeout (30 min)
+  parallel_tests: true         # Run tests in parallel when possible
+  fail_fast: false             # Continue on test failures to get full report

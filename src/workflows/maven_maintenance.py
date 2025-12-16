@@ -227,7 +227,11 @@ async def analyze_maven(state: MavenMaintenanceState) -> dict[str, Any]:
 
 async def fetch_release_notes(state: MavenMaintenanceState) -> dict[str, Any]:
     """
-    Fetch release notes for available updates.
+    Fetch release notes for available updates from GitHub and Maven Central.
+
+    Attempts to fetch real release information from:
+    1. GitHub releases API (for common open source projects)
+    2. Maven Central metadata
 
     Args:
         state: Current workflow state
@@ -235,27 +239,161 @@ async def fetch_release_notes(state: MavenMaintenanceState) -> dict[str, Any]:
     Returns:
         Updated state fields
     """
-    release_notes = {}
+    import httpx
 
-    # For now, create placeholder release notes
-    # In production, this would fetch from Maven Central, GitHub, etc.
-    for update in state.pending_updates:
-        key = f"{update['groupId']}:{update['artifactId']}"
-        release_notes[key] = {
-            "url": f"https://github.com/{update['groupId']}/{update['artifactId']}/releases",
-            "summary": f"Update from {update['currentVersion']} to {update['targetVersion']}",
-            "breaking_changes": [],
-            "new_features": [],
-            "bug_fixes": [],
-        }
+    release_notes = {}
+    fetched_count = 0
+    failed_count = 0
+
+    # Common GitHub organization mappings for popular dependencies
+    github_mappings = {
+        "org.springframework": "spring-projects",
+        "org.springframework.boot": "spring-projects",
+        "com.fasterxml.jackson": "FasterXML",
+        "org.apache.commons": "apache",
+        "org.junit": "junit-team",
+        "org.mockito": "mockito",
+        "org.assertj": "assertj",
+        "io.projectreactor": "reactor",
+        "org.hibernate": "hibernate",
+        "org.slf4j": "qos-ch",
+        "ch.qos.logback": "qos-ch",
+    }
+
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        for update in state.pending_updates:
+            key = f"{update['groupId']}:{update['artifactId']}"
+            group_id = update["groupId"]
+            artifact_id = update["artifactId"]
+            target_version = update["targetVersion"]
+
+            notes = {
+                "url": "",
+                "summary": f"Update from {update['currentVersion']} to {target_version}",
+                "breaking_changes": [],
+                "new_features": [],
+                "bug_fixes": [],
+                "fetched": False,
+            }
+
+            # Try to find GitHub organization
+            github_org = None
+            for prefix, org in github_mappings.items():
+                if group_id.startswith(prefix):
+                    github_org = org
+                    break
+
+            # Attempt to fetch from GitHub releases
+            if github_org:
+                repo_name = _guess_repo_name(artifact_id)
+                github_url = f"https://api.github.com/repos/{github_org}/{repo_name}/releases"
+                notes["url"] = f"https://github.com/{github_org}/{repo_name}/releases"
+
+                try:
+                    response = await client.get(
+                        github_url,
+                        headers={"Accept": "application/vnd.github.v3+json"},
+                    )
+
+                    if response.status_code == 200:
+                        releases = response.json()
+                        # Find the release matching our target version
+                        for release in releases[:10]:  # Check first 10 releases
+                            tag = release.get("tag_name", "")
+                            if target_version in tag or tag.endswith(target_version):
+                                body = release.get("body", "")
+                                parsed = _parse_release_body(body)
+                                notes["breaking_changes"] = parsed["breaking_changes"]
+                                notes["new_features"] = parsed["new_features"]
+                                notes["bug_fixes"] = parsed["bug_fixes"]
+                                notes["fetched"] = True
+                                fetched_count += 1
+                                break
+                except Exception:
+                    pass  # Fall through to default notes
+
+            # If GitHub failed, try Maven Central for basic info
+            if not notes["fetched"]:
+                maven_url = (
+                    f"https://repo1.maven.org/maven2/"
+                    f"{group_id.replace('.', '/')}/{artifact_id}/{target_version}/"
+                    f"{artifact_id}-{target_version}.pom"
+                )
+                notes["url"] = maven_url
+
+                try:
+                    response = await client.get(maven_url)
+                    if response.status_code == 200:
+                        # POM exists, dependency is valid
+                        notes["summary"] = f"Version {target_version} available on Maven Central"
+                        notes["fetched"] = True
+                        fetched_count += 1
+                except Exception:
+                    failed_count += 1
+
+            release_notes[key] = notes
+
+    message = f"Fetched release notes for {fetched_count}/{len(state.pending_updates)} dependencies"
+    if failed_count > 0:
+        message += f" ({failed_count} failed to fetch)"
 
     return {
         "release_notes": release_notes,
         "current_step": "fetch_release_notes",
-        "messages": [
-            AIMessage(content=f"Fetched release notes for {len(release_notes)} dependencies")
-        ],
+        "messages": [AIMessage(content=message)],
     }
+
+
+def _guess_repo_name(artifact_id: str) -> str:
+    """Guess GitHub repository name from Maven artifact ID."""
+    # Common patterns: spring-boot -> spring-boot, jackson-core -> jackson-core
+    # Some projects use different names
+    repo_mappings = {
+        "spring-boot-starter-parent": "spring-boot",
+        "spring-boot-starter-web": "spring-boot",
+        "spring-boot-starter-test": "spring-boot",
+        "junit-jupiter": "junit5",
+        "junit-jupiter-api": "junit5",
+        "junit-jupiter-engine": "junit5",
+        "mockito-core": "mockito",
+        "assertj-core": "assertj",
+        "slf4j-api": "slf4j",
+        "logback-classic": "logback",
+    }
+    return repo_mappings.get(artifact_id, artifact_id)
+
+
+def _parse_release_body(body: str) -> dict[str, list[str]]:
+    """Parse GitHub release body to extract changes."""
+    result = {
+        "breaking_changes": [],
+        "new_features": [],
+        "bug_fixes": [],
+    }
+
+    if not body:
+        return result
+
+    lines = body.split("\n")
+    current_section = None
+
+    for line in lines:
+        line_lower = line.lower().strip()
+
+        # Detect section headers
+        if "breaking" in line_lower:
+            current_section = "breaking_changes"
+        elif any(x in line_lower for x in ["feature", "enhancement", "new"]):
+            current_section = "new_features"
+        elif any(x in line_lower for x in ["fix", "bug", "patch"]):
+            current_section = "bug_fixes"
+        elif line.startswith("- ") or line.startswith("* "):
+            # This is a list item
+            item = line[2:].strip()
+            if current_section and item and len(item) < 200:
+                result[current_section].append(item)
+
+    return result
 
 
 async def run_baseline_tests(state: MavenMaintenanceState) -> dict[str, Any]:

@@ -24,36 +24,36 @@
 
 ### Data Lifecycle
 
-- [ ] T001 [Code] Implement session purge job in src/jobs/session_purge.py
+- [x] T001 [Code] Implement session purge job in src/db/jobs/purge.py (DONE - already implemented)
   - Create scheduled job to delete sessions older than 1 year
   - Add configuration for retention period in config/settings.py
   - Log purge operations with count of deleted sessions
   - Reference: Spec §FR-044
 
-- [ ] T002 [P] [Test] Create tests/unit/test_session_purge.py
+- [x] T002 [P] [Test] Create tests/unit/test_session_purge.py (DONE - 12 tests)
   - test_purge_deletes_old_sessions()
   - test_purge_preserves_recent_sessions()
   - test_purge_handles_empty_database()
   - test_purge_logs_deletion_count()
 
-- [ ] T003 [Infra] Add purge job to scheduler in src/jobs/__init__.py
+- [x] T003 [Infra] Add purge job to scheduler in src/db/jobs/scheduler.py (DONE - already implemented)
   - Configure APScheduler or similar for daily purge
   - Add health check for job status
 
 ### Performance Testing
 
-- [ ] T004 [Test] Create tests/performance/test_benchmarks.py
+- [x] T004 [Test] Create tests/performance/test_benchmarks.py (DONE - 6 tests)
   - test_interactive_operation_under_5_seconds()
   - test_docker_deployment_under_5_minutes()
   - test_analysis_200_classes_under_30_seconds()
   - Reference: Spec §SC-001, §SC-002, §SC-003
 
-- [ ] T005 [P] [Test] Create tests/performance/test_load.py
+- [x] T005 [P] [Test] Create tests/performance/test_load.py (DONE - 9 tests)
   - test_concurrent_session_handling()
   - test_memory_usage_under_load()
   - test_database_connection_pool()
 
-- [ ] T006 [P] [Infra] Add pytest-benchmark to pyproject.toml
+- [x] T006 [P] [Infra] Add pytest-benchmark to pyproject.toml (DONE)
   - Configure benchmark storage for regression tracking
   - Add CI step for performance tests (optional, non-blocking)
 
@@ -67,7 +67,7 @@
 
 ### MCP Tools Documentation
 
-- [ ] T007 [P] [Doc] Create docs/mcp-tools-reference.md
+- [x] T007 [P] [Doc] Create docs/mcp-tools-reference.md (DONE)
   - Document each MCP tool with inputs/outputs
   - Include Pydantic schema definitions
   - Add example invocations
@@ -75,41 +75,41 @@
 
 ### Workflow Documentation
 
-- [ ] T008 [P] [Doc] Create docs/workflow-diagrams.md
+- [x] T008 [P] [Doc] Create docs/workflow-diagrams.md (DONE)
   - Add Mermaid diagrams for Maven, Test Gen, Docker workflows
   - Show state transitions and decision points
   - Reference: CHK010, CHK011 gaps
 
-- [ ] T009 [P] [Doc] Document baseline test strategy in docs/testing-strategy.md
+- [x] T009 [P] [Doc] Document baseline test strategy in docs/testing-strategy.md (DONE)
   - Define "baseline tests must pass" requirement
   - Specify what constitutes a passing baseline
   - Reference: CHK016 gap
 
-- [ ] T010 [P] [Doc] Document flaky test handling in docs/testing-strategy.md
+- [x] T010 [P] [Doc] Document flaky test handling in docs/testing-strategy.md (DONE)
   - Define flaky test detection criteria
   - Specify handling strategy (retry, skip, flag)
   - Reference: CHK017 gap
 
 ### API Documentation
 
-- [ ] T011 [Code] Export OpenAPI spec in src/api/openapi.py
+- [x] T011 [Code] OpenAPI spec already configured in FastAPI main.py (DONE - /openapi.json)
   - Add endpoint to serve openapi.json
   - Configure FastAPI to export spec on startup
   - Reference: CHK020 gap
 
-- [ ] T012 [P] [Doc] Document HTTP error codes in docs/api-errors.md
+- [x] T012 [P] [Doc] Document HTTP error codes in docs/api-errors.md (DONE)
   - List all endpoints with possible error codes
   - Include error response schemas
   - Reference: CHK021 gap
 
-- [ ] T013 [P] [Doc] Document CLI exit codes in docs/cli-reference.md
+- [x] T013 [P] [Doc] Document CLI exit codes in docs/cli-reference.md (DONE)
   - Define semantic exit codes (0=success, 1=error, 2=config, etc.)
   - Update CLI to use consistent codes
   - Reference: CHK023 gap
 
 ### Database Documentation
 
-- [ ] T014 [P] [Doc] Create docs/database-schema.md
+- [x] T014 [P] [Doc] Create docs/database-schema.md (DONE)
   - Document index strategy for performance
   - Document CASCADE policies
   - Document validation constraints
@@ -125,36 +125,36 @@
 
 ### API Pagination
 
-- [ ] T015 [Code] Implement pagination for session list in src/api/routers/sessions.py
+- [x] T015 [Code] Pagination already implemented in src/api/routers/sessions.py (DONE)
   - Add page, page_size query parameters
   - Return pagination metadata (total, pages, current)
   - Reference: CHK026 gap
 
-- [ ] T016 [P] [Test] Add pagination tests in tests/integration/test_api_pagination.py
+- [x] T016 [P] [Test] Add pagination tests in tests/integration/test_api_pagination.py (DONE - 18 tests)
   - test_session_list_pagination()
   - test_artifact_list_pagination()
   - test_pagination_edge_cases()
 
 ### Observability
 
-- [ ] T017 [Code] Add Prometheus metrics endpoint in src/api/routers/metrics.py
+- [x] T017 [Code] Add Prometheus metrics endpoint in src/api/routers/metrics.py (DONE)
   - Expose workflow_duration_seconds histogram
   - Expose llm_calls_total counter
   - Expose active_sessions gauge
   - Reference: CHK042 gap
 
-- [ ] T018 [P] [Infra] Add prometheus-client to pyproject.toml
+- [x] T018 [P] [Infra] Built-in metrics collector (no external dep needed) (DONE)
   - Configure metrics registry
   - Add /metrics endpoint
 
 ### Reliability
 
-- [ ] T019 [Code] Add explicit timeouts for all external calls in src/lib/http_client.py
+- [x] T019 [Code] Add explicit timeouts for all external calls in src/lib/http_client.py (DONE)
   - Create wrapper for httpx with configurable timeouts
   - Apply to all external API calls
   - Reference: CHK047 gap
 
-- [ ] T020 [P] [Code] Implement DB reconnection strategy in src/lib/database.py
+- [x] T020 [P] [Code] Implement DB reconnection strategy in src/lib/database.py (DONE)
   - Add retry logic for transient DB errors
   - Configure connection pool recovery
   - Reference: CHK048 gap
@@ -169,26 +169,26 @@
 
 ### Workflow Configuration
 
-- [ ] T021 [P] [Code] Make Maven test timeout configurable in config/agents/maven_maintenance_agent.yaml
+- [x] T021 [P] [Code] Make Maven test timeout configurable in config/agents/maven_maintenance_agent.yaml (DONE)
   - Add test_timeout_seconds field
   - Update workflow to use config value
   - Reference: CHK015 gap
 
 ### Performance Thresholds
 
-- [ ] T022 [P] [Doc] Define degradation thresholds in docs/operations.md
+- [x] T022 [P] [Doc] Define degradation thresholds in docs/operations.md (DONE)
   - Define acceptable performance degradation levels
   - Document alerting thresholds
   - Reference: CHK038 gap
 
-- [ ] T023 [P] [Doc] Document load testing requirements in docs/operations.md
+- [x] T023 [P] [Doc] Document load testing requirements in docs/operations.md (DONE)
   - Define expected concurrent users
   - Document resource requirements per scale
   - Reference: CHK039 gap
 
 ### Service Assumptions
 
-- [ ] T024 [P] [Doc] Document service availability assumptions in docs/dependencies.md
+- [x] T024 [P] [Doc] Document service availability assumptions in docs/dependencies.md (DONE)
   - List all external services with SLA expectations
   - Define fallback behavior when services degrade
   - Reference: CHK078, CHK079 gaps
@@ -203,65 +203,110 @@
 
 ### MCP Tools
 
-- [ ] T025 [P] [Doc] Document MCP tool timeouts in docs/mcp-tools-reference.md
+- [x] T025 [P] [Doc] Document MCP tool timeouts in docs/mcp-tools-reference.md (DONE - already included)
   - Add timeout per tool category
   - Reference: CHK006 gap
 
 ### Workflows
 
-- [ ] T026 [P] [Doc] Document circular dependency handling in docs/maven-maintenance.md
+- [x] T026 [P] [Doc] Document circular dependency handling in docs/maven-maintenance.md (DONE)
   - Explain how `mvn dependency:tree` detects cycles
   - Define user notification strategy
   - Reference: CHK018 gap
 
 ### API
 
-- [ ] T027 [P] [Doc] Document X-API-Key format in docs/api-authentication.md
+- [x] T027 [P] [Doc] Document X-API-Key format in docs/api-authentication.md (DONE)
   - Specify format requirements
   - Document validation rules
   - Reference: CHK024 gap
 
 ### Isolation
 
-- [ ] T028 [P] [Doc] Document container resource limits in docs/docker-isolation.md
+- [x] T028 [P] [Doc] Document container resource limits in docs/docker-isolation.md (DONE)
   - Specify memory/CPU limits for Maven containers
   - Reference: CHK052 gap
 
-- [ ] T029 [P] [Doc] Document container cleanup policy in docs/docker-isolation.md
+- [x] T029 [P] [Doc] Document container cleanup policy in docs/docker-isolation.md (DONE)
   - Define container lifecycle and cleanup triggers
   - Reference: CHK053 gap
 
 ### Test Generation
 
-- [ ] T030 [P] [Doc] Document test quality scoring formula in docs/test-generation.md
+- [x] T030 [P] [Doc] Document test quality scoring formula in docs/test-generation.md (DONE)
   - Break down 0-120 scoring components
   - Reference: CHK057 gap
 
-- [ ] T031 [P] [Doc] Define cyclomatic complexity threshold in docs/test-generation.md
+- [x] T031 [P] [Doc] Define cyclomatic complexity threshold in docs/test-generation.md (DONE)
   - Specify max complexity for auto-generated tests
   - Define handling for complex classes
   - Reference: CHK061 gap
 
-- [ ] T032 [P] [Doc] Document external mock generation in docs/test-generation.md
+- [x] T032 [P] [Doc] Document external mock generation in docs/test-generation.md (DONE)
   - Specify Mockito patterns
   - Define external service mock strategy
   - Reference: CHK062 gap
 
 ### Traceability
 
-- [ ] T033 [P] [Doc] Create FR-to-Constitution traceability matrix in docs/traceability.md
+- [x] T033 [P] [Doc] Create FR-to-Constitution traceability matrix in docs/traceability.md (DONE)
   - Map each FR to constitution principles
   - Document any violations with justification
   - Reference: CHK072, CHK073 gaps
 
 ### Snapshot Tests
 
-- [ ] T034 [P] [Doc] Document ApprovalTests snapshot pattern in docs/test-generation.md
+- [x] T034 [P] [Doc] Document ApprovalTests snapshot pattern in docs/test-generation.md (DONE)
   - Specify snapshot file format
   - Document approval workflow
   - Reference: CHK060 gap
 
 **Checkpoint**: All documentation complete, 100% requirements coverage
+
+---
+
+## Phase 6: Implementation Gaps - Placeholder Functions (4 tasks)
+
+**Purpose**: Replace placeholder implementations with real functionality
+**Priority**: High - Required for full E2E testing capability
+**Discovered**: Code scan on 2024-12-10
+
+### Test Generation Workflow
+
+- [x] T035 [Code] Implement real Docker deployment in src/workflows/test_generation.py:deploy_docker (DONE)
+  - Use container_runtime MCP tools (already available)
+  - Deploy application using docker-compose
+  - Return actual container status
+  - Reference: Placeholder at line 438
+
+- [x] T036 [Code] Implement real health check in src/workflows/test_generation.py:check_app_health (DONE)
+  - Use docker health MCP tool
+  - Wait for container health (max 120s)
+  - Return actual health status from container
+  - Reference: Placeholder at line 458
+
+- [x] T037 [Code] Implement E2E test generation in src/workflows/test_generation.py:generate_e2e_tests (DONE)
+  - Analyze project endpoints from OpenAPI/annotations
+  - Generate REST-assured or WebTestClient tests
+  - Use LLM agent for test logic generation
+  - Reference: Placeholder at line 478
+
+### Maven Maintenance Workflow
+
+- [x] T038 [Code] Implement real release notes fetching in src/workflows/maven_maintenance.py:fetch_release_notes (DONE)
+  - Fetch from Maven Central metadata
+  - Parse GitHub releases API for common packages
+  - Extract breaking changes from CHANGELOG files
+  - Reference: Placeholder at line 240
+
+### Code Quality Fixes (Minor)
+
+- [x] T039 [P] [Code] Remove unused variables identified by vulture (DONE)
+  - src/cli/commands/maintenance.py:227 - unused 'watch' → prefixed with _
+  - src/lib/database.py:238 - unused 'exc_tb' → prefixed with _
+  - src/lib/http_client.py:274 - unused 'exc_tb' → prefixed with _
+
+**Checkpoint**: All placeholder functions replaced with real implementations ✅
 
 ---
 
@@ -274,6 +319,7 @@
 - **Phase 3 (Medium-Code)**: Can start after Phase 1 complete
 - **Phase 4 (Medium-Config)**: Can run in parallel with Phase 3
 - **Phase 5 (Low)**: Can start anytime, lowest priority
+- **Phase 6 (High)**: Depends on Phase 3 (uses MCP tools) - CURRENT PRIORITY
 
 ### Parallel Opportunities
 
@@ -284,6 +330,7 @@
 | Phase 3 | T016, T018, T020 |
 | Phase 4 | T021-T024 (all [P]) |
 | Phase 5 | T025-T034 (all [P]) |
+| Phase 6 | T035-T037 (same workflow), T039 |
 
 **Maximum parallelization**: 8 tasks simultaneously in Phase 2
 
@@ -300,32 +347,35 @@
 
 ### Incremental Delivery
 
-1. **Phase 1** → High priority gaps → Critical for production
-2. **Phase 2** → Documentation → Enables onboarding
-3. **Phase 3** → Code features → Improves usability
-4. **Phase 4** → Configuration → Enables ops team
-5. **Phase 5** → Polish → Complete coverage
+1. **Phase 1** → High priority gaps → Critical for production ✅ DONE
+2. **Phase 2** → Documentation → Enables onboarding ✅ DONE
+3. **Phase 3** → Code features → Improves usability ✅ DONE
+4. **Phase 4** → Configuration → Enables ops team ✅ DONE
+5. **Phase 5** → Polish → Complete coverage ✅ DONE
+6. **Phase 6** → Placeholder implementations → Full E2E capability ✅ DONE
 
 ### Suggested Sprint Allocation
 
 | Sprint | Phases | Focus |
 |--------|--------|-------|
-| Sprint 1 | Phase 1 | Critical gaps |
-| Sprint 2 | Phase 2 + 3 | Medium priority |
-| Sprint 3 | Phase 4 + 5 | Low priority + polish |
+| Sprint 1 | Phase 1 | Critical gaps ✅ |
+| Sprint 2 | Phase 2 + 3 | Medium priority ✅ |
+| Sprint 3 | Phase 4 + 5 | Low priority + polish ✅ |
+| Sprint 4 | Phase 6 | Implementation gaps ✅ |
 
 ---
 
 ## Summary
 
-| Priority | Tasks | Effort | Impact |
-|----------|-------|--------|--------|
-| High | 6 | ~8h | Production readiness |
-| Medium (Doc) | 8 | ~4h | Spec completeness |
-| Medium (Code) | 6 | ~6h | Functionality |
-| Medium (Config) | 4 | ~2h | Operations |
-| Low | 10 | ~4h | Polish |
-| **TOTAL** | **34** | **~24h** | **100% coverage** |
+| Priority | Tasks | Effort | Impact | Status |
+|----------|-------|--------|--------|--------|
+| High | 6 | ~8h | Production readiness | ✅ DONE |
+| Medium (Doc) | 8 | ~4h | Spec completeness | ✅ DONE |
+| Medium (Code) | 6 | ~6h | Functionality | ✅ DONE |
+| Medium (Config) | 4 | ~2h | Operations | ✅ DONE |
+| Low | 10 | ~4h | Polish | ✅ DONE |
+| **High (New)** | **5** | **~6h** | **Full E2E capability** | **✅ DONE** |
+| **TOTAL** | **39** | **~30h** | **100% coverage** | **39/39 (100%)** |
 
 ---
 

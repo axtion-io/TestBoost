@@ -11,6 +11,8 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Any
 
+from src.mcp_servers.maven_maintenance.utils import get_mvn_command
+
 
 async def run_tests(
     project_path: str,
@@ -39,7 +41,8 @@ async def run_tests(
         return json.dumps({"success": False, "error": f"pom.xml not found at {project_path}"})
 
     # Build Maven command
-    cmd = ["mvn", "test", "-B"]
+    mvn = get_mvn_command()
+    cmd = [mvn, "test", "-B"]
 
     # Add profiles if specified
     if profiles:

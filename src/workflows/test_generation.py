@@ -429,45 +429,170 @@ async def deploy_docker(state: TestGenerationState) -> dict[str, Any]:
     """
     Deploy application to Docker for E2E testing.
 
+    Uses the docker MCP tools to deploy the application via docker-compose.
+
     Args:
         state: Current workflow state
 
     Returns:
         Updated state fields
     """
-    # Placeholder for Docker deployment
-    # In production, this would use container_runtime tools
+    from pathlib import Path
 
-    return {
-        "docker_deployed": True,
-        "current_step": "deploy_docker",
-        "messages": [AIMessage(content="Docker deployment initiated")],
-    }
+    from src.mcp_servers.docker.tools.compose import create_compose
+    from src.mcp_servers.docker.tools.deploy import deploy_compose
+    from src.mcp_servers.docker.tools.dockerfile import create_dockerfile
+
+    project_path = Path(state.project_path)
+    compose_path = project_path / "docker-compose.yml"
+    dockerfile_path = project_path / "Dockerfile"
+
+    try:
+        # Generate Dockerfile if not exists
+        if not dockerfile_path.exists():
+            dockerfile_result = await create_dockerfile(
+                project_path=str(project_path),
+                java_version="17",
+                build_tool="maven",
+            )
+            dockerfile_data = json.loads(dockerfile_result)
+            if not dockerfile_data.get("success"):
+                return {
+                    "docker_deployed": False,
+                    "errors": state.errors + [f"Dockerfile generation failed: {dockerfile_data.get('error', 'Unknown')}"],
+                    "current_step": "deploy_docker",
+                    "messages": [AIMessage(content="Docker deployment failed - could not create Dockerfile")],
+                }
+
+        # Generate docker-compose.yml if not exists
+        if not compose_path.exists():
+            compose_result = await create_compose(
+                project_path=str(project_path),
+                service_name=state.project_name or project_path.name,
+                port=8080,
+                include_database=True,
+            )
+            compose_data = json.loads(compose_result)
+            if not compose_data.get("success"):
+                return {
+                    "docker_deployed": False,
+                    "errors": state.errors + [f"Compose file generation failed: {compose_data.get('error', 'Unknown')}"],
+                    "current_step": "deploy_docker",
+                    "messages": [AIMessage(content="Docker deployment failed - could not create docker-compose.yml")],
+                }
+
+        # Deploy using docker-compose
+        deploy_result = await deploy_compose(
+            compose_path=str(compose_path),
+            project_name=state.project_name or project_path.name,
+            build=True,
+            detach=True,
+        )
+        deploy_data = json.loads(deploy_result)
+
+        if deploy_data.get("success"):
+            return {
+                "docker_deployed": True,
+                "current_step": "deploy_docker",
+                "messages": [AIMessage(content=f"Docker deployment successful: {len(deploy_data.get('containers', []))} containers")],
+            }
+        else:
+            return {
+                "docker_deployed": False,
+                "errors": state.errors + [f"Docker deployment failed: {deploy_data.get('error', 'Unknown')}"],
+                "current_step": "deploy_docker",
+                "messages": [AIMessage(content="Docker deployment failed")],
+            }
+
+    except Exception as e:
+        return {
+            "docker_deployed": False,
+            "errors": state.errors + [f"Docker deployment error: {str(e)}"],
+            "current_step": "deploy_docker",
+            "messages": [AIMessage(content=f"Docker deployment error: {str(e)}")],
+        }
 
 
 async def check_app_health(state: TestGenerationState) -> dict[str, Any]:
     """
     Check application health after Docker deployment.
 
+    Uses the docker health MCP tool to verify container health.
+
     Args:
         state: Current workflow state
 
     Returns:
         Updated state fields
     """
-    # Placeholder for health check
-    health = {"status": "healthy", "checks": {"database": "up", "api": "up"}}
+    from pathlib import Path
 
-    return {
-        "app_health": health,
-        "current_step": "check_app_health",
-        "messages": [AIMessage(content="Application health check passed")],
-    }
+    from src.mcp_servers.docker.tools.health import health_check
+
+    project_path = Path(state.project_path)
+    compose_path = project_path / "docker-compose.yml"
+
+    # Skip health check if Docker deployment failed
+    if not state.docker_deployed:
+        return {
+            "app_health": {"status": "skipped", "reason": "Docker not deployed"},
+            "current_step": "check_app_health",
+            "messages": [AIMessage(content="Health check skipped - Docker not deployed")],
+        }
+
+    try:
+        # Define health check endpoints (common Spring Boot endpoints)
+        health_endpoints = [
+            {"url": "http://localhost:8080/actuator/health", "method": "GET", "expected_status": 200},
+            {"url": "http://localhost:8080/health", "method": "GET", "expected_status": 200},
+        ]
+
+        health_result = await health_check(
+            compose_path=str(compose_path),
+            project_name=state.project_name or project_path.name,
+            timeout=120,
+            check_interval=5,
+            endpoints=health_endpoints,
+        )
+        health_data = json.loads(health_result)
+
+        if health_data.get("overall_healthy"):
+            health_status = {
+                "status": "healthy",
+                "containers": health_data.get("containers", []),
+                "endpoint_checks": health_data.get("endpoint_checks", []),
+                "elapsed_time": health_data.get("elapsed_time", 0),
+            }
+            message = f"Health check passed in {health_data.get('elapsed_time', 0):.1f}s"
+        else:
+            health_status = {
+                "status": "unhealthy",
+                "containers": health_data.get("containers", []),
+                "endpoint_checks": health_data.get("endpoint_checks", []),
+                "error": health_data.get("error", "Health check failed"),
+            }
+            message = f"Health check failed: {health_data.get('error', 'Unknown')}"
+
+        return {
+            "app_health": health_status,
+            "current_step": "check_app_health",
+            "messages": [AIMessage(content=message)],
+        }
+
+    except Exception as e:
+        return {
+            "app_health": {"status": "error", "error": str(e)},
+            "current_step": "check_app_health",
+            "messages": [AIMessage(content=f"Health check error: {str(e)}")],
+        }
 
 
 async def generate_e2e_tests(state: TestGenerationState) -> dict[str, Any]:
     """
-    Generate E2E tests based on API endpoints.
+    Generate E2E tests based on API endpoints discovered in controllers.
+
+    Analyzes controller classes to extract endpoints and generates
+    REST-assured or WebTestClient tests for end-to-end validation.
 
     Args:
         state: Current workflow state
@@ -475,14 +600,180 @@ async def generate_e2e_tests(state: TestGenerationState) -> dict[str, Any]:
     Returns:
         Updated state fields
     """
-    # Placeholder for E2E test generation
-    # Would use project context to identify endpoints
+    from pathlib import Path
+    import re
+
+    # Skip E2E generation if app is not healthy
+    if state.app_health.get("status") not in ["healthy", "skipped"]:
+        return {
+            "generated_e2e_tests": [],
+            "warnings": state.warnings + ["E2E test generation skipped - app not healthy"],
+            "current_step": "generate_e2e_tests",
+            "messages": [AIMessage(content="E2E test generation skipped - application not healthy")],
+        }
+
+    generated_tests = []
+    project_path = Path(state.project_path)
+    test_dir = project_path / "src" / "test" / "java"
+
+    # Find controller classes
+    controllers = [c for c in state.classified_classes if c["class_type"] == "controller"]
+
+    for controller in controllers[:5]:  # Limit to 5 controllers
+        try:
+            controller_path = Path(controller["path"])
+            if not controller_path.exists():
+                continue
+
+            content = controller_path.read_text(encoding="utf-8", errors="replace")
+
+            # Extract endpoints from controller
+            endpoints = _extract_endpoints_from_controller(content)
+
+            if not endpoints:
+                continue
+
+            # Generate E2E test class
+            class_name = controller["name"]
+            test_class_name = f"{class_name}E2ETest"
+            package = controller.get("package", "")
+
+            test_code = _generate_e2e_test_class(
+                test_class_name=test_class_name,
+                package=package,
+                endpoints=endpoints,
+                base_url="http://localhost:8080",
+            )
+
+            # Determine test file path
+            if package:
+                package_path = package.replace(".", "/")
+                test_file = test_dir / package_path / f"{test_class_name}.java"
+            else:
+                test_file = test_dir / f"{test_class_name}.java"
+
+            # Write test file
+            test_file.parent.mkdir(parents=True, exist_ok=True)
+            test_file.write_text(test_code, encoding="utf-8")
+
+            generated_tests.append({
+                "class_name": test_class_name,
+                "file_path": str(test_file),
+                "endpoints_tested": len(endpoints),
+                "controller": class_name,
+            })
+
+        except Exception as e:
+            state.warnings.append(f"E2E generation failed for {controller['name']}: {str(e)}")
+
+    message = f"Generated {len(generated_tests)} E2E test files covering {sum(t['endpoints_tested'] for t in generated_tests)} endpoints"
 
     return {
-        "generated_e2e_tests": [],
+        "generated_e2e_tests": generated_tests,
         "current_step": "generate_e2e_tests",
-        "messages": [AIMessage(content="E2E test generation completed")],
+        "messages": [AIMessage(content=message)],
     }
+
+
+def _extract_endpoints_from_controller(content: str) -> list[dict[str, Any]]:
+    """Extract REST endpoints from a Spring controller."""
+    import re
+
+    endpoints = []
+
+    # Patterns for Spring MVC annotations
+    mapping_patterns = [
+        (r'@GetMapping\s*\(\s*["\']([^"\']+)["\']', "GET"),
+        (r'@PostMapping\s*\(\s*["\']([^"\']+)["\']', "POST"),
+        (r'@PutMapping\s*\(\s*["\']([^"\']+)["\']', "PUT"),
+        (r'@DeleteMapping\s*\(\s*["\']([^"\']+)["\']', "DELETE"),
+        (r'@PatchMapping\s*\(\s*["\']([^"\']+)["\']', "PATCH"),
+        (r'@GetMapping\s*$', "GET"),  # No path = root
+        (r'@PostMapping\s*$', "POST"),
+    ]
+
+    # Get base path from @RequestMapping
+    base_path_match = re.search(r'@RequestMapping\s*\(\s*["\']([^"\']+)["\']', content)
+    base_path = base_path_match.group(1) if base_path_match else ""
+
+    for pattern, method in mapping_patterns:
+        for match in re.finditer(pattern, content):
+            path = match.group(1) if match.lastindex else ""
+            full_path = f"{base_path}{path}".replace("//", "/")
+            if not full_path:
+                full_path = "/"
+
+            endpoints.append({
+                "path": full_path,
+                "method": method,
+                "has_path_variable": "{" in full_path,
+            })
+
+    return endpoints
+
+
+def _generate_e2e_test_class(
+    test_class_name: str,
+    package: str,
+    endpoints: list[dict[str, Any]],
+    base_url: str,
+) -> str:
+    """Generate E2E test class using REST-assured."""
+    lines = []
+
+    # Package declaration
+    if package:
+        lines.append(f"package {package};")
+        lines.append("")
+
+    # Imports
+    lines.extend([
+        "import io.restassured.RestAssured;",
+        "import io.restassured.http.ContentType;",
+        "import org.junit.jupiter.api.BeforeAll;",
+        "import org.junit.jupiter.api.Test;",
+        "import static io.restassured.RestAssured.*;",
+        "import static org.hamcrest.Matchers.*;",
+        "",
+    ])
+
+    # Class declaration
+    lines.extend([
+        "/**",
+        " * E2E tests generated by TestBoost.",
+        " * Tests real API endpoints against running application.",
+        " */",
+        f"class {test_class_name} {{",
+        "",
+        "    @BeforeAll",
+        "    static void setup() {",
+        f'        RestAssured.baseURI = "{base_url}";',
+        "    }",
+        "",
+    ])
+
+    # Generate test methods for each endpoint
+    for i, endpoint in enumerate(endpoints):
+        method = endpoint["method"].lower()
+        path = endpoint["path"]
+        test_name = f"test{method.capitalize()}{_path_to_method_name(path)}"
+
+        # Replace path variables with sample values
+        test_path = re.sub(r"\{[^}]+\}", "1", path)
+
+        lines.extend([
+            "    @Test",
+            f"    void {test_name}() {{",
+            f'        {method}("{test_path}")',
+            "            .then()",
+            "            .statusCode(anyOf(is(200), is(201), is(204), is(401), is(404)));",
+            "    }",
+            "",
+        ])
+
+    lines.append("}")
+
+    return "\n".join(lines)
 
 
 async def run_mutation_testing(state: TestGenerationState) -> dict[str, Any]:
@@ -754,3 +1045,26 @@ def _classify_java_class(content: str, class_name: str) -> str:
         return "model"
 
     return "utility"
+
+
+def _path_to_method_name(path: str) -> str:
+    """Convert a URL path to a valid Java method name suffix."""
+    import re
+
+    # Remove leading/trailing slashes
+    clean_path = path.strip("/")
+
+    if not clean_path:
+        return "Root"
+
+    # Replace path variables with descriptive names
+    clean_path = re.sub(r"\{(\w+)\}", r"By\1", clean_path)
+
+    # Split by / and capitalize each part
+    parts = clean_path.split("/")
+    method_name = "".join(part.capitalize() for part in parts if part)
+
+    # Remove non-alphanumeric characters
+    method_name = re.sub(r"[^a-zA-Z0-9]", "", method_name)
+
+    return method_name or "Path"

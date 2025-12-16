@@ -1,7 +1,11 @@
 """Structured logging configuration using structlog."""
 
 import logging
+import os
 import sys
+from datetime import datetime
+from logging.handlers import RotatingFileHandler
+from pathlib import Path
 from typing import Any
 
 import structlog
@@ -10,6 +14,9 @@ from structlog.types import Processor
 # Configure once flag
 _configured = False
 
+# Log directory
+LOG_DIR = Path(__file__).parent.parent.parent / "logs"
+
 
 def _configure_structlog() -> None:
     """Configure structlog for the application."""
@@ -17,12 +24,38 @@ def _configure_structlog() -> None:
     if _configured:
         return
 
-    # Configure standard library logging
-    logging.basicConfig(
-        format="%(message)s",
-        stream=sys.stderr,
-        level=logging.DEBUG,
+    # Create logs directory if it doesn't exist
+    LOG_DIR.mkdir(parents=True, exist_ok=True)
+
+    # Get log level from environment
+    log_level_str = os.environ.get("LOG_LEVEL", "INFO").upper()
+    log_level = getattr(logging, log_level_str, logging.INFO)
+
+    # Configure root logger with handlers
+    root_logger = logging.getLogger()
+    root_logger.setLevel(log_level)
+
+    # Remove existing handlers
+    for handler in root_logger.handlers[:]:
+        root_logger.removeHandler(handler)
+
+    # Console handler (stderr)
+    console_handler = logging.StreamHandler(sys.stderr)
+    console_handler.setLevel(log_level)
+    console_handler.setFormatter(logging.Formatter("%(message)s"))
+    root_logger.addHandler(console_handler)
+
+    # File handler with rotation (JSON format for log analysis)
+    log_file = LOG_DIR / f"testboost_{datetime.now().strftime('%Y%m%d')}.log"
+    file_handler = RotatingFileHandler(
+        log_file,
+        maxBytes=10 * 1024 * 1024,  # 10 MB
+        backupCount=5,
+        encoding="utf-8",
     )
+    file_handler.setLevel(log_level)
+    file_handler.setFormatter(logging.Formatter("%(message)s"))
+    root_logger.addHandler(file_handler)
 
     # Determine if we're in development or production
     # In development, use colored console output

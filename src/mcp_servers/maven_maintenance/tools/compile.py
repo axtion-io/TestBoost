@@ -11,6 +11,8 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
+from src.mcp_servers.maven_maintenance.utils import get_mvn_command
+
 
 async def compile_tests(
     project_path: str, profiles: list[str] | None = None, skip_main: bool = False
@@ -33,7 +35,8 @@ async def compile_tests(
         return json.dumps({"success": False, "error": f"pom.xml not found at {project_path}"})
 
     # Build Maven command
-    cmd = ["mvn"]
+    mvn = get_mvn_command()
+    cmd = [mvn]
 
     # Add profiles if specified
     if profiles:

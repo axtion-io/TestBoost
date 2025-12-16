@@ -12,6 +12,8 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Any
 
+from src.mcp_servers.maven_maintenance.utils import get_mvn_command
+
 
 async def run_mutation_testing(
     project_path: str,
@@ -45,8 +47,9 @@ async def run_mutation_testing(
         return json.dumps({"success": False, "error": "pom.xml not found - PIT requires Maven"})
 
     # Build PIT command
+    mvn = get_mvn_command()
     cmd = [
-        "mvn",
+        mvn,
         "org.pitest:pitest-maven:mutationCoverage",
         f"-DtimeoutFactor={timeout_factor}",
         "-DoutputFormats=XML,HTML",

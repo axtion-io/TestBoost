@@ -3,7 +3,7 @@
 from functools import lru_cache
 from typing import Literal
 
-from pydantic import Field
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -103,6 +103,29 @@ class Settings(BaseSettings):
         default=None,
         description="API key for authentication",
     )
+
+    @model_validator(mode="after")
+    def parse_model_provider(self) -> "Settings":
+        """
+        Parse provider from model string if format is 'provider/model-name'.
+
+        Examples:
+            MODEL=google-genai/gemini-2.0-flash -> llm_provider=google-genai, model=gemini-2.0-flash
+            MODEL=anthropic/claude-sonnet-4-5 -> llm_provider=anthropic, model=claude-sonnet-4-5
+        """
+        if "/" in self.model:
+            provider_part, model_part = self.model.split("/", 1)
+            provider_mapping = {
+                "google-genai": "google-genai",
+                "google": "google-genai",
+                "anthropic": "anthropic",
+                "openai": "openai",
+            }
+            if provider_part in provider_mapping:
+                # Override with parsed values (use object.__setattr__ for frozen model)
+                object.__setattr__(self, "llm_provider", provider_mapping[provider_part])
+                object.__setattr__(self, "model", model_part)
+        return self
 
     def get_api_key_for_provider(self, provider: str | None = None) -> str | None:
         """

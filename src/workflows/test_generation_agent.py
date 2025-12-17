@@ -203,6 +203,11 @@ Include the complete test code for each class in separate ```java blocks."""
         else:
             validated_tests = []
 
+        # Write validated tests to disk
+        written_tests = _write_tests_to_disk(project_path, validated_tests)
+        for test in validated_tests:
+            test["written_to_disk"] = test.get("path") in written_tests
+
         # Calculate metrics
         duration = time.time() - start_time
         metrics = {
@@ -629,6 +634,69 @@ def _extract_code_from_response(content: str) -> str | None:
             code = code_blocks[1].split("```")[0].strip()
             return code
     return None
+
+
+def _write_tests_to_disk(project_path: str, validated_tests: list[dict[str, Any]]) -> list[str]:
+    """
+    Write validated tests to the project's src/test/java directory.
+
+    Args:
+        project_path: Path to the Java project root
+        validated_tests: List of validated test files with content
+
+    Returns:
+        List of file paths that were successfully written
+    """
+    written_files = []
+    project_dir = Path(project_path)
+
+    for test in validated_tests:
+        # Only write tests that compiled successfully
+        if not test.get("compiles", False):
+            logger.warning(
+                "skip_writing_failed_test",
+                path=test.get("path"),
+                reason="compilation_failed",
+            )
+            continue
+
+        content = test.get("content")
+        relative_path = test.get("path")
+
+        if not content or not relative_path:
+            continue
+
+        # Build full path
+        full_path = project_dir / relative_path
+
+        try:
+            # Create parent directories if needed
+            full_path.parent.mkdir(parents=True, exist_ok=True)
+
+            # Write the test file
+            full_path.write_text(content, encoding="utf-8")
+
+            logger.info(
+                "test_written_to_disk",
+                path=str(full_path),
+                size_bytes=len(content),
+            )
+            written_files.append(relative_path)
+
+        except Exception as e:
+            logger.error(
+                "test_write_failed",
+                path=str(full_path),
+                error=str(e),
+            )
+
+    logger.info(
+        "tests_write_complete",
+        total=len(validated_tests),
+        written=len(written_files),
+    )
+
+    return written_files
 
 
 async def _store_agent_reasoning(

@@ -12,7 +12,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from deepagents import create_deep_agent
+from langgraph.prebuilt import create_react_agent
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
 
 from src.agents.loader import AgentLoader
@@ -297,7 +297,7 @@ async def run_maven_maintenance_with_agent(
         )
 
         # T039: Bind tools to LLM
-        llm_with_tools = llm.bind_tools(tools, tool_choice="any")
+        llm_with_tools = llm.bind_tools(tools)
 
         logger.info(
             "agent_llm_ready",
@@ -307,15 +307,12 @@ async def run_maven_maintenance_with_agent(
             tool_details=[{"name": t.name, "description": t.description[:100] if hasattr(t, 'description') and t.description else "no_desc"} for t in tools[:3]]  # First 3 tools
         )
 
-        # T035: Create DeepAgents agent
+        # T035: Create LangGraph ReAct agent (replacing DeepAgents for better tool handling)
         # Note: PostgreSQL checkpointer (T032) will be added when pause/resume is needed
-        # IMPORTANT: Pass backend=None to disable filesystem middleware that rejects Windows paths
-        # We don't need DeepAgents' filesystem tools since we have our own MCP tools
-        agent = create_deep_agent(
+        agent = create_react_agent(
             model=llm_with_tools,
-            system_prompt=system_prompt,
+            prompt=system_prompt,
             tools=tools,
-            backend=None,  # Disable filesystem middleware for Windows path compatibility
             # checkpointer will be added for pause/resume support
         )
 
@@ -418,4 +415,11 @@ __all__ = [
     "ToolCallError",
     "AgentTimeoutError",
 ]
+
+
+
+
+
+
+
 

@@ -17,8 +17,8 @@ from pathlib import Path
 from typing import Any
 from uuid import UUID
 
-from deepagents import create_deep_agent
 from langchain_core.messages import AIMessage, HumanMessage
+from langgraph.prebuilt import create_react_agent
 from tenacity import (
     retry,
     retry_if_exception_type,
@@ -120,20 +120,20 @@ async def run_test_generation_with_agent(
         timeout=config.error_handling.timeout_seconds,
     )
 
-    # Bind tools to LLM with tool_choice="any" to force tool usage
-    # This ensures the agent calls tools instead of generating placeholder responses
-    llm_with_tools = llm.bind_tools(tools, tool_choice="any")
-    logger.info("tools_bound_to_llm", tool_count=len(tools), tool_choice="any")
+    # Bind tools to LLM - create_react_agent handles the ReAct loop automatically
+    # Note: Don't use tool_choice="any" as it prevents the agent from stopping
+    llm_with_tools = llm.bind_tools(tools)
+    logger.info("tools_bound_to_llm", tool_count=len(tools))
 
-    # Create DeepAgents agent (T055)
-    agent = create_deep_agent(
+    # Create LangGraph ReAct agent (replacing DeepAgents for better tool handling)
+    agent = create_react_agent(
         model=llm_with_tools,
-        system_prompt=prompt,
         tools=tools,
+        prompt=prompt,
         # Note: PostgreSQL checkpointer would be shared here if implementing pause/resume
         # checkpointer=postgres_checkpointer
     )
-    logger.info("deep_agent_created", agent_type="test_generation")
+    logger.info("react_agent_created", agent_type="test_generation")
 
     # Prepare agent input
     agent_input = {

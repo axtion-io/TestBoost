@@ -120,14 +120,13 @@ async def run_test_generation_with_agent(
         timeout=config.error_handling.timeout_seconds,
     )
 
-    # Bind tools to LLM - create_react_agent handles the ReAct loop automatically
-    # Note: Don't use tool_choice="any" as it prevents the agent from stopping
-    llm_with_tools = llm.bind_tools(tools)
-    logger.info("tools_bound_to_llm", tool_count=len(tools))
+    # Create LangGraph ReAct agent
+    # Note: create_react_agent handles tool binding internally - don't call bind_tools separately
+    # as it can cause infinite loops (agent always calls tools without stopping)
+    logger.info("creating_react_agent", tool_count=len(tools))
 
-    # Create LangGraph ReAct agent (replacing DeepAgents for better tool handling)
     agent = create_react_agent(
-        model=llm_with_tools,
+        model=llm,
         tools=tools,
         prompt=prompt,
         # Note: PostgreSQL checkpointer would be shared here if implementing pause/resume
@@ -292,7 +291,9 @@ async def _invoke_agent_with_retry(
     """
     try:
         logger.debug("agent_invoke_start", session_id=str(session_id))
-        response = await agent.ainvoke(input_data)
+        # Set higher recursion limit to allow agent to complete complex tasks
+        config = {"recursion_limit": 100}
+        response = await agent.ainvoke(input_data, config)
 
         # Handle both dict (LangGraph state) and AIMessage responses
         if isinstance(response, dict):

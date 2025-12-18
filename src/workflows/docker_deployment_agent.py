@@ -120,17 +120,15 @@ async def run_docker_deployment_with_agent(
             max_tokens=config.llm.max_tokens,
         )
 
-        # Bind tools to LLM - create_react_agent handles the ReAct loop automatically
-        llm_with_tools = llm.bind_tools(tools)
-        logger.info("tools_bound_to_llm", tool_count=len(tools))
-
-        # Create LangGraph ReAct agent (replacing DeepAgents for better tool handling)
+        # Create LangGraph ReAct agent
+        # Note: Don't call bind_tools - create_react_agent handles tool binding internally
         checkpointer = get_checkpointer()
+        logger.info("creating_react_agent", tool_count=len(tools))
 
         agent = create_react_agent(
-            model=llm_with_tools,
-            prompt=prompt_template,
+            model=llm,
             tools=tools,
+            prompt=prompt_template,
             checkpointer=checkpointer,
         )
 
@@ -206,9 +204,10 @@ Please proceed with the deployment workflow.
 
         logger.info("agent_invoking", session_id=session_id)
 
+        # Set higher recursion limit to allow agent to complete complex tasks
         response = await agent.ainvoke(
             {"messages": [HumanMessage(content=user_message)]},
-            config=config_dict,
+            config={**config_dict, "recursion_limit": 100},
         )
 
         logger.info(

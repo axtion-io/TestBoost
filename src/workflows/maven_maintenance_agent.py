@@ -90,7 +90,8 @@ async def _invoke_agent_with_retry(
             start_time = time.time()
 
             # Invoke agent
-            response = await agent.ainvoke({"messages": messages})
+            # Set higher recursion limit to allow agent to complete complex tasks
+            response = await agent.ainvoke({"messages": messages}, {"recursion_limit": 100})
 
             duration_ms = int((time.time() - start_time) * 1000)
             logger.info("agent_invoke_success", attempt=attempt, duration_ms=duration_ms)
@@ -296,23 +297,22 @@ async def run_maven_maintenance_with_agent(
             max_tokens=config.llm.max_tokens
         )
 
-        # T039: Bind tools to LLM
-        llm_with_tools = llm.bind_tools(tools)
-
+        # Log tools configuration
         logger.info(
             "agent_llm_ready",
             model=config.llm.model,
-            tools_bound=len(tools),
+            tools_count=len(tools),
             tool_names=[t.name for t in tools],
             tool_details=[{"name": t.name, "description": t.description[:100] if hasattr(t, 'description') and t.description else "no_desc"} for t in tools[:3]]  # First 3 tools
         )
 
-        # T035: Create LangGraph ReAct agent (replacing DeepAgents for better tool handling)
-        # Note: PostgreSQL checkpointer (T032) will be added when pause/resume is needed
+        # T035: Create LangGraph ReAct agent
+        # Note: Don't call bind_tools - create_react_agent handles tool binding internally
+        # PostgreSQL checkpointer (T032) will be added when pause/resume is needed
         agent = create_react_agent(
-            model=llm_with_tools,
-            prompt=system_prompt,
+            model=llm,
             tools=tools,
+            prompt=system_prompt,
             # checkpointer will be added for pause/resume support
         )
 
@@ -343,6 +343,7 @@ Remember: You have access to these tools:
         # T040: Invoke agent with retry logic (A2, A4, A5 edge cases)
         # Note: DeepAgents executes tools via the graph workflow, so we don't verify
         # expected_tools in the AI message. MCP tool logging confirms execution.
+        # Note: _invoke_agent_with_retry should include recursion_limit in config
         response = await _invoke_agent_with_retry(
             agent=agent,
             input_data=[HumanMessage(content=user_input)],

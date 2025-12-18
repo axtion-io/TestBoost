@@ -120,11 +120,15 @@ async def run_docker_deployment_with_agent(
             max_tokens=config.llm.max_tokens,
         )
 
+        # Bind tools to LLM with tool_choice="any" to force tool usage
+        llm_with_tools = llm.bind_tools(tools, tool_choice="any")
+        logger.info("tools_bound_to_llm", tool_count=len(tools), tool_choice="any")
+
         # Create DeepAgents agent with tools and checkpointer
         checkpointer = get_checkpointer()
 
         agent = create_deep_agent(
-            model=llm,
+            model=llm_with_tools,
             system_prompt=prompt_template,
             tools=tools,
             checkpointer=checkpointer,

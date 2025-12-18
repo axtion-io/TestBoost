@@ -297,7 +297,7 @@ async def run_maven_maintenance_with_agent(
         )
 
         # T039: Bind tools to LLM
-        llm_with_tools = llm.bind_tools(tools)
+        llm_with_tools = llm.bind_tools(tools, tool_choice="any")
 
         logger.info(
             "agent_llm_ready",
@@ -418,3 +418,4 @@ __all__ = [
     "ToolCallError",
     "AgentTimeoutError",
 ]
+

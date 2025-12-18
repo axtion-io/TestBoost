@@ -120,9 +120,14 @@ async def run_test_generation_with_agent(
         timeout=config.error_handling.timeout_seconds,
     )
 
+    # Bind tools to LLM with tool_choice="any" to force tool usage
+    # This ensures the agent calls tools instead of generating placeholder responses
+    llm_with_tools = llm.bind_tools(tools, tool_choice="any")
+    logger.info("tools_bound_to_llm", tool_count=len(tools), tool_choice="any")
+
     # Create DeepAgents agent (T055)
     agent = create_deep_agent(
-        model=llm,
+        model=llm_with_tools,
         system_prompt=prompt,
         tools=tools,
         # Note: PostgreSQL checkpointer would be shared here if implementing pause/resume

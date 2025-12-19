@@ -238,6 +238,58 @@ def show_recommendations(
     asyncio.run(_show_recommendations(project_dir, target_score, strategy))
 
 
+@app.command("impact")
+def analyze_impact(
+    project_path: str = typer.Argument(
+        ".",
+        help="Path to the Java project",
+    ),
+    output: str = typer.Option(
+        None,
+        "--output",
+        "-o",
+        help="Save report to file (default: stdout)",
+    ),
+    verbose: bool = typer.Option(
+        False,
+        "--verbose",
+        "-v",
+        help="Show progress and debug info",
+    ),
+    chunk_size: int = typer.Option(
+        500,
+        "--chunk-size",
+        help="Max lines per chunk for large diffs",
+    ),
+) -> None:
+    """
+    Analyze impact of uncommitted changes.
+
+    Detects uncommitted changes in your working directory,
+    classifies each change by category and risk level,
+    and generates an impact report with test requirements.
+
+    Exit codes:
+      0 - Success, all impacts covered or no business-critical uncovered
+      1 - Business-critical impacts have no tests (for CI enforcement)
+    """
+    project_dir = Path(project_path).resolve()
+    if not project_dir.exists():
+        console.print(f"[red]Error:[/red] Project path not found: {project_path}")
+        raise typer.Exit(1)
+
+    # Check for git repo
+    if not (project_dir / ".git").exists():
+        console.print(f"[red]Error:[/red] Not a git repository: {project_path}")
+        raise typer.Exit(1)
+
+    if verbose:
+        console.print("\n[bold blue]TestBoost[/bold blue] - Impact Analysis")
+        console.print(f"Project: {project_dir}\n")
+
+    asyncio.run(_run_impact_analysis(project_dir, output, verbose, chunk_size))
+
+
 def _run_analysis(project_dir: Path, verbose: bool) -> None:
     """Run project analysis."""
     import json
@@ -522,6 +574,96 @@ async def _show_recommendations(project_dir: Path, target_score: float, strategy
     else:
         console.print("[yellow]No recommendations available.[/yellow]")
         console.print("Run mutation testing first: testboost tests mutation")
+
+
+async def _run_impact_analysis(
+    project_dir: Path,
+    output: str | None,
+    verbose: bool,
+    chunk_size: int,
+) -> None:
+    """Run impact analysis workflow (T029-T032)."""
+    import json
+
+    from src.workflows.impact_analysis import run_impact_analysis
+
+    def progress_callback(current: int, total: int, message: str) -> None:
+        if verbose:
+            console.print(f"[dim][{current}/{total}] {message}[/dim]")
+
+    try:
+        if verbose:
+            with create_progress(console) as progress:
+                task = progress.add_task("Analyzing uncommitted changes...", total=None)
+                report = await run_impact_analysis(
+                    str(project_dir),
+                    progress_callback=progress_callback if verbose else None,
+                )
+                progress.remove_task(task)
+        else:
+            report = await run_impact_analysis(str(project_dir))
+
+        # Convert to JSON
+        report_dict = report.to_dict()
+        json_output = json.dumps(report_dict, indent=2)
+
+        # Output to file or stdout (T030)
+        if output:
+            output_path = Path(output)
+            output_path.write_text(json_output, encoding="utf-8")
+            if verbose:
+                console.print(f"[green]Report saved to {output}[/green]")
+        else:
+            # Output to stdout (for piping)
+            print(json_output)
+
+        # Display summary if verbose
+        if verbose:
+            console.print("\n[bold green]Impact Analysis Complete[/bold green]\n")
+
+            summary = report.summary
+            table = Table(title="Impact Summary")
+            table.add_column("Metric", style="cyan")
+            table.add_column("Value", style="green")
+
+            table.add_row("Total Impacts", str(summary["total_impacts"]))
+            table.add_row("Business Critical", str(summary["business_critical"]))
+            table.add_row("Non-Critical", str(summary["non_critical"]))
+            table.add_row("Tests to Generate", str(summary["tests_to_generate"]))
+            table.add_row("Processing Time", f"{report.processing_time_seconds:.2f}s")
+
+            console.print(table)
+
+            # Show impacts
+            if report.impacts:
+                console.print("\n[bold]Impacts Found:[/bold]")
+                critical_mark = "[red]CRIT[/red]" if is_windows() else "[red]!![/red]"
+                normal_mark = "[dim]--[/dim]"
+
+                for impact in report.impacts:
+                    risk_indicator = (
+                        critical_mark
+                        if impact.risk_level.value == "business_critical"
+                        else normal_mark
+                    )
+                    console.print(
+                        f"  {risk_indicator} {impact.id}: {impact.change_summary}"
+                    )
+
+        # Exit code logic (T032)
+        if report.has_uncovered_critical_impacts():
+            if verbose:
+                console.print(
+                    "\n[yellow]Warning: Business-critical impacts detected[/yellow]"
+                )
+            raise typer.Exit(1)
+
+    except typer.Exit:
+        raise
+    except Exception as e:
+        console.print(f"[red]Error:[/red] {str(e)}")
+        logger.exception("impact_analysis_failed", error=str(e))
+        raise typer.Exit(1) from None
 
 
 if __name__ == "__main__":

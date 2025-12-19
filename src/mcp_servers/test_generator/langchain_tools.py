@@ -78,7 +78,8 @@ async def test_gen_generate_unit_tests(
     source_file: str,
     class_type: str | None = None,
     conventions: dict[str, Any] | None = None,
-    coverage_target: float = 80.0
+    coverage_target: float = 80.0,
+    test_requirements: list[dict[str, Any]] | None = None
 ) -> str:
     """
     Generate unit tests adapted to project conventions and class type.
@@ -88,6 +89,7 @@ async def test_gen_generate_unit_tests(
     - Adapt test style to class type (Controller, Service, Repository, etc.)
     - Target specific code coverage percentage
     - Use appropriate mocking and assertion strategies
+    - Generate tests based on impact analysis requirements (when provided)
 
     Args:
         project_path: Path to the Java project root directory
@@ -95,6 +97,11 @@ async def test_gen_generate_unit_tests(
         class_type: Classification of the class (controller, service, repository, utility, model)
         conventions: Test conventions to follow (from detect_test_conventions)
         coverage_target: Target code coverage percentage (default: 80.0)
+        test_requirements: List of test requirements from impact analysis, each with:
+            - suggested_test_name: Name for the test method
+            - description: What the test should verify
+            - scenario_type: nominal, edge_case, regression, or invariant
+            - target_method: Method to test (optional)
 
     Returns:
         Generated test code as a string
@@ -104,7 +111,8 @@ async def test_gen_generate_unit_tests(
         source_file=source_file,
         class_type=class_type,
         conventions=conventions,
-        coverage_target=coverage_target
+        coverage_target=coverage_target,
+        test_requirements=test_requirements
     )
 
 

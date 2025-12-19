@@ -17,6 +17,7 @@ async def generate_adaptive_tests(
     class_type: str | None = None,
     conventions: dict[str, Any] | None = None,
     coverage_target: float = 80,
+    test_requirements: list[dict[str, Any]] | None = None,
 ) -> str:
     """
     Generate unit tests adapted to project conventions.
@@ -27,6 +28,7 @@ async def generate_adaptive_tests(
         class_type: Classification of the class (controller, service, etc.)
         conventions: Test conventions to follow
         coverage_target: Target code coverage percentage
+        test_requirements: Optional list of specific test requirements from impact analysis
 
     Returns:
         JSON string with generated test code and metadata
@@ -66,9 +68,10 @@ async def generate_adaptive_tests(
         "annotations": class_info["annotations"],
         "conventions": conventions or {},
         "coverage_target": coverage_target,
+        "test_requirements": test_requirements or [],
     }
 
-    # Generate test code based on class type
+    # Generate test code based on class type and requirements
     test_code = _generate_test_code(context)
 
     results = {
@@ -197,13 +200,14 @@ def _get_test_file_path(project_dir: Path, source_path: Path) -> Path:
 
 
 def _generate_test_code(context: dict[str, Any]) -> str:
-    """Generate test code based on context."""
+    """Generate test code based on context and test requirements."""
     class_name = context["class_name"]
     package = context["package"]
     class_type = context["class_type"]
     methods = context["methods"]
     dependencies = context["dependencies"]
     conventions = context.get("conventions", {})
+    test_requirements = context.get("test_requirements", [])
 
     # Determine test style from conventions
     uses_mockito = conventions.get("mocking", {}).get("uses_mockito", True)
@@ -267,7 +271,17 @@ def _generate_test_code(context: dict[str, Any]) -> str:
 
     class_body.extend(["    }", ""])
 
-    # Generate test methods
+    # Generate tests from impact analysis requirements FIRST (priority)
+    if test_requirements:
+        class_body.append("    // ========== Tests from Impact Analysis ==========")
+        class_body.append("")
+        for req in test_requirements:
+            req_tests = _generate_requirement_test(req, class_name, uses_assertj, methods)
+            class_body.extend(req_tests)
+
+    # Generate standard test methods for remaining methods
+    class_body.append("    // ========== Standard Coverage Tests ==========")
+    class_body.append("")
     for method in methods:
         test_methods = _generate_method_tests(method, class_name, class_type, uses_assertj)
         class_body.extend(test_methods)
@@ -275,6 +289,167 @@ def _generate_test_code(context: dict[str, Any]) -> str:
     class_body.append("}")
 
     return "\n".join(imports + class_body)
+
+
+def _generate_requirement_test(
+    req: dict[str, Any],
+    class_name: str,
+    uses_assertj: bool,
+    methods: list[dict[str, Any]],
+) -> list[str]:
+    """Generate a test based on an impact analysis requirement."""
+    tests = []
+    instance_name = _to_camel_case(class_name)
+
+    # Extract requirement info
+    test_name = req.get("suggested_test_name", f"test{req.get('id', 'Requirement')}")
+    description = req.get("description", "Verify requirement")
+    scenario_type = req.get("scenario_type", "nominal")
+    target_method = req.get("target_method")
+
+    # Find matching method if target_method is specified
+    matched_method = None
+    if target_method:
+        for m in methods:
+            if m["name"] == target_method:
+                matched_method = m
+                break
+
+    # Generate test based on scenario type
+    tests.extend([
+        "    @Test",
+        f'    @DisplayName("{description[:80]}")',
+        f"    void {test_name}() {{",
+    ])
+
+    if scenario_type == "edge_case":
+        # Edge case: test validation/rejection
+        tests.append("        // Arrange - invalid input scenario")
+        if matched_method and matched_method.get("parsed_params"):
+            # Generate invalid values
+            params = matched_method["parsed_params"]
+            invalid_values = []
+            for p in params:
+                if p["type"].lower() in ("string", "java.lang.string"):
+                    if "email" in p["name"].lower():
+                        invalid_values.append('"invalid-email"')  # Invalid email format
+                    else:
+                        invalid_values.append('""')  # Empty string
+                elif p["type"].lower() in ("int", "integer", "long"):
+                    invalid_values.append("-1")  # Negative value
+                else:
+                    invalid_values.append("null")
+
+            method_call = f"{target_method}({', '.join(invalid_values)})"
+            tests.extend([
+                "",
+                "        // Act & Assert - should reject invalid input",
+            ])
+            if uses_assertj:
+                tests.append(f"        assertThatThrownBy(() -> {instance_name}.{method_call})")
+                tests.append("            .isInstanceOf(IllegalArgumentException.class);")
+            else:
+                tests.append(f"        assertThrows(IllegalArgumentException.class, () -> {instance_name}.{method_call});")
+        else:
+            tests.extend([
+                "        // TODO: Configure invalid test data",
+                "",
+                "        // Act & Assert",
+                "        // TODO: Verify rejection of invalid input",
+            ])
+
+    elif scenario_type == "regression":
+        # Regression: verify bug fix
+        tests.extend([
+            "        // Arrange - scenario that previously caused bug",
+            "        // TODO: Set up the specific condition that was fixed",
+            "",
+            "        // Act",
+        ])
+        if matched_method:
+            params = matched_method.get("parsed_params", [])
+            if params:
+                param_values = [_generate_test_value(p["type"], p["name"]) for p in params]
+                method_call = f"{target_method}({', '.join(param_values)})"
+            else:
+                method_call = f"{target_method}()"
+            tests.append(f"        var result = {instance_name}.{method_call};")
+        else:
+            tests.append("        // TODO: Call the method under test")
+        tests.extend([
+            "",
+            "        // Assert - verify bug is fixed",
+            "        // TODO: Add specific assertion for the bug fix",
+        ])
+
+    elif scenario_type == "invariant":
+        # Invariant: verify business rule always holds
+        tests.extend([
+            "        // Arrange - business rule scenario",
+            "        // TODO: Set up business rule test data",
+            "",
+            "        // Act",
+        ])
+        if matched_method:
+            params = matched_method.get("parsed_params", [])
+            if params:
+                param_values = [_generate_test_value(p["type"], p["name"]) for p in params]
+                method_call = f"{target_method}({', '.join(param_values)})"
+            else:
+                method_call = f"{target_method}()"
+            tests.append(f"        var result = {instance_name}.{method_call};")
+        else:
+            tests.append("        // TODO: Call the method under test")
+        tests.extend([
+            "",
+            "        // Assert - business rule must always hold",
+            "        // TODO: Verify business invariant",
+        ])
+
+    else:  # nominal
+        # Nominal: happy path test
+        tests.append("        // Arrange")
+        if matched_method:
+            params = matched_method.get("parsed_params", [])
+            for p in params:
+                if p["type"] not in ("String", "int", "long", "double", "float", "boolean"):
+                    tests.append(f"        {p['type']} {p['name']} = {_generate_test_value(p['type'], p['name'])};")
+
+            tests.append("")
+            tests.append("        // Act")
+            if params:
+                param_values = [_generate_test_value(p["type"], p["name"]) for p in params]
+                method_call = f"{target_method}({', '.join(param_values)})"
+            else:
+                method_call = f"{target_method}()"
+
+            if matched_method.get("is_void"):
+                tests.append(f"        {instance_name}.{method_call};")
+            else:
+                tests.append(f"        var result = {instance_name}.{method_call};")
+
+            tests.append("")
+            tests.append("        // Assert")
+            if not matched_method.get("is_void"):
+                if uses_assertj:
+                    tests.append("        assertThat(result).isNotNull();")
+                else:
+                    tests.append("        assertNotNull(result);")
+            else:
+                tests.append("        // Verify expected side effects")
+        else:
+            tests.extend([
+                "        // TODO: Set up test data",
+                "",
+                "        // Act",
+                "        // TODO: Call method under test",
+                "",
+                "        // Assert",
+                "        // TODO: Verify expected outcome",
+            ])
+
+    tests.extend(["    }", ""])
+    return tests
 
 
 def _generate_method_tests(

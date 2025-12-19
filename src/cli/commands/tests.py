@@ -373,6 +373,7 @@ async def _run_test_generation(
     """Run test generation workflow with LLM agent (T063)."""
     from src.db import SessionLocal
     from src.db.repository import SessionRepository
+    from src.workflows.impact_analysis import run_impact_analysis
     from src.workflows.test_generation_agent import run_test_generation_with_agent
 
     # Show agent workflow notice
@@ -381,8 +382,28 @@ async def _run_test_generation(
 
     with create_progress(console) as progress:
 
+        # Step 1: Run impact analysis on uncommitted changes
+        test_requirements = None
+        if (project_dir / ".git").exists():
+            task = progress.add_task("Analyzing code changes for test requirements...", total=None)
+            try:
+                impact_report = await run_impact_analysis(str(project_dir))
+                test_requirements = impact_report.test_requirements
+                progress.remove_task(task)
 
+                if test_requirements:
+                    console.print(f"[green]Found {len(test_requirements)} test requirements from impact analysis[/green]")
+                    for req in test_requirements[:5]:
+                        console.print(f"  - {req.suggested_test_name}: {req.description[:60]}...")
+                    if len(test_requirements) > 5:
+                        console.print(f"  ... and {len(test_requirements) - 5} more")
+                else:
+                    console.print("[dim]No uncommitted changes - generating tests for uncovered code[/dim]")
+            except Exception as e:
+                progress.remove_task(task)
+                console.print(f"[yellow]Impact analysis skipped: {e}[/yellow]")
 
+        # Step 2: Run test generation with requirements
         task = progress.add_task("Running test generation workflow with agent...", total=None)
 
         try:
@@ -398,12 +419,13 @@ async def _run_test_generation(
                 )
                 session_id = session.id
 
-                # Run agent-based workflow (T062)
+                # Run agent-based workflow with test requirements from impact analysis
                 result = await run_test_generation_with_agent(
                     session_id=session_id,
                     project_path=str(project_dir),
                     db_session=db_session,
                     coverage_target=mutation_score,
+                    test_requirements=test_requirements,
                 )
 
                 # Update session status

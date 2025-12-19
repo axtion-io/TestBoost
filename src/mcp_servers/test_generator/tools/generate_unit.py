@@ -137,11 +137,15 @@ def _analyze_class(source_code: str) -> dict[str, Any]:
         if method_name == info["class_name"]:
             continue
 
+        # Parse parameters into structured form
+        parsed_params = _parse_parameters(params)
+
         methods.append(
             {
                 "name": method_name,
                 "return_type": return_type,
                 "parameters": params,
+                "parsed_params": parsed_params,
                 "is_void": return_type == "void",
             }
         )
@@ -280,9 +284,20 @@ def _generate_method_tests(
     method_name = method["name"]
     return_type = method["return_type"]
     is_void = method["is_void"]
+    parsed_params = method.get("parsed_params", [])
     instance_name = _to_camel_case(class_name)
 
     tests = []
+
+    # Generate method call with proper parameters
+    if parsed_params:
+        param_values = [_generate_test_value(p["type"], p["name"]) for p in parsed_params]
+        method_call = f"{method_name}({', '.join(param_values)})"
+        # Generate variable declarations for complex types
+        arrange_vars = _generate_arrange_variables(parsed_params)
+    else:
+        method_call = f"{method_name}()"
+        arrange_vars = []
 
     # Test 1: Basic success case
     test_name = f"should{_to_pascal_case(method_name)}Successfully"
@@ -295,11 +310,17 @@ def _generate_method_tests(
         ]
     )
 
+    # Add variable declarations
+    for var in arrange_vars:
+        tests.append(f"        {var}")
+    if arrange_vars:
+        tests.append("")
+
     if is_void:
         tests.extend(
             [
                 "        // Act",
-                f"        {instance_name}.{method_name}();",
+                f"        {instance_name}.{method_call};",
                 "",
                 "        // Assert",
                 "        // Verify expected behavior",
@@ -309,7 +330,7 @@ def _generate_method_tests(
         tests.extend(
             [
                 "        // Act",
-                f"        {return_type} result = {instance_name}.{method_name}();",
+                f"        {return_type} result = {instance_name}.{method_call};",
                 "",
                 "        // Assert",
             ]
@@ -321,30 +342,57 @@ def _generate_method_tests(
 
     tests.extend(["    }", ""])
 
-    # Test 2: Edge case / null handling (for non-void methods)
-    if not is_void and return_type != "void":
-        test_name = f"should{_to_pascal_case(method_name)}HandleEdgeCase"
+    # Test 2: Edge case / null handling (for methods with parameters)
+    if parsed_params:
+        test_name = f"should{_to_pascal_case(method_name)}HandleNullInput"
         tests.extend(
             [
                 "    @Test",
-                f'    @DisplayName("{method_name} should handle edge cases")',
+                f'    @DisplayName("{method_name} should handle null input")',
                 f"    void {test_name}() {{",
-                "        // Arrange - set up edge case scenario",
-                "",
-                "        // Act",
-                f"        {return_type} result = {instance_name}.{method_name}();",
-                "",
-                "        // Assert",
+                "        // Arrange - null parameters",
             ]
         )
+
+        # Generate null values for nullable params
+        null_params = []
+        for p in parsed_params:
+            if p["type"].lower() in ("int", "long", "double", "float", "boolean", "byte", "short", "char"):
+                null_params.append(_generate_test_value(p["type"], p["name"]))
+            else:
+                null_params.append("null")
+
+        null_method_call = f"{method_name}({', '.join(null_params)})"
+
+        tests.extend(
+            [
+                "",
+                "        // Act & Assert",
+            ]
+        )
+
         if uses_assertj:
-            tests.append("        assertThat(result).isNotNull();")
+            tests.append(f"        assertThatThrownBy(() -> {instance_name}.{null_method_call})")
+            tests.append("            .isInstanceOf(IllegalArgumentException.class);")
         else:
-            tests.append("        assertNotNull(result);")
+            tests.append(f"        assertThrows(IllegalArgumentException.class, () -> {instance_name}.{null_method_call});")
 
         tests.extend(["    }", ""])
 
     return tests
+
+
+def _generate_arrange_variables(parsed_params: list[dict[str, str]]) -> list[str]:
+    """Generate variable declarations for test arrange section."""
+    vars_list = []
+    for param in parsed_params:
+        param_type = param["type"]
+        param_name = param["name"]
+        # Only generate variables for complex types
+        if param_type not in ("String", "int", "long", "double", "float", "boolean", "Integer", "Long", "Double", "Float", "Boolean"):
+            value = _generate_test_value(param_type, param_name)
+            vars_list.append(f"{param_type} {param_name} = {value};")
+    return vars_list
 
 
 def _to_camel_case(name: str) -> str:
@@ -359,3 +407,88 @@ def _to_pascal_case(name: str) -> str:
     if not name:
         return name
     return name[0].upper() + name[1:]
+
+
+def _parse_parameters(params_str: str) -> list[dict[str, str]]:
+    """Parse Java method parameters into structured form."""
+    if not params_str or not params_str.strip():
+        return []
+
+    params = []
+    # Split by comma, handling generic types
+    depth = 0
+    current = ""
+    for char in params_str:
+        if char in "<(":
+            depth += 1
+        elif char in ">)":
+            depth -= 1
+        elif char == "," and depth == 0:
+            if current.strip():
+                params.append(current.strip())
+            current = ""
+            continue
+        current += char
+
+    if current.strip():
+        params.append(current.strip())
+
+    result = []
+    for param in params:
+        # Handle annotations like @Valid, @PathVariable, etc.
+        param = re.sub(r"@\w+(?:\([^)]*\))?\s*", "", param).strip()
+        parts = param.rsplit(None, 1)
+        if len(parts) == 2:
+            param_type, param_name = parts
+            result.append({"type": param_type, "name": param_name})
+
+    return result
+
+
+def _generate_test_value(param_type: str, param_name: str) -> str:
+    """Generate appropriate test values based on parameter type."""
+    type_lower = param_type.lower()
+
+    # Handle common types
+    if type_lower in ("string", "java.lang.string"):
+        if "email" in param_name.lower():
+            return '"test@example.com"'
+        elif "name" in param_name.lower():
+            return '"Test Name"'
+        elif "id" in param_name.lower():
+            return '"test-id-123"'
+        else:
+            return '"test-value"'
+    elif type_lower in ("int", "integer", "java.lang.integer"):
+        if "id" in param_name.lower():
+            return "1"
+        elif "count" in param_name.lower() or "size" in param_name.lower():
+            return "10"
+        else:
+            return "42"
+    elif type_lower in ("long", "java.lang.long"):
+        return "1L"
+    elif type_lower in ("double", "java.lang.double"):
+        return "3.14"
+    elif type_lower in ("float", "java.lang.float"):
+        return "1.5f"
+    elif type_lower in ("boolean", "java.lang.boolean"):
+        return "true"
+    elif type_lower == "bigdecimal" or "decimal" in type_lower:
+        return 'new BigDecimal("100.00")'
+    elif type_lower == "localdate" or "date" in type_lower:
+        return "LocalDate.now()"
+    elif type_lower == "localdatetime":
+        return "LocalDateTime.now()"
+    elif "list" in type_lower:
+        return "List.of()"
+    elif "set" in type_lower:
+        return "Set.of()"
+    elif "map" in type_lower:
+        return "Map.of()"
+    elif "optional" in type_lower:
+        return "Optional.empty()"
+    else:
+        # For custom objects, try to create a new instance or mock
+        simple_type = param_type.split("<")[0].strip()
+        return f"new {simple_type}()"

@@ -32,6 +32,7 @@ from src.lib.config import get_settings
 from src.lib.llm import LLMError, get_llm
 from src.lib.logging import get_logger
 from src.mcp_servers.registry import get_tools_for_servers
+from src.models.impact import TestRequirement
 
 logger = get_logger(__name__)
 settings = get_settings()
@@ -60,6 +61,7 @@ async def run_test_generation_with_agent(
     db_session: Any,
     source_files: list[str] | None = None,
     coverage_target: float = 80.0,
+    test_requirements: list[TestRequirement] | None = None,
 ) -> dict[str, Any]:
     """
     Run test generation workflow using DeepAgents LLM agent.
@@ -134,6 +136,18 @@ async def run_test_generation_with_agent(
     )
     logger.info("react_agent_created", agent_type="test_generation")
 
+    # Build test requirements section if provided from impact analysis
+    requirements_section = ""
+    if test_requirements:
+        requirements_section = "\n\n## Test Requirements from Impact Analysis\n\n"
+        requirements_section += "The following specific tests MUST be generated based on code impact analysis:\n\n"
+        for req in test_requirements:
+            requirements_section += f"- **{req.suggested_test_name or req.id}** ({req.test_type.value}, {req.scenario_type.value}, P{req.priority}):\n"
+            requirements_section += f"  - Target: `{req.target_class}`"
+            if req.target_method:
+                requirements_section += f".{req.target_method}()"
+            requirements_section += f"\n  - Description: {req.description}\n"
+
     # Prepare agent input
     agent_input = {
         "messages": [
@@ -142,12 +156,14 @@ async def run_test_generation_with_agent(
 
 Target coverage: {coverage_target}%
 Source files: {source_files if source_files else 'all untested classes'}
-
+{requirements_section}
 ## Instructions
 
 1. First, use `test_gen_analyze_project` to understand project structure and frameworks
 2. Use `test_gen_detect_conventions` to identify existing test patterns
 3. Use `test_gen_generate_unit_tests` for each source file found, following conventions
+
+{"## PRIORITY: Generate tests matching the Impact Analysis requirements above FIRST." if test_requirements else ""}
 
 ## CRITICAL OUTPUT REQUIREMENT
 

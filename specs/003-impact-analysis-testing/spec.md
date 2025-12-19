@@ -5,6 +5,15 @@
 **Status**: Draft
 **Input**: Ameliorer la generation de tests en analysant impact des modifications de code pour generer des tests anti-regression cibles.
 
+## Clarifications
+
+### Session 2025-12-19
+
+- Q: What is the primary input source for git diff analysis? → A: Uncommitted changes (working directory vs HEAD)
+- Q: What format should the impact report use? → A: JSON (machine-parseable, CI-friendly)
+- Q: How should the system handle changes exceeding 500 lines? → A: Chunk into batches of 500 lines, process sequentially with progress feedback
+- Q: How should the system handle LLM API failures? → A: Retry with exponential backoff (3 attempts, then fail)
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Analyze Code Changes Before Testing (Priority: P1)
@@ -97,12 +106,14 @@ As a team lead, I want the CI pipeline to block merges when impact tests are mis
 - Change affects multiple layers - Generate tests for each affected layer
 - Third-party library updates - Flag for manual review, suggest integration test
 - Legacy code with no existing tests - Suggest characterization tests before modification
+- Large diffs exceeding 500 lines - Chunk into batches of 500 lines, process sequentially with progress feedback
+- LLM API failure - Retry with exponential backoff (3 attempts), then fail with clear error message
 
 ## Requirements *(mandatory)*
 
 ### Functional Requirements
 
-- **FR-001**: System MUST analyze git diff to identify all code changes before test generation
+- **FR-001**: System MUST analyze git diff of uncommitted changes (working directory vs HEAD) to identify all code changes before test generation
 - **FR-002**: System MUST categorize changes into: business rules, endpoints, DTOs, queries, migrations, API contracts, configuration
 - **FR-003**: System MUST identify potential break points: inputs, outputs, persistence, cross-cutting concerns
 - **FR-004**: System MUST classify each impact as business-critical or non-critical
@@ -110,8 +121,10 @@ As a team lead, I want the CI pipeline to block merges when impact tests are mis
 - **FR-006**: System MUST generate at minimum: 1 nominal case + 1-2 edge cases per impact
 - **FR-007**: System MUST generate regression tests for bug fixes
 - **FR-008**: System MUST generate invariant tests for critical business rules
-- **FR-009**: System MUST produce an impact report linking changes to tests
+- **FR-009**: System MUST produce an impact report in JSON format linking changes to tests (machine-parseable for CI integration)
 - **FR-010**: System MUST support CI integration to block merges when tests are missing
+- **FR-011**: System MUST chunk diffs exceeding 500 lines into batches and process sequentially with progress feedback
+- **FR-012**: System MUST retry LLM API failures with exponential backoff (3 attempts maximum) before failing with clear error message
 
 ### Key Entities
 

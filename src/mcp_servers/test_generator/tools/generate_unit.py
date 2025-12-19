@@ -324,39 +324,26 @@ def _generate_requirement_test(
 
     if scenario_type == "edge_case":
         # Edge case: test validation/rejection
-        tests.append("        // Arrange - invalid input scenario")
-        if matched_method and matched_method.get("parsed_params"):
-            # Generate invalid values
-            params = matched_method["parsed_params"]
-            invalid_values = []
-            for p in params:
-                if p["type"].lower() in ("string", "java.lang.string"):
-                    if "email" in p["name"].lower():
-                        invalid_values.append('"invalid-email"')  # Invalid email format
-                    else:
-                        invalid_values.append('""')  # Empty string
-                elif p["type"].lower() in ("int", "integer", "long"):
-                    invalid_values.append("-1")  # Negative value
-                else:
-                    invalid_values.append("null")
+        # Generate smart invalid values based on description
+        invalid_data = _generate_invalid_data_from_description(description, test_name, matched_method)
 
-            method_call = f"{target_method}({', '.join(invalid_values)})"
-            tests.extend([
-                "",
-                "        // Act & Assert - should reject invalid input",
-            ])
-            if uses_assertj:
-                tests.append(f"        assertThatThrownBy(() -> {instance_name}.{method_call})")
-                tests.append("            .isInstanceOf(IllegalArgumentException.class);")
-            else:
-                tests.append(f"        assertThrows(IllegalArgumentException.class, () -> {instance_name}.{method_call});")
+        tests.append("        // Arrange - invalid input scenario")
+        for line in invalid_data["arrange_lines"]:
+            tests.append(f"        {line}")
+
+        tests.extend([
+            "",
+            "        // Act & Assert - should reject invalid input",
+        ])
+
+        method_call = invalid_data["method_call"]
+        exception_type = invalid_data.get("exception_type", "IllegalArgumentException")
+
+        if uses_assertj:
+            tests.append(f"        assertThatThrownBy(() -> {instance_name}.{method_call})")
+            tests.append(f"            .isInstanceOf({exception_type}.class);")
         else:
-            tests.extend([
-                "        // TODO: Configure invalid test data",
-                "",
-                "        // Act & Assert",
-                "        // TODO: Verify rejection of invalid input",
-            ])
+            tests.append(f"        assertThrows({exception_type}.class, () -> {instance_name}.{method_call});")
 
     elif scenario_type == "regression":
         # Regression: verify bug fix
@@ -618,6 +605,112 @@ def _parse_parameters(params_str: str) -> list[dict[str, str]]:
             result.append({"type": param_type, "name": param_name})
 
     return result
+
+
+def _generate_invalid_data_from_description(
+    description: str,
+    test_name: str,
+    matched_method: dict[str, Any] | None,
+) -> dict[str, Any]:
+    """Generate smart invalid data based on test description and name."""
+    desc_lower = description.lower()
+    name_lower = test_name.lower()
+    combined = desc_lower + " " + name_lower
+
+    arrange_lines = []
+    exception_type = "IllegalArgumentException"
+
+    # Detect what kind of invalid data to generate
+    if "email" in combined and ("invalid" in combined or "format" in combined):
+        # Invalid email format
+        arrange_lines.append('String invalidEmail = "not-a-valid-email";')
+        if matched_method and matched_method.get("parsed_params"):
+            param = matched_method["parsed_params"][0]
+            param_type = param["type"]
+            arrange_lines.append(f'{param_type} request = new {param_type}();')
+            arrange_lines.append('request.setEmail(invalidEmail);')
+            method_call = f"{matched_method['name']}(request)"
+        else:
+            method_call = 'createOwner(request)'
+
+    elif "duplicate" in combined or "already exists" in combined:
+        # Duplicate entry
+        exception_type = "IllegalStateException"
+        if matched_method and matched_method.get("parsed_params"):
+            param = matched_method["parsed_params"][0]
+            param_type = param["type"]
+            arrange_lines.append(f'{param_type} request = new {param_type}();')
+            arrange_lines.append('request.setEmail("existing@example.com");')
+            arrange_lines.append('// Assume this email already exists in repository')
+            method_call = f"{matched_method['name']}(request)"
+        else:
+            method_call = 'createOwner(request)'
+
+    elif "null" in combined or "empty" in combined:
+        # Null or empty input
+        if matched_method:
+            method_call = f"{matched_method['name']}(null)"
+        else:
+            method_call = "method(null)"
+
+    elif "past" in combined or "date" in combined:
+        # Invalid date (in the past)
+        arrange_lines.append('LocalDate pastDate = LocalDate.now().minusDays(1);')
+        if matched_method and matched_method.get("parsed_params"):
+            param = matched_method["parsed_params"][0]
+            param_type = param["type"]
+            arrange_lines.append(f'{param_type} request = new {param_type}();')
+            arrange_lines.append('request.setDate(pastDate);')
+            method_call = f"{matched_method['name']}(request)"
+        else:
+            method_call = 'create(request)'
+
+    elif "maximum" in combined or "limit" in combined or "exceed" in combined:
+        # Exceeds limit
+        exception_type = "IllegalStateException"
+        arrange_lines.append('// Setup: already at maximum allowed')
+        if matched_method and matched_method.get("parsed_params"):
+            params = matched_method["parsed_params"]
+            param_values = [_generate_test_value(p["type"], p["name"]) for p in params]
+            method_call = f"{matched_method['name']}({', '.join(param_values)})"
+        else:
+            method_call = 'create(request)'
+
+    elif "negative" in combined or "invalid" in combined:
+        # Generic invalid value
+        if matched_method and matched_method.get("parsed_params"):
+            params = matched_method["parsed_params"]
+            invalid_values = []
+            for p in params:
+                if p["type"].lower() in ("int", "integer", "long"):
+                    invalid_values.append("-1")
+                elif p["type"].lower() in ("string",):
+                    invalid_values.append('""')
+                else:
+                    invalid_values.append("null")
+            method_call = f"{matched_method['name']}({', '.join(invalid_values)})"
+        else:
+            method_call = "method(-1)"
+
+    else:
+        # Default: use null for object types
+        if matched_method and matched_method.get("parsed_params"):
+            params = matched_method["parsed_params"]
+            null_values = []
+            for p in params:
+                if p["type"].lower() in ("int", "long", "double", "float", "boolean"):
+                    null_values.append(_generate_test_value(p["type"], p["name"]))
+                else:
+                    null_values.append("null")
+            method_call = f"{matched_method['name']}({', '.join(null_values)})"
+        else:
+            method_call = "method(null)"
+
+    return {
+        "arrange_lines": arrange_lines,
+        "method_call": method_call,
+        "exception_type": exception_type,
+    }
 
 
 def _generate_test_value(param_type: str, param_name: str) -> str:

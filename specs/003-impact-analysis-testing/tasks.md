@@ -6,7 +6,7 @@
 
 | Metric | Value |
 |--------|-------|
-| Total Tasks | 28 |
+| Total Tasks | 38 |
 | Parallelizable | 12 |
 | User Stories | 5 |
 | MVP Scope | US1 (Analyze Code Changes) |
@@ -46,8 +46,8 @@
 - [ ] T011 [US1] Create impact_analysis.py workflow skeleton in src/workflows/impact_analysis.py
 - [ ] T012 [US1] Implement parse_diff() function to extract file-level changes in src/workflows/impact_analysis.py
 - [ ] T013 [US1] Implement categorize_change() to map file paths to ChangeCategory in src/workflows/impact_analysis.py
-- [ ] T014 [US1] Implement identify_affected_components() to extract class/method names from diff in src/workflows/impact_analysis.py
-- [ ] T015 [US1] Implement analyze_impacts() main entry point that orchestrates parsing and categorization in src/workflows/impact_analysis.py
+- [ ] T014 [US1] Implement identify_affected_components() to extract class/method names and potential break points (inputs, outputs, persistence, cross-cutting concerns per FR-003) from diff in src/workflows/impact_analysis.py
+- [ ] T015 [US1] Implement analyze_impacts() main entry point that orchestrates parsing and categorization; handle empty diff case returning empty impacts list in src/workflows/impact_analysis.py
 - [ ] T016 [US1] Add chunking support for large diffs (>500 lines) with progress callback in src/workflows/impact_analysis.py
 
 ---
@@ -116,7 +116,7 @@
 
 > Final integration, error handling, documentation
 
-- [ ] T033 Add exponential backoff retry decorator for LLM calls in src/workflows/impact_analysis.py
+- [ ] T033 Create reusable @retry_with_backoff decorator for all LLM calls (consolidates FR-012 retry logic used by T021 and other LLM operations) in src/workflows/impact_analysis.py
 - [ ] T034 Add progress logging for chunked processing in src/workflows/impact_analysis.py
 - [ ] T035 [P] Validate ImpactReport against JSON schema before output in src/workflows/impact_analysis.py
 - [ ] T036 [P] Add --verbose flag support for detailed output in src/cli/commands/tests.py

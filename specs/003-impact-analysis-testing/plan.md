@@ -72,7 +72,8 @@ src/
 │   └── commands/
 │       └── tests.py            # EXISTING: Add `impact` subcommand
 └── lib/
-    └── diff_chunker.py         # NEW: Chunk large diffs into batches
+    ├── diff_chunker.py         # NEW: Chunk large diffs into batches
+    └── risk_keywords.py        # NEW: CRITICAL_KEYWORDS set for risk detection
 
 tests/
 ├── unit/

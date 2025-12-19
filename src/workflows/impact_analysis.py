@@ -230,11 +230,14 @@ BUG_FIX_KEYWORDS = {"fix", "bug", "issue", "patch", "hotfix", "resolve", "correc
 IMPACT_REPORT_SCHEMA: dict[str, Any] = {
     "$schema": "http://json-schema.org/draft-07/schema#",
     "type": "object",
-    "required": ["project_path", "git_ref", "timestamp", "impacts", "test_requirements", "summary"],
+    "required": ["project_path", "git_ref", "generated_at", "impacts", "test_requirements", "summary"],
     "properties": {
         "project_path": {"type": "string"},
         "git_ref": {"type": "string"},
-        "timestamp": {"type": "string", "format": "date-time"},
+        "generated_at": {"type": "string", "format": "date-time"},
+        "version": {"type": "string"},
+        "total_lines_changed": {"type": "integer", "minimum": 0},
+        "processing_time_seconds": {"type": "number", "minimum": 0},
         "impacts": {
             "type": "array",
             "items": {
@@ -306,15 +309,13 @@ IMPACT_REPORT_SCHEMA: dict[str, Any] = {
                 "total_impacts",
                 "business_critical",
                 "tests_to_generate",
-                "total_lines_changed",
             ],
             "properties": {
                 "total_impacts": {"type": "integer", "minimum": 0},
                 "business_critical": {"type": "integer", "minimum": 0},
                 "non_critical": {"type": "integer", "minimum": 0},
                 "tests_to_generate": {"type": "integer", "minimum": 0},
-                "total_lines_changed": {"type": "integer", "minimum": 0},
-                "processing_time_seconds": {"type": "number", "minimum": 0},
+                "by_test_type": {"type": "object"},
             },
         },
     },

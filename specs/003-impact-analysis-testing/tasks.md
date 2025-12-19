@@ -75,7 +75,7 @@
 > **Depends on**: US1 (needs identified impacts)
 
 - [x] T020 [P] [US4] Implement classify_risk() with keyword-based scoring in src/workflows/impact_analysis.py
-- [ ] T021 [P] [US4] Add LLM fallback for ambiguous risk cases with retry logic in src/workflows/impact_analysis.py
+- [x] T021 [P] [US4] Add LLM fallback for ambiguous risk cases with retry logic in src/workflows/impact_analysis.py
 - [x] T022 [US4] Update analyze_impacts() to set risk_level on each Impact in src/workflows/impact_analysis.py
 
 ---
@@ -118,7 +118,7 @@
 
 - [x] T033 Create reusable @retry_with_backoff decorator for all LLM calls (consolidates FR-012 retry logic used by T021 and other LLM operations) in src/workflows/impact_analysis.py
 - [x] T034 Add progress logging for chunked processing in src/workflows/impact_analysis.py
-- [ ] T035 [P] Validate ImpactReport against JSON schema before output in src/workflows/impact_analysis.py
+- [x] T035 [P] Validate ImpactReport against JSON schema before output in src/workflows/impact_analysis.py
 - [x] T036 [P] Add --verbose flag support for detailed output in src/cli/commands/tests.py
 - [x] T037 Update CLI help text and examples in src/cli/commands/tests.py
 - [x] T038 Add type hints and docstrings to all new public functions

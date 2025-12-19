@@ -13,7 +13,11 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable, TypeVar
 
+import jsonschema
+from jsonschema import ValidationError, validate
+
 from src.lib.diff_chunker import chunk_diff, count_lines, is_large_diff, split_by_file
+from src.lib.llm import LLMError, get_llm
 from src.lib.logging import get_logger
 from src.lib.risk_keywords import (
     contains_critical_keyword,
@@ -222,6 +226,124 @@ METHOD_PATTERN = re.compile(
 # Bug fix indicators
 BUG_FIX_KEYWORDS = {"fix", "bug", "issue", "patch", "hotfix", "resolve", "correct"}
 
+# JSON Schema for ImpactReport validation (T035, FR-009)
+IMPACT_REPORT_SCHEMA: dict[str, Any] = {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "type": "object",
+    "required": ["project_path", "git_ref", "timestamp", "impacts", "test_requirements", "summary"],
+    "properties": {
+        "project_path": {"type": "string"},
+        "git_ref": {"type": "string"},
+        "timestamp": {"type": "string", "format": "date-time"},
+        "impacts": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "required": ["id", "file_path", "category", "risk_level", "required_test_type"],
+                "properties": {
+                    "id": {"type": "string", "pattern": "^IMP-\\d{3}$"},
+                    "file_path": {"type": "string"},
+                    "category": {
+                        "type": "string",
+                        "enum": [
+                            "business_rule",
+                            "endpoint",
+                            "dto",
+                            "query",
+                            "migration",
+                            "api_contract",
+                            "configuration",
+                            "test",
+                            "other",
+                        ],
+                    },
+                    "risk_level": {
+                        "type": "string",
+                        "enum": ["business_critical", "non_critical"],
+                    },
+                    "affected_components": {"type": "array", "items": {"type": "string"}},
+                    "required_test_type": {
+                        "type": "string",
+                        "enum": ["unit", "controller", "data_layer", "integration", "contract"],
+                    },
+                    "change_summary": {"type": "string"},
+                    "diff_lines": {
+                        "type": "array",
+                        "items": {"type": "integer"},
+                        "minItems": 2,
+                        "maxItems": 2,
+                    },
+                    "is_bug_fix": {"type": "boolean"},
+                },
+            },
+        },
+        "test_requirements": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "required": ["id", "impact_id", "test_type", "scenario_type", "priority"],
+                "properties": {
+                    "id": {"type": "string", "pattern": "^TEST-\\d{3}$"},
+                    "impact_id": {"type": "string", "pattern": "^IMP-\\d{3}$"},
+                    "test_type": {
+                        "type": "string",
+                        "enum": ["unit", "controller", "data_layer", "integration", "contract"],
+                    },
+                    "scenario_type": {
+                        "type": "string",
+                        "enum": ["nominal", "edge_case", "regression", "invariant"],
+                    },
+                    "description": {"type": "string"},
+                    "priority": {"type": "integer", "minimum": 1, "maximum": 5},
+                    "target_class": {"type": "string"},
+                    "suggested_test_name": {"type": "string"},
+                },
+            },
+        },
+        "summary": {
+            "type": "object",
+            "required": [
+                "total_impacts",
+                "business_critical",
+                "tests_to_generate",
+                "total_lines_changed",
+            ],
+            "properties": {
+                "total_impacts": {"type": "integer", "minimum": 0},
+                "business_critical": {"type": "integer", "minimum": 0},
+                "non_critical": {"type": "integer", "minimum": 0},
+                "tests_to_generate": {"type": "integer", "minimum": 0},
+                "total_lines_changed": {"type": "integer", "minimum": 0},
+                "processing_time_seconds": {"type": "number", "minimum": 0},
+            },
+        },
+    },
+}
+
+
+def validate_impact_report(report_dict: dict[str, Any]) -> tuple[bool, str | None]:
+    """
+    Validate an ImpactReport dict against the JSON schema (T035).
+
+    Args:
+        report_dict: The report dictionary to validate
+
+    Returns:
+        Tuple of (is_valid, error_message). error_message is None if valid.
+    """
+    try:
+        validate(instance=report_dict, schema=IMPACT_REPORT_SCHEMA)
+        return True, None
+    except ValidationError as e:
+        error_path = " -> ".join(str(p) for p in e.absolute_path) if e.absolute_path else "root"
+        error_msg = f"Schema validation failed at {error_path}: {e.message}"
+        logger.warning("impact_report_validation_failed", error=error_msg)
+        return False, error_msg
+    except jsonschema.SchemaError as e:
+        error_msg = f"Invalid schema: {e.message}"
+        logger.error("impact_report_schema_error", error=error_msg)
+        return False, error_msg
+
 
 def parse_diff(diff_content: str) -> list[tuple[str, str, int, int]]:
     """
@@ -379,7 +501,8 @@ def classify_risk(
     elif non_critical_score > 0:
         return RiskLevel.NON_CRITICAL
     else:
-        # Default based on category
+        # Ambiguous case - use default based on category
+        # LLM fallback can be used via classify_risk_with_llm for more accuracy
         if category in {
             ChangeCategory.CONFIGURATION,
             ChangeCategory.MIGRATION,
@@ -387,6 +510,108 @@ def classify_risk(
         }:
             return RiskLevel.BUSINESS_CRITICAL
         return RiskLevel.NON_CRITICAL
+
+
+@retry_with_backoff(max_attempts=3, exceptions=(LLMError, Exception))
+async def classify_risk_with_llm(
+    file_path: str,
+    diff_content: str,
+    category: ChangeCategory,
+) -> RiskLevel:
+    """
+    Classify risk using LLM for ambiguous cases (T021, FR-004, FR-012).
+
+    This function provides more accurate risk classification when
+    keyword-based scoring is ambiguous. Uses retry with exponential
+    backoff per FR-012.
+
+    Args:
+        file_path: Path to the changed file
+        diff_content: Diff content for this file
+        category: The change category
+
+    Returns:
+        RiskLevel classification from LLM analysis
+
+    Raises:
+        LLMError: If LLM call fails after retries
+    """
+    from langchain_core.messages import HumanMessage, SystemMessage
+
+    # First try keyword-based classification
+    keyword_result = classify_risk(file_path, diff_content, category)
+
+    # Check if classification is ambiguous (no strong signals)
+    critical_score, non_critical_score = score_risk_from_keywords(diff_content)
+    path_critical, path_non_critical = score_risk_from_keywords(file_path)
+
+    # If we have clear signals, use keyword result
+    total_critical = critical_score + path_critical * 2
+    total_non_critical = non_critical_score + path_non_critical
+
+    if abs(total_critical - total_non_critical) > 2:
+        # Clear signal, no need for LLM
+        return keyword_result
+
+    # Ambiguous case - use LLM
+    logger.info(
+        "classify_risk_llm_fallback",
+        file_path=file_path,
+        category=category.value,
+        critical_score=total_critical,
+        non_critical_score=total_non_critical,
+    )
+
+    try:
+        llm = get_llm(temperature=0.0, max_tokens=100)
+
+        system_prompt = """You are a code risk classifier. Analyze the code change and classify its risk level.
+
+Business-critical code includes:
+- Payment/billing/financial logic
+- Authentication/authorization
+- Security-sensitive operations
+- User data handling (PII, GDPR)
+- Core business rules that affect revenue
+
+Non-critical code includes:
+- Logging and debugging
+- Formatting and display
+- Documentation
+- Test utilities
+- Internal tooling
+
+Respond with ONLY one word: "CRITICAL" or "NON_CRITICAL"."""
+
+        user_prompt = f"""File: {file_path}
+Category: {category.value}
+
+Diff content (first 1000 chars):
+{diff_content[:1000]}
+
+Is this change business-critical or non-critical?"""
+
+        messages = [
+            SystemMessage(content=system_prompt),
+            HumanMessage(content=user_prompt),
+        ]
+
+        response = await llm.ainvoke(messages)
+        result = response.content.strip().upper()
+
+        if "CRITICAL" in result and "NON" not in result:
+            return RiskLevel.BUSINESS_CRITICAL
+        else:
+            return RiskLevel.NON_CRITICAL
+
+    except Exception as e:
+        logger.warning(
+            "classify_risk_llm_failed",
+            file_path=file_path,
+            error=str(e),
+        )
+        # Fall back to keyword result
+        return keyword_result
 
 
 def detect_bug_fix(diff_content: str, file_path: str) -> bool:

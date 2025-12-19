@@ -585,7 +585,7 @@ async def _run_impact_analysis(
     """Run impact analysis workflow (T029-T032)."""
     import json
 
-    from src.workflows.impact_analysis import run_impact_analysis
+    from src.workflows.impact_analysis import run_impact_analysis, validate_impact_report
 
     def progress_callback(current: int, total: int, message: str) -> None:
         if verbose:
@@ -605,6 +605,14 @@ async def _run_impact_analysis(
 
         # Convert to JSON
         report_dict = report.to_dict()
+
+        # Validate against schema before output (T035)
+        is_valid, validation_error = validate_impact_report(report_dict)
+        if not is_valid:
+            if verbose:
+                console.print(f"[yellow]Warning: Report validation failed: {validation_error}[/yellow]")
+            logger.warning("impact_report_validation_failed", error=validation_error)
+
         json_output = json.dumps(report_dict, indent=2)
 
         # Output to file or stdout (T030)

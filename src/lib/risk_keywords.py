@@ -5,7 +5,7 @@ Keyword sets for identifying business-critical code per FR-004.
 
 # Keywords indicating business-critical code (payment, auth, security)
 CRITICAL_KEYWORDS: set[str] = {
-    # Payment/Financial
+    # Payment/Financial/Billing
     "payment",
     "billing",
     "invoice",
@@ -30,6 +30,15 @@ CRITICAL_KEYWORDS: set[str] = {
     "cart",
     "purchase",
     "order",
+    "cost",
+    "bigdecimal",
+    "decimal",
+    "calculate",
+    "total",
+    "revenue",
+    "profit",
+    "expense",
+    "budget",
     # Authentication/Authorization
     "auth",
     "login",

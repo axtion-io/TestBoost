@@ -73,6 +73,8 @@ class Impact:
     change_summary: str
     diff_lines: tuple[int, int] = (0, 0)
     is_bug_fix: bool = False
+    diff_content: str = ""  # Raw diff for business rule extraction
+    extracted_rules: list[str] = field(default_factory=list)  # Detected business rules
 
     @property
     def requires_regression_test(self) -> bool:

@@ -226,6 +226,73 @@ METHOD_PATTERN = re.compile(
 # Bug fix indicators
 BUG_FIX_KEYWORDS = {"fix", "bug", "issue", "patch", "hotfix", "resolve", "correct"}
 
+# Patterns for extracting business rules from Java code
+BUSINESS_RULE_PATTERNS: list[tuple[str, str]] = [
+    # Validation patterns
+    (r'if\s*\([^)]*\.(?:isEmpty|isBlank)\(\)', "empty value check"),
+    (r'if\s*\([^)]*(?:==|!=)\s*null', "null check"),
+    (r'if\s*\([^)]*\.matches\([^)]+\)', "format validation"),
+    (r'if\s*\([^)]*\.(?:length|size)\(\)\s*[<>=!]+', "length constraint"),
+    (r'if\s*\([^)]*[<>=!]+\s*\d+', "numeric boundary"),
+    (r'throw\s+new\s+Illegal\w+Exception', "validation exception"),
+    # Business logic patterns
+    (r'\.(?:findBy|existsBy|countBy)\w+\(', "database lookup"),
+    (r'\.(?:save|delete)\(', "persistence operation"),
+    (r'BigDecimal\b', "financial calculation"),
+    (r'\.(?:add|subtract|multiply|divide)\(', "arithmetic"),
+    (r'LocalDate(?:Time)?\.now\(\)', "current date check"),
+    (r'\.(?:isBefore|isAfter)\(', "date comparison"),
+    (r'>=\s*\d+', "minimum limit"),
+    (r'<=\s*\d+', "maximum limit"),
+]
+
+
+def extract_business_rules(diff_content: str) -> list[str]:
+    """
+    Extract business rules and validations from diff content.
+
+    Analyzes added lines to identify validation logic, constraints, etc.
+
+    Args:
+        diff_content: Raw diff content
+
+    Returns:
+        List of detected business rule descriptions
+    """
+    rules: list[str] = []
+
+    # Only analyze added lines
+    added_lines = [
+        line[1:] for line in diff_content.splitlines()
+        if line.startswith("+") and not line.startswith("+++")
+    ]
+    added_content = "\n".join(added_lines)
+
+    # Check for each pattern
+    for pattern, rule_type in BUSINESS_RULE_PATTERNS:
+        if re.search(pattern, added_content, re.IGNORECASE):
+            rules.append(rule_type)
+
+    # Extract validation error messages
+    exception_messages = re.findall(
+        r'throw\s+new\s+\w+\(\s*"([^"]{5,50})"',
+        added_content
+    )
+    for msg in exception_messages[:3]:
+        rules.append(f"validate: {msg}")
+
+    # Look for documented rules in comments
+    comments = re.findall(
+        r'//\s*(?:Business rule|Fix|Security|Validation):\s*(.{5,60})',
+        added_content,
+        re.IGNORECASE
+    )
+    for comment in comments:
+        rules.append(comment.strip())
+
+    return list(dict.fromkeys(rules))  # Remove duplicates, preserve order
+
+
 # JSON Schema for ImpactReport validation (T035, FR-009)
 IMPACT_REPORT_SCHEMA: dict[str, Any] = {
     "$schema": "http://json-schema.org/draft-07/schema#",
@@ -721,6 +788,9 @@ def _analyze_single(
         # Detect bug fix
         is_bug_fix = detect_bug_fix(file_diff, file_path)
 
+        # Extract business rules from diff
+        extracted_rules = extract_business_rules(file_diff)
+
         # Generate summary
         summary = generate_change_summary(file_path, components, category)
 
@@ -734,6 +804,8 @@ def _analyze_single(
             change_summary=summary,
             diff_lines=(start_line, end_line),
             is_bug_fix=is_bug_fix,
+            diff_content=file_diff,
+            extracted_rules=extracted_rules,
         )
 
         impacts.append(impact)
@@ -785,9 +857,10 @@ def generate_test_requirements(impacts: list[Impact]) -> list[TestRequirement]:
     """
     Generate test requirements for impacts (T023-T027, FR-006/007/008).
 
-    Creates:
-    - 1 nominal test per impact (FR-006)
-    - 1-2 edge case tests per impact (FR-006)
+    Creates tests based on extracted business rules:
+    - Specific tests for each detected validation/business rule
+    - Nominal tests for happy path
+    - Edge case tests for boundaries
     - Regression tests for bug fixes (FR-007)
     - Invariant tests for critical business rules (FR-008)
 
@@ -805,74 +878,233 @@ def generate_test_requirements(impacts: list[Impact]) -> list[TestRequirement]:
         if impact.category == ChangeCategory.TEST:
             continue
 
+        component = impact.affected_components[0]
+        # Clean component name for test naming (remove file extensions)
+        clean_component = component.replace(".sql", "").replace(".java", "")
+
         # Determine priority based on risk
         base_priority = 1 if impact.risk_level == RiskLevel.BUSINESS_CRITICAL else 3
 
-        # T024: Nominal case (always 1)
-        requirements.append(
-            TestRequirement(
-                id=f"TEST-{req_counter:03d}",
-                impact_id=impact.id,
-                test_type=impact.required_test_type,
-                scenario_type=ScenarioType.NOMINAL,
-                description=f"Verify nominal behavior of {impact.affected_components[0]}",
-                priority=base_priority,
-                target_class=impact.affected_components[0],
-                suggested_test_name=f"should{impact.affected_components[0]}WorkCorrectly",
-            )
-        )
-        req_counter += 1
-
-        # T025: Edge cases (1-2 per impact)
-        edge_cases = _generate_edge_cases(impact)
-        for edge_desc, edge_name in edge_cases:
+        # Generate tests based on extracted business rules
+        rule_tests = _generate_rule_based_tests(impact, clean_component)
+        for desc, name, scenario_type in rule_tests:
             requirements.append(
                 TestRequirement(
                     id=f"TEST-{req_counter:03d}",
                     impact_id=impact.id,
                     test_type=impact.required_test_type,
-                    scenario_type=ScenarioType.EDGE_CASE,
-                    description=edge_desc,
-                    priority=base_priority + 1,
-                    target_class=impact.affected_components[0],
-                    suggested_test_name=edge_name,
+                    scenario_type=scenario_type,
+                    description=desc,
+                    priority=base_priority if scenario_type == ScenarioType.NOMINAL else base_priority + 1,
+                    target_class=clean_component,
+                    suggested_test_name=name,
                 )
             )
             req_counter += 1
 
+        # If no rules extracted, fall back to generic tests
+        if not rule_tests:
+            # T024: Nominal case
+            requirements.append(
+                TestRequirement(
+                    id=f"TEST-{req_counter:03d}",
+                    impact_id=impact.id,
+                    test_type=impact.required_test_type,
+                    scenario_type=ScenarioType.NOMINAL,
+                    description=f"Verify {clean_component} processes valid input correctly",
+                    priority=base_priority,
+                    target_class=clean_component,
+                    suggested_test_name=f"should{clean_component}ProcessValidInput",
+                )
+            )
+            req_counter += 1
+
+            # T025: Edge cases
+            edge_cases = _generate_edge_cases(impact)
+            for edge_desc, edge_name in edge_cases:
+                requirements.append(
+                    TestRequirement(
+                        id=f"TEST-{req_counter:03d}",
+                        impact_id=impact.id,
+                        test_type=impact.required_test_type,
+                        scenario_type=ScenarioType.EDGE_CASE,
+                        description=edge_desc,
+                        priority=base_priority + 1,
+                        target_class=clean_component,
+                        suggested_test_name=edge_name,
+                    )
+                )
+                req_counter += 1
+
         # T026: Regression test for bug fixes
         if impact.requires_regression_test:
+            # Generate specific regression test based on fix description
+            fix_desc = _extract_fix_description(impact)
             requirements.append(
                 TestRequirement(
                     id=f"TEST-{req_counter:03d}",
                     impact_id=impact.id,
                     test_type=impact.required_test_type,
                     scenario_type=ScenarioType.REGRESSION,
-                    description=f"Regression test to prevent bug from recurring in {impact.affected_components[0]}",
-                    priority=1,  # Regression tests are high priority
-                    target_class=impact.affected_components[0],
-                    suggested_test_name=f"shouldNotRegress{impact.affected_components[0]}",
+                    description=f"Regression: {fix_desc}",
+                    priority=1,
+                    target_class=clean_component,
+                    suggested_test_name=f"shouldPrevent{_to_camel_case(fix_desc)}Regression",
                 )
             )
             req_counter += 1
 
         # T027: Invariant test for critical business rules
         if impact.requires_invariant_test:
+            invariant_desc = _extract_invariant_description(impact)
             requirements.append(
                 TestRequirement(
                     id=f"TEST-{req_counter:03d}",
                     impact_id=impact.id,
                     test_type=impact.required_test_type,
                     scenario_type=ScenarioType.INVARIANT,
-                    description=f"Verify business rule invariant in {impact.affected_components[0]}",
-                    priority=1,  # Invariant tests are high priority
-                    target_class=impact.affected_components[0],
-                    suggested_test_name=f"shouldMaintainInvariant{impact.affected_components[0]}",
+                    description=f"Invariant: {invariant_desc}",
+                    priority=1,
+                    target_class=clean_component,
+                    suggested_test_name=f"shouldMaintain{_to_camel_case(invariant_desc)}",
                 )
             )
             req_counter += 1
 
     return requirements
+
+
+def _generate_rule_based_tests(
+    impact: Impact,
+    component: str,
+) -> list[tuple[str, str, ScenarioType]]:
+    """Generate specific tests based on extracted business rules."""
+    tests: list[tuple[str, str, ScenarioType]] = []
+
+    for rule in impact.extracted_rules:
+        rule_lower = rule.lower()
+
+        if "validate:" in rule_lower:
+            # Extract validation message for specific test
+            msg = rule.replace("validate:", "").strip()
+            tests.append((
+                f"Verify {component} rejects invalid input: {msg}",
+                f"shouldRejectWhen{_to_camel_case(msg[:30])}",
+                ScenarioType.EDGE_CASE,
+            ))
+        elif "format validation" in rule_lower:
+            tests.append((
+                f"Verify {component} validates input format",
+                f"shouldRejectInvalidFormat",
+                ScenarioType.EDGE_CASE,
+            ))
+        elif "null check" in rule_lower:
+            tests.append((
+                f"Verify {component} handles null input gracefully",
+                f"shouldHandleNullInput",
+                ScenarioType.EDGE_CASE,
+            ))
+        elif "empty value check" in rule_lower:
+            tests.append((
+                f"Verify {component} rejects empty values",
+                f"shouldRejectEmptyValues",
+                ScenarioType.EDGE_CASE,
+            ))
+        elif "database lookup" in rule_lower:
+            tests.append((
+                f"Verify {component} queries database correctly",
+                f"shouldQueryDatabaseCorrectly",
+                ScenarioType.NOMINAL,
+            ))
+            tests.append((
+                f"Verify {component} handles record not found",
+                f"shouldHandleRecordNotFound",
+                ScenarioType.EDGE_CASE,
+            ))
+        elif "financial calculation" in rule_lower:
+            tests.append((
+                f"Verify {component} calculates amounts correctly",
+                f"shouldCalculateAmountCorrectly",
+                ScenarioType.NOMINAL,
+            ))
+            tests.append((
+                f"Verify {component} handles zero amounts",
+                f"shouldHandleZeroAmount",
+                ScenarioType.EDGE_CASE,
+            ))
+        elif "date comparison" in rule_lower or "current date" in rule_lower:
+            tests.append((
+                f"Verify {component} validates date constraints",
+                f"shouldEnforceDateConstraints",
+                ScenarioType.NOMINAL,
+            ))
+            tests.append((
+                f"Verify {component} rejects past dates",
+                f"shouldRejectPastDates",
+                ScenarioType.EDGE_CASE,
+            ))
+        elif "numeric boundary" in rule_lower or "minimum limit" in rule_lower:
+            tests.append((
+                f"Verify {component} enforces numeric limits",
+                f"shouldEnforceNumericLimits",
+                ScenarioType.EDGE_CASE,
+            ))
+        elif "maximum limit" in rule_lower:
+            tests.append((
+                f"Verify {component} respects maximum limits",
+                f"shouldRespectMaximumLimit",
+                ScenarioType.EDGE_CASE,
+            ))
+        elif "persistence" in rule_lower:
+            tests.append((
+                f"Verify {component} persists data correctly",
+                f"shouldPersistDataCorrectly",
+                ScenarioType.NOMINAL,
+            ))
+
+    # Remove duplicates while preserving order
+    seen = set()
+    unique_tests = []
+    for test in tests:
+        if test[1] not in seen:
+            seen.add(test[1])
+            unique_tests.append(test)
+
+    return unique_tests[:5]  # Limit to 5 rule-based tests
+
+
+def _extract_fix_description(impact: Impact) -> str:
+    """Extract a description of what the fix addresses."""
+    for rule in impact.extracted_rules:
+        if rule.startswith("validate:") or "fix" in rule.lower():
+            return rule.replace("validate:", "").strip()[:40]
+
+    # Look for fix comments in diff
+    for line in impact.diff_content.splitlines():
+        if line.startswith("+") and "fix" in line.lower():
+            match = re.search(r'//.*fix[:\s]+(.+)', line, re.IGNORECASE)
+            if match:
+                return match.group(1).strip()[:40]
+
+    return f"{impact.affected_components[0]} bug"
+
+
+def _extract_invariant_description(impact: Impact) -> str:
+    """Extract business rule invariant description."""
+    for rule in impact.extracted_rules:
+        if any(kw in rule.lower() for kw in ["financial", "calculation", "validate"]):
+            return rule[:40]
+
+    return f"{impact.affected_components[0]} business rules"
+
+
+def _to_camel_case(text: str) -> str:
+    """Convert text to CamelCase for test names."""
+    # Remove special characters and split
+    words = re.sub(r'[^a-zA-Z0-9\s]', '', text).split()
+    if not words:
+        return "Rule"
+    return ''.join(word.capitalize() for word in words[:4])
 
 
 def _generate_edge_cases(impact: Impact) -> list[tuple[str, str]]:

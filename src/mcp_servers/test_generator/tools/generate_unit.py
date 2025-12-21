@@ -69,6 +69,8 @@ async def generate_adaptive_tests(
         "conventions": conventions or {},
         "coverage_target": coverage_target,
         "test_requirements": test_requirements or [],
+        "imports": class_info.get("imports", []),
+        "is_record": class_info.get("is_record", False),
     }
 
     # Generate test code based on class type and requirements
@@ -95,6 +97,7 @@ def _analyze_class(source_code: str) -> dict[str, Any]:
     dependencies: list[dict[str, str]] = []
     annotations: list[str] = []
     fields: list[str] = []
+    imports: list[str] = []
 
     info: dict[str, Any] = {
         "class_name": "",
@@ -103,6 +106,8 @@ def _analyze_class(source_code: str) -> dict[str, Any]:
         "dependencies": dependencies,
         "annotations": annotations,
         "fields": fields,
+        "imports": imports,
+        "is_record": False,
     }
 
     # Extract package
@@ -110,7 +115,25 @@ def _analyze_class(source_code: str) -> dict[str, Any]:
     if package_match:
         info["package"] = package_match.group(1)
 
-    # Extract class name
+    # Extract imports (FIX: Add import extraction from source files)
+    import_pattern = re.compile(r"import\s+([\w.]+(?:\.\*)?);", re.MULTILINE)
+    for match in import_pattern.finditer(source_code):
+        imports.append(match.group(1))
+
+    # Check if this is a Java record (FIX: Add Java record detection)
+    record_match = re.search(r"(?:public\s+)?record\s+(\w+)\s*\(([^)]*)\)", source_code)
+    if record_match:
+        info["class_name"] = record_match.group(1)
+        info["is_record"] = True
+        # Record components become constructor params - parse them as dependencies
+        record_params = record_match.group(2)
+        for param in _parse_parameters(record_params):
+            # Filter out primitive types from dependencies
+            if not _is_primitive_type(param["type"]):
+                dependencies.append({"type": param["type"], "name": param["name"]})
+        return info
+
+    # Extract class name (also check for record)
     class_match = re.search(r"(?:public\s+)?(?:abstract\s+)?class\s+(\w+)", source_code)
     if class_match:
         info["class_name"] = class_match.group(1)
@@ -121,24 +144,50 @@ def _analyze_class(source_code: str) -> dict[str, Any]:
     )
     annotations.extend(class_annotations)
 
-    # Extract methods
-    method_pattern = re.compile(
-        r"(?:@\w+(?:\([^)]*\))?\s*)*"
-        r"(?:public|private|protected)\s+"
+    # FIX: Extract constructor parameters for dependency injection
+    # Modern Spring uses constructor injection without @Autowired annotation
+    class_name = info["class_name"]
+    if class_name:
+        constructor_pattern = re.compile(
+            rf"(?:public\s+)?{re.escape(class_name)}\s*\(([^)]*)\)",
+            re.MULTILINE | re.DOTALL
+        )
+        for match in constructor_pattern.finditer(source_code):
+            constructor_params = match.group(1)
+            if constructor_params.strip():
+                for param in _parse_parameters(constructor_params):
+                    # Only add non-primitive types as dependencies
+                    if not _is_primitive_type(param["type"]):
+                        # Avoid duplicates
+                        if not any(d["name"] == param["name"] for d in dependencies):
+                            dependencies.append({"type": param["type"], "name": param["name"]})
+
+    # Extract methods (FIX: capture visibility to filter private methods)
+    # FIX: Use two-step approach to handle annotations with parentheses
+    method_sig_pattern = re.compile(
+        r"(public|private|protected)\s+"
         r"(?:static\s+)?(?:final\s+)?(?:synchronized\s+)?"
         r"(\w+(?:<[^>]+>)?)\s+"
-        r"(\w+)\s*\(([^)]*)\)",
+        r"(\w+)\s*\(",
         re.MULTILINE,
     )
 
-    for match in method_pattern.finditer(source_code):
-        return_type = match.group(1)
-        method_name = match.group(2)
-        params = match.group(3)
+    for match in method_sig_pattern.finditer(source_code):
+        visibility = match.group(1)
+        return_type = match.group(2)
+        method_name = match.group(3)
 
-        # Skip constructors and getters/setters for basic testing
+        # Skip constructors
         if method_name == info["class_name"]:
             continue
+
+        # FIX: Filter private methods - they shouldn't be tested directly
+        if visibility == "private":
+            continue
+
+        # FIX: Extract balanced parentheses for parameters
+        # (handles annotations like @PathVariable("ownerId") correctly)
+        params = _extract_balanced_parens(source_code, match.end() - 1)
 
         # Parse parameters into structured form
         parsed_params = _parse_parameters(params)
@@ -150,18 +199,63 @@ def _analyze_class(source_code: str) -> dict[str, Any]:
                 "parameters": params,
                 "parsed_params": parsed_params,
                 "is_void": return_type == "void",
+                "visibility": visibility,
             }
         )
 
     # Extract dependencies (fields with @Autowired, @Inject, etc.)
+    # This is a fallback for field injection pattern
     dep_pattern = re.compile(
         r"@(?:Autowired|Inject|Resource)\s+(?:private\s+)?(\w+(?:<[^>]+>)?)\s+(\w+)", re.MULTILINE
     )
 
     for match in dep_pattern.finditer(source_code):
-        dependencies.append({"type": match.group(1), "name": match.group(2)})
+        dep_type = match.group(1)
+        dep_name = match.group(2)
+        # Avoid duplicates (may already be added from constructor)
+        if not any(d["name"] == dep_name for d in dependencies):
+            dependencies.append({"type": dep_type, "name": dep_name})
 
     return info
+
+
+def _is_primitive_type(type_name: str) -> bool:
+    """Check if a type is a Java primitive or wrapper type."""
+    primitives = {
+        "int", "long", "short", "byte", "double", "float", "boolean", "char",
+        "Integer", "Long", "Short", "Byte", "Double", "Float", "Boolean", "Character",
+        "String", "java.lang.String", "java.lang.Integer", "java.lang.Long",
+        "java.lang.Double", "java.lang.Float", "java.lang.Boolean",
+    }
+    # Strip generics and 'final' modifier
+    clean_type = type_name.replace("final", "").strip().split("<")[0].strip()
+    return clean_type in primitives
+
+
+def _extract_balanced_parens(text: str, start_pos: int) -> str:
+    """Extract content between balanced parentheses starting at start_pos.
+
+    This handles nested parentheses correctly, unlike a simple regex [^)]*.
+    For example: @PathVariable("ownerId") int ownerId -> correctly captures full params
+    """
+    depth = 0
+    content = []
+    i = start_pos
+    while i < len(text):
+        c = text[i]
+        if c == "(":
+            if depth > 0:
+                content.append(c)
+            depth += 1
+        elif c == ")":
+            depth -= 1
+            if depth == 0:
+                return "".join(content)
+            content.append(c)
+        elif depth > 0:
+            content.append(c)
+        i += 1
+    return "".join(content)
 
 
 def _detect_class_type(source_code: str, class_info: dict[str, Any]) -> str:
@@ -208,10 +302,18 @@ def _generate_test_code(context: dict[str, Any]) -> str:
     dependencies = context["dependencies"]
     conventions = context.get("conventions", {})
     test_requirements = context.get("test_requirements", [])
+    source_imports = context.get("imports", [])
+    is_record = context.get("is_record", False)
 
     # Determine test style from conventions
     uses_mockito = conventions.get("mocking", {}).get("uses_mockito", True)
     uses_assertj = conventions.get("assertions", {}).get("dominant_style") == "assertj"
+
+    # FIX: Track test method names for uniqueness
+    used_test_names: set[str] = set()
+
+    # Check if class uses reactive types (Mono/Flux)
+    uses_reactive = _uses_reactive_types(methods)
 
     # Build imports
     imports = [
@@ -226,9 +328,9 @@ def _generate_test_code(context: dict[str, Any]) -> str:
         imports.extend(
             [
                 "import org.mockito.Mock;",
-                "import org.mockito.InjectMocks;",
-                "import org.mockito.MockitoAnnotations;",
-                "import static org.mockito.Mockito.*;",
+                "import org.mockito.Mockito;",
+                "import org.mockito.junit.jupiter.MockitoExtension;",
+                "import org.junit.jupiter.api.extension.ExtendWith;",
             ]
         )
 
@@ -237,12 +339,36 @@ def _generate_test_code(context: dict[str, Any]) -> str:
     else:
         imports.append("import static org.junit.jupiter.api.Assertions.*;")
 
+    # FIX: Add reactive type support (StepVerifier for Mono/Flux)
+    if uses_reactive:
+        imports.append("import reactor.test.StepVerifier;")
+
+    # FIX: Add relevant imports from source file
+    # Filter to common useful imports for testing
+    for imp in source_imports:
+        # Skip test-related imports and framework internals
+        if any(skip in imp for skip in ["junit", "mockito", "assertj", "hamcrest"]):
+            continue
+        # Include model/domain imports, utility imports
+        if any(keep in imp for keep in [
+            package.rsplit(".", 1)[0] if "." in package else package,  # Same package prefix
+            "java.util",
+            "java.time",
+            "java.math",
+        ]):
+            import_line = f"import {imp};"
+            if import_line not in imports:
+                imports.append(import_line)
+
     imports.append("")
 
     # Build class body
     test_class_name = f"{class_name}Test"
 
-    class_body = [f'@DisplayName("{class_name} Unit Tests")', f"class {test_class_name} {{", ""]
+    class_body = []
+    if uses_mockito and dependencies:
+        class_body.append("@ExtendWith(MockitoExtension.class)")
+    class_body.extend([f'@DisplayName("{class_name} Unit Tests")', f"class {test_class_name} {{", ""])
 
     # Add mocks for dependencies
     for dep in dependencies:
@@ -251,8 +377,6 @@ def _generate_test_code(context: dict[str, Any]) -> str:
         class_body.append("")
 
     # Add class under test
-    if dependencies:
-        class_body.append("    @InjectMocks")
     class_body.append(f"    private {class_name} {_to_camel_case(class_name)};")
     class_body.append("")
 
@@ -265,7 +389,13 @@ def _generate_test_code(context: dict[str, Any]) -> str:
     )
 
     if dependencies:
-        class_body.append("        MockitoAnnotations.openMocks(this);")
+        # FIX: Create instance with constructor injection (modern Spring pattern)
+        dep_names = ", ".join(d["name"] for d in dependencies)
+        class_body.append(f"        {_to_camel_case(class_name)} = new {class_name}({dep_names});")
+    elif is_record:
+        # FIX: Java records need all-args constructor
+        class_body.append(f"        // Note: {class_name} is a record - provide required arguments")
+        class_body.append(f"        {_to_camel_case(class_name)} = new {class_name}(/* TODO: provide record components */);")
     else:
         class_body.append(f"        {_to_camel_case(class_name)} = new {class_name}();")
 
@@ -276,14 +406,14 @@ def _generate_test_code(context: dict[str, Any]) -> str:
         class_body.append("    // ========== Tests from Impact Analysis ==========")
         class_body.append("")
         for req in test_requirements:
-            req_tests = _generate_requirement_test(req, class_name, uses_assertj, methods)
+            req_tests = _generate_requirement_test(req, class_name, uses_assertj, methods, used_test_names, uses_reactive)
             class_body.extend(req_tests)
 
     # Generate standard test methods for remaining methods
     class_body.append("    // ========== Standard Coverage Tests ==========")
     class_body.append("")
     for method in methods:
-        test_methods = _generate_method_tests(method, class_name, class_type, uses_assertj)
+        test_methods = _generate_method_tests(method, class_name, class_type, uses_assertj, used_test_names, uses_reactive)
         class_body.extend(test_methods)
 
     class_body.append("}")
@@ -291,18 +421,49 @@ def _generate_test_code(context: dict[str, Any]) -> str:
     return "\n".join(imports + class_body)
 
 
+def _uses_reactive_types(methods: list[dict[str, Any]]) -> bool:
+    """Check if any method returns reactive types (Mono/Flux)."""
+    for method in methods:
+        return_type = method.get("return_type", "")
+        if "Mono" in return_type or "Flux" in return_type:
+            return True
+    return False
+
+
+def _get_unique_test_name(base_name: str, used_names: set[str]) -> str:
+    """Get a unique test method name, adding suffix if needed."""
+    if base_name not in used_names:
+        used_names.add(base_name)
+        return base_name
+
+    # Add suffix to make unique
+    counter = 2
+    while f"{base_name}{counter}" in used_names:
+        counter += 1
+    unique_name = f"{base_name}{counter}"
+    used_names.add(unique_name)
+    return unique_name
+
+
 def _generate_requirement_test(
     req: dict[str, Any],
     class_name: str,
     uses_assertj: bool,
     methods: list[dict[str, Any]],
+    used_test_names: set[str] | None = None,
+    uses_reactive: bool = False,
 ) -> list[str]:
     """Generate a test based on an impact analysis requirement."""
+    if used_test_names is None:
+        used_test_names = set()
+
     tests = []
     instance_name = _to_camel_case(class_name)
 
     # Extract requirement info
-    test_name = req.get("suggested_test_name", f"test{req.get('id', 'Requirement')}")
+    base_test_name = req.get("suggested_test_name", f"test{req.get('id', 'Requirement')}")
+    # FIX: Ensure unique test method names
+    test_name = _get_unique_test_name(base_test_name, used_test_names)
     description = req.get("description", "Verify requirement")
     scenario_type = req.get("scenario_type", "nominal")
     target_method = req.get("target_method")
@@ -314,6 +475,12 @@ def _generate_requirement_test(
             if m["name"] == target_method:
                 matched_method = m
                 break
+
+    # Check if this method returns reactive types
+    is_reactive_method = matched_method and (
+        "Mono" in matched_method.get("return_type", "") or
+        "Flux" in matched_method.get("return_type", "")
+    )
 
     # Generate test based on scenario type
     tests.extend([
@@ -440,14 +607,25 @@ def _generate_requirement_test(
 
 
 def _generate_method_tests(
-    method: dict[str, Any], class_name: str, class_type: str, uses_assertj: bool
+    method: dict[str, Any],
+    class_name: str,
+    class_type: str,
+    uses_assertj: bool,
+    used_test_names: set[str] | None = None,
+    uses_reactive: bool = False,
 ) -> list[str]:
     """Generate test methods for a single method."""
+    if used_test_names is None:
+        used_test_names = set()
+
     method_name = method["name"]
     return_type = method["return_type"]
     is_void = method["is_void"]
     parsed_params = method.get("parsed_params", [])
     instance_name = _to_camel_case(class_name)
+
+    # FIX: Check if this method returns reactive types
+    is_reactive = "Mono" in return_type or "Flux" in return_type
 
     tests = []
 
@@ -462,7 +640,8 @@ def _generate_method_tests(
         arrange_vars = []
 
     # Test 1: Basic success case
-    test_name = f"should{_to_pascal_case(method_name)}Successfully"
+    base_test_name = f"should{_to_pascal_case(method_name)}Successfully"
+    test_name = _get_unique_test_name(base_test_name, used_test_names)
     tests.extend(
         [
             "    @Test",
@@ -488,6 +667,24 @@ def _generate_method_tests(
                 "        // Verify expected behavior",
             ]
         )
+    elif is_reactive:
+        # FIX: Use StepVerifier for reactive types
+        tests.extend(
+            [
+                "        // Act",
+                f"        {return_type} result = {instance_name}.{method_call};",
+                "",
+                "        // Assert - use StepVerifier for reactive types",
+            ]
+        )
+        if "Mono" in return_type:
+            tests.append("        StepVerifier.create(result)")
+            tests.append("            .expectNextCount(1)")
+            tests.append("            .verifyComplete();")
+        else:  # Flux
+            tests.append("        StepVerifier.create(result)")
+            tests.append("            .thenConsumeWhile(item -> true)")
+            tests.append("            .verifyComplete();")
     else:
         tests.extend(
             [
@@ -504,9 +701,12 @@ def _generate_method_tests(
 
     tests.extend(["    }", ""])
 
-    # Test 2: Edge case / null handling (for methods with parameters)
-    if parsed_params:
-        test_name = f"should{_to_pascal_case(method_name)}HandleNullInput"
+    # Test 2: Edge case / null handling (for methods with nullable parameters)
+    # Only generate if there's at least one nullable (non-primitive) parameter
+    nullable_params = [p for p in parsed_params if not _is_primitive_type(p["type"])]
+    if nullable_params:
+        base_test_name = f"should{_to_pascal_case(method_name)}HandleNullInput"
+        test_name = _get_unique_test_name(base_test_name, used_test_names)
         tests.extend(
             [
                 "    @Test",
@@ -516,10 +716,10 @@ def _generate_method_tests(
             ]
         )
 
-        # Generate null values for nullable params
+        # Generate null values for nullable params, keep valid values for primitives
         null_params = []
         for p in parsed_params:
-            if p["type"].lower() in ("int", "long", "double", "float", "boolean", "byte", "short", "char"):
+            if _is_primitive_type(p["type"]):
                 null_params.append(_generate_test_value(p["type"], p["name"]))
             else:
                 null_params.append("null")
@@ -550,8 +750,8 @@ def _generate_arrange_variables(parsed_params: list[dict[str, str]]) -> list[str
     for param in parsed_params:
         param_type = param["type"]
         param_name = param["name"]
-        # Only generate variables for complex types
-        if param_type not in ("String", "int", "long", "double", "float", "boolean", "Integer", "Long", "Double", "Float", "Boolean"):
+        # FIX: Use _is_primitive_type for consistent type checking
+        if not _is_primitive_type(param_type):
             value = _generate_test_value(param_type, param_name)
             vars_list.append(f"{param_type} {param_name} = {value};")
     return vars_list
@@ -599,6 +799,8 @@ def _parse_parameters(params_str: str) -> list[dict[str, str]]:
     for param in params:
         # Handle annotations like @Valid, @PathVariable, etc.
         param = re.sub(r"@\w+(?:\([^)]*\))?\s*", "", param).strip()
+        # FIX: Remove 'final' modifier from parameter type
+        param = re.sub(r"\bfinal\s+", "", param).strip()
         parts = param.rsplit(None, 1)
         if len(parts) == 2:
             param_type, param_name = parts

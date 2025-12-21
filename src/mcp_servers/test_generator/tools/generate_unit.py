@@ -138,11 +138,22 @@ def _analyze_class(source_code: str) -> dict[str, Any]:
     if class_match:
         info["class_name"] = class_match.group(1)
 
-    # Extract class annotations
-    class_annotations = re.findall(
-        r"@(\w+)(?:\([^)]*\))?\s*(?:public\s+)?(?:abstract\s+)?class", source_code
-    )
-    annotations.extend(class_annotations)
+    # Extract ALL class-level annotations (before the class declaration)
+    # Find where the class declaration starts
+    class_decl_match = re.search(r'(?:public\s+)?(?:abstract\s+)?class\s+\w+', source_code)
+    if class_decl_match:
+        # Get all annotations in the code before the class declaration
+        before_class = source_code[:class_decl_match.start()]
+        # Find the last group of annotations (those closest to class declaration)
+        # Look for annotations that are not inside method signatures
+        class_annotations = re.findall(r'@(\w+)(?:\([^)]*\))?', before_class)
+        # Filter to class-level annotations (skip parameter annotations like @Valid)
+        class_level_annots = [a for a in class_annotations if a in (
+            'Controller', 'RestController', 'Service', 'Repository', 'Component',
+            'RequestMapping', 'Timed', 'Transactional', 'Configuration', 'Bean',
+            'Slf4j', 'Log4j2', 'Data', 'Entity', 'Table', 'Document'
+        )]
+        annotations.extend(class_level_annots)
 
     # FIX: Extract constructor parameters for dependency injection
     # Modern Spring uses constructor injection without @Autowired annotation
@@ -710,10 +721,14 @@ def _generate_method_tests(
 
     tests.extend(["    }", ""])
 
-    # Test 2: Edge case / null handling (for methods with nullable parameters)
-    # Only generate if there's at least one nullable (non-primitive) parameter
-    nullable_params = [p for p in parsed_params if not _is_primitive_type(p["type"])]
-    if nullable_params:
+    # Test 2: Edge case / null handling
+    # SKIP for controllers - Spring @Valid handles null validation at HTTP layer,
+    # not in the method body. The method never receives null for @Valid params.
+    # For service/utility classes, null tests may still be appropriate.
+    if class_type not in ("controller",):
+        nullable_params = [p for p in parsed_params if not _is_primitive_type(p["type"])]
+        if not nullable_params:
+            return tests
         base_test_name = f"should{_to_pascal_case(method_name)}HandleNullInput"
         test_name = _get_unique_test_name(base_test_name, used_test_names)
         tests.extend(
@@ -744,9 +759,9 @@ def _generate_method_tests(
 
         if uses_assertj:
             tests.append(f"        assertThatThrownBy(() -> {instance_name}.{null_method_call})")
-            tests.append("            .isInstanceOf(IllegalArgumentException.class);")
+            tests.append("            .isInstanceOf(NullPointerException.class);")
         else:
-            tests.append(f"        assertThrows(IllegalArgumentException.class, () -> {instance_name}.{null_method_call});")
+            tests.append(f"        assertThrows(NullPointerException.class, () -> {instance_name}.{null_method_call});")
 
         tests.extend(["    }", ""])
 
@@ -780,17 +795,19 @@ def _generate_mock_stubs(
     stubs = []
     method_lower = method_name.lower()
 
-    # Find repository dependency name
+    # Find repository and mapper dependency names
     repo_name = None
+    mapper_name = None
     if dependencies:
         for dep in dependencies:
-            if "Repository" in dep.get("type", ""):
+            dep_type = dep.get("type", "")
+            if "Repository" in dep_type and not repo_name:
                 repo_name = dep.get("name")
-                break
+            elif "Mapper" in dep_type and not mapper_name:
+                mapper_name = dep.get("name")
 
-    # If no repo found, try to infer from entity type
+    # If no repo found, skip mock generation
     if not repo_name:
-        # Skip mock generation if we don't know the repo name
         return stubs
 
     # Common patterns that need mock setup:
@@ -807,10 +824,16 @@ def _generate_mock_stubs(
 
     # Check for common method patterns
     if "create" in method_lower or "save" in method_lower or "add" in method_lower:
-        # For create methods, mock repository.save() to return the entity
+        # For create methods, mock mapper.map() + repository.save()
         if entity_type and not _is_primitive_type(entity_type):
-            stubs.append(f"{entity_type} savedEntity = new {entity_type}();")
-            stubs.append(f"Mockito.when({repo_name}.save(Mockito.any({entity_type}.class))).thenReturn(savedEntity);")
+            stubs.append(f"{entity_type} mappedEntity = new {entity_type}();")
+            # Add mapper stub if mapper exists
+            if mapper_name:
+                # Find Request parameter
+                request_param = next((p for p in parsed_params if p["type"].endswith("Request") or p["type"].endswith("DTO")), None)
+                if request_param:
+                    stubs.append(f"Mockito.when({mapper_name}.map(Mockito.any({entity_type}.class), Mockito.eq({request_param['name']}))).thenReturn(mappedEntity);")
+            stubs.append(f"Mockito.when({repo_name}.save(mappedEntity)).thenReturn(mappedEntity);")
 
     elif "update" in method_lower or "modify" in method_lower:
         # For update methods, mock findById + save

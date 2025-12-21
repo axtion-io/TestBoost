@@ -680,6 +680,9 @@ def _write_tests_to_disk(project_path: str, validated_tests: list[dict[str, Any]
     """
     Write validated tests to the project's src/test/java directory.
 
+    For multi-module Maven projects, detects the correct module directory
+    based on the package name and existing module structure.
+
     Args:
         project_path: Path to the Java project root
         validated_tests: List of validated test files with content
@@ -689,6 +692,9 @@ def _write_tests_to_disk(project_path: str, validated_tests: list[dict[str, Any]
     """
     written_files = []
     project_dir = Path(project_path)
+
+    # Detect multi-module Maven structure
+    modules = _detect_maven_modules(project_dir)
 
     for test in validated_tests:
         # Only write tests that compiled successfully
@@ -706,8 +712,16 @@ def _write_tests_to_disk(project_path: str, validated_tests: list[dict[str, Any]
         if not content or not relative_path:
             continue
 
-        # Build full path
-        full_path = project_dir / relative_path
+        # For multi-module projects, find the best module for this test
+        if modules:
+            module_path = _find_best_module_for_test(project_dir, modules, content)
+            if module_path:
+                # Rewrite path to be within the module
+                full_path = module_path / relative_path
+            else:
+                full_path = project_dir / relative_path
+        else:
+            full_path = project_dir / relative_path
 
         try:
             # Create parent directories if needed
@@ -721,7 +735,7 @@ def _write_tests_to_disk(project_path: str, validated_tests: list[dict[str, Any]
                 path=str(full_path),
                 size_bytes=len(content),
             )
-            written_files.append(relative_path)
+            written_files.append(str(full_path.relative_to(project_dir)))
 
         except Exception as e:
             logger.error(
@@ -737,6 +751,95 @@ def _write_tests_to_disk(project_path: str, validated_tests: list[dict[str, Any]
     )
 
     return written_files
+
+
+def _detect_maven_modules(project_dir: Path) -> list[Path]:
+    """
+    Detect Maven module directories in a multi-module project.
+
+    Args:
+        project_dir: Root project directory
+
+    Returns:
+        List of module directory paths (empty if not multi-module)
+    """
+    modules = []
+    parent_pom = project_dir / "pom.xml"
+
+    if not parent_pom.exists():
+        return modules
+
+    # Check if it's a multi-module project by looking for subdirectories with pom.xml
+    for subdir in project_dir.iterdir():
+        if subdir.is_dir() and (subdir / "pom.xml").exists():
+            # Verify it has Java sources
+            if (subdir / "src" / "main" / "java").exists():
+                modules.append(subdir)
+
+    return modules
+
+
+def _find_best_module_for_test(
+    project_dir: Path,
+    modules: list[Path],
+    test_content: str,
+) -> Path | None:
+    """
+    Find the best module to place a test based on package and class references.
+
+    Args:
+        project_dir: Root project directory
+        modules: List of module paths
+        test_content: Test file content
+
+    Returns:
+        Best matching module path, or None if no match found
+    """
+    # Extract package from test content
+    package_match = re.search(r'package\s+([\w.]+);', test_content)
+    if not package_match:
+        return None
+
+    package = package_match.group(1)
+    package_path = package.replace(".", "/")
+
+    # Extract the class being tested (look for imports or class under test)
+    class_under_test = None
+    import_match = re.search(r'import\s+([\w.]+\.(\w+));', test_content)
+    if import_match:
+        class_under_test = import_match.group(1)
+
+    # Find module that has matching source package
+    for module in modules:
+        src_dir = module / "src" / "main" / "java"
+        if (src_dir / package_path).exists():
+            return module
+
+        # Also check if the class under test exists in this module
+        if class_under_test:
+            class_path = class_under_test.replace(".", "/") + ".java"
+            if (src_dir / class_path).exists():
+                return module
+
+    # Heuristic: match by module name patterns
+    for module in modules:
+        module_name = module.name.lower()
+        # Check common patterns
+        if "api" in package.lower() and "api" in module_name:
+            return module
+        if "customer" in package.lower() and "customer" in module_name:
+            return module
+        if "vet" in package.lower() and "vet" in module_name:
+            return module
+        if "visit" in package.lower() and "visit" in module_name:
+            return module
+
+    # Default to first module with test directory
+    for module in modules:
+        if (module / "src" / "test" / "java").exists():
+            return module
+
+    return None
 
 
 async def _store_agent_reasoning(

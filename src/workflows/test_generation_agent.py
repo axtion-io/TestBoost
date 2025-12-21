@@ -229,10 +229,8 @@ Include the complete test code for each class in separate ```java blocks."""
         else:
             validated_tests = []
 
-        # Write validated tests to disk
+        # Write validated tests to disk (also sets written_to_disk flag on each test)
         written_tests = _write_tests_to_disk(project_path, validated_tests)
-        for test in validated_tests:
-            test["written_to_disk"] = test.get("path") in written_tests
 
         # Run test feedback loop - execute tests and fix until passing
         feedback_result = await _run_test_feedback_loop(
@@ -683,6 +681,10 @@ def _write_tests_to_disk(project_path: str, validated_tests: list[dict[str, Any]
     For multi-module Maven projects, detects the correct module directory
     based on the package name and existing module structure.
 
+    Also updates each test dict with:
+    - 'actual_path': the full path where the test was written
+    - 'written_to_disk': True if successfully written
+
     Args:
         project_path: Path to the Java project root
         validated_tests: List of validated test files with content
@@ -704,12 +706,14 @@ def _write_tests_to_disk(project_path: str, validated_tests: list[dict[str, Any]
                 path=test.get("path"),
                 reason="compilation_failed",
             )
+            test["written_to_disk"] = False
             continue
 
         content = test.get("content")
         relative_path = test.get("path")
 
         if not content or not relative_path:
+            test["written_to_disk"] = False
             continue
 
         # For multi-module projects, find the best module for this test
@@ -730,12 +734,17 @@ def _write_tests_to_disk(project_path: str, validated_tests: list[dict[str, Any]
             # Write the test file
             full_path.write_text(content, encoding="utf-8")
 
+            # Update test dict with actual path
+            actual_path = str(full_path.relative_to(project_dir))
+            test["actual_path"] = actual_path
+            test["written_to_disk"] = True
+
             logger.info(
                 "test_written_to_disk",
                 path=str(full_path),
                 size_bytes=len(content),
             )
-            written_files.append(str(full_path.relative_to(project_dir)))
+            written_files.append(actual_path)
 
         except Exception as e:
             logger.error(
@@ -743,6 +752,7 @@ def _write_tests_to_disk(project_path: str, validated_tests: list[dict[str, Any]
                 path=str(full_path),
                 error=str(e),
             )
+            test["written_to_disk"] = False
 
     logger.info(
         "tests_write_complete",
@@ -991,7 +1001,11 @@ async def _run_test_feedback_loop(
         }
 
     project_dir = Path(project_path)
-    current_tests = {t["path"]: t["content"] for t in validated_tests}
+    # Use actual_path (with module) if available, otherwise original path
+    current_tests = {
+        t.get("actual_path", t["path"]): t["content"]
+        for t in validated_tests
+    }
 
     for iteration in range(1, max_iterations + 1):
         logger.info(
@@ -1107,6 +1121,8 @@ async def _run_maven_tests(
     """
     Run Maven tests on the project.
 
+    For multi-module projects, runs tests in each module that has test files.
+
     Args:
         project_dir: Path to the Maven project
         test_files: List of test file info dicts
@@ -1114,82 +1130,104 @@ async def _run_maven_tests(
     Returns:
         dict with success flag and output
     """
-    # Find the module containing the tests (for multi-module projects)
-    # First, try to find a pom.xml in the project directory
-    pom_path = project_dir / "pom.xml"
-
-    # Build test command
-    if pom_path.exists():
-        # Check if it's a multi-module project
-        mvn_cmd = ["mvn", "test", "-f", str(pom_path)]
-    else:
-        # Look for pom.xml in subdirectories
-        for subdir in project_dir.iterdir():
-            if subdir.is_dir() and (subdir / "pom.xml").exists():
-                mvn_cmd = ["mvn", "test", "-f", str(subdir / "pom.xml")]
-                break
-        else:
-            return {
-                "success": False,
-                "output": "No pom.xml found in project",
-                "return_code": -1,
-            }
-
-    # Add specific test classes if we know them
-    test_classes = []
+    # Group tests by module
+    tests_by_module: dict[str, list[str]] = {}
     for test_file in test_files:
-        path = test_file.get("path", "")
-        if path.endswith(".java"):
-            # Extract class name from path
-            class_name = Path(path).stem
-            test_classes.append(class_name)
+        # Use actual_path which includes module directory
+        path = test_file.get("actual_path", test_file.get("path", ""))
+        if not path.endswith(".java"):
+            continue
 
-    if test_classes:
-        # Run only the generated tests
-        test_pattern = ",".join(test_classes)
-        mvn_cmd.extend(["-Dtest=" + test_pattern, "-DfailIfNoTests=false"])
+        class_name = Path(path).stem
 
-    logger.info("running_maven_tests", command=" ".join(mvn_cmd))
+        # Check if path includes a module directory
+        parts = Path(path).parts
+        if len(parts) > 1 and (project_dir / parts[0] / "pom.xml").exists():
+            module = parts[0]
+        else:
+            module = ""
 
-    try:
-        result = subprocess.run(
-            mvn_cmd,
-            cwd=str(project_dir),
-            capture_output=True,
-            text=True,
-            timeout=TEST_TIMEOUT_SECONDS,
-            shell=True,  # Required on Windows
-        )
+        if module not in tests_by_module:
+            tests_by_module[module] = []
+        tests_by_module[module].append(class_name)
 
-        success = result.returncode == 0
-        output = result.stdout + "\n" + result.stderr
+    if not tests_by_module:
+        return {
+            "success": False,
+            "output": "No test files found",
+            "return_code": -1,
+        }
+
+    all_output = []
+    all_success = True
+
+    # Run tests for each module
+    for module, test_classes in tests_by_module.items():
+        if module:
+            # Multi-module: run in specific module
+            pom_path = project_dir / module / "pom.xml"
+            cwd = project_dir / module
+        else:
+            # Single module: run in project root
+            pom_path = project_dir / "pom.xml"
+            cwd = project_dir
+
+        if not pom_path.exists():
+            all_output.append(f"No pom.xml found for module {module or 'root'}")
+            continue
+
+        # Build Maven command
+        mvn_cmd = ["mvn", "test", "-f", str(pom_path)]
+
+        # Add specific test classes
+        if test_classes:
+            test_pattern = ",".join(test_classes)
+            mvn_cmd.extend(["-Dtest=" + test_pattern, "-DfailIfNoTests=false"])
 
         logger.info(
-            "maven_tests_complete",
-            success=success,
-            return_code=result.returncode,
+            "running_maven_tests",
+            module=module or "root",
+            command=" ".join(mvn_cmd),
         )
 
-        return {
-            "success": success,
-            "output": output,
-            "return_code": result.returncode,
-        }
+        try:
+            result = subprocess.run(
+                mvn_cmd,
+                cwd=str(cwd),
+                capture_output=True,
+                text=True,
+                timeout=TEST_TIMEOUT_SECONDS,
+                shell=True,  # Required on Windows
+            )
 
-    except subprocess.TimeoutExpired:
-        logger.error("maven_tests_timeout", timeout=TEST_TIMEOUT_SECONDS)
-        return {
-            "success": False,
-            "output": f"Maven tests timed out after {TEST_TIMEOUT_SECONDS} seconds",
-            "return_code": -1,
-        }
-    except Exception as e:
-        logger.error("maven_tests_failed", error=str(e))
-        return {
-            "success": False,
-            "output": str(e),
-            "return_code": -1,
-        }
+            output = result.stdout + "\n" + result.stderr
+            all_output.append(f"=== Module: {module or 'root'} ===\n{output}")
+
+            if result.returncode != 0:
+                all_success = False
+
+            logger.info(
+                "maven_tests_complete",
+                module=module or "root",
+                success=result.returncode == 0,
+                return_code=result.returncode,
+            )
+
+        except subprocess.TimeoutExpired:
+            logger.error("maven_tests_timeout", module=module, timeout=TEST_TIMEOUT_SECONDS)
+            all_output.append(f"Module {module}: timed out after {TEST_TIMEOUT_SECONDS}s")
+            all_success = False
+
+        except Exception as e:
+            logger.error("maven_tests_failed", module=module, error=str(e))
+            all_output.append(f"Module {module}: {str(e)}")
+            all_success = False
+
+    return {
+        "success": all_success,
+        "output": "\n".join(all_output),
+        "return_code": 0 if all_success else 1,
+    }
 
 
 def _parse_test_failures(maven_output: str) -> list[dict[str, Any]]:

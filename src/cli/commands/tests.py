@@ -439,7 +439,15 @@ async def _run_test_generation(
                 console.print("\n[red]Test generation failed[/red]")
                 raise typer.Exit(1)
 
-            console.print("\n[bold green]Test Generation Complete[/bold green]\n")
+            # Get feedback results
+            feedback_result = result.get("feedback_result", {})
+            tests_passing = feedback_result.get("success", False)
+            feedback_iterations = feedback_result.get("iterations", 0)
+
+            if tests_passing:
+                console.print("\n[bold green]Test Generation Complete - All Tests Passing![/bold green]\n")
+            else:
+                console.print("\n[bold yellow]Test Generation Complete - Some Tests Need Review[/bold yellow]\n")
 
             # Results table
             table = Table(title="Generation Results")
@@ -451,11 +459,20 @@ async def _run_test_generation(
 
             table.add_row("Tests Generated", str(metrics.get("tests_generated", 0)))
             table.add_row("Compilation Success", str(metrics.get("compilation_success", False)))
+            table.add_row(
+                "Tests Passing",
+                "[green]Yes[/green]" if tests_passing else "[yellow]No[/yellow]"
+            )
+            table.add_row("Feedback Iterations", str(feedback_iterations))
             table.add_row("Coverage Target", f"{metrics.get('coverage_target', mutation_score)}%")
             table.add_row("Duration", f"{metrics.get('duration_seconds', 0)}s")
             table.add_row("Agent", result.get("agent_name", "unknown"))
 
             console.print(table)
+
+            # Show feedback message if available
+            if feedback_result.get("message"):
+                console.print(f"\n[dim]{feedback_result['message']}[/dim]")
 
             # Show generated test files
             if generated_tests:
@@ -472,10 +489,15 @@ async def _run_test_generation(
                         )
 
             console.print("\n[bold]Next Steps:[/bold]")
-            console.print("1. Review generated tests in src/test/java")
-            console.print("2. Run test suite: mvn test")
-            console.print("3. Check LangSmith traces for agent reasoning")
-            console.print("4. Commit passing tests")
+            if tests_passing:
+                console.print("1. Review generated tests in src/test/java")
+                console.print("2. Commit passing tests: git add . && git commit")
+                console.print("3. Check LangSmith traces for agent reasoning")
+            else:
+                console.print("1. Review failed tests in src/test/java")
+                console.print("2. Run manually: mvn test -Dtest=<TestClass>")
+                console.print("3. Fix remaining issues and re-run generation")
+                console.print("4. Check LangSmith traces for agent reasoning")
 
         except Exception as e:
             progress.remove_task(task)

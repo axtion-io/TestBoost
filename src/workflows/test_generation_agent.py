@@ -12,6 +12,8 @@ Tasks implemented: T054-T064
 
 import asyncio
 import json
+import re
+import subprocess
 import time
 from pathlib import Path
 from typing import Any
@@ -41,6 +43,10 @@ settings = get_settings()
 MAX_CORRECTION_RETRIES = 3
 MIN_WAIT = 1
 MAX_WAIT = 5
+
+# Feedback loop configuration - run tests and fix until passing
+MAX_TEST_ITERATIONS = 5  # Maximum attempts to fix failing tests
+TEST_TIMEOUT_SECONDS = 300  # 5 minutes timeout for Maven test run
 
 
 class TestGenerationError(Exception):
@@ -228,6 +234,15 @@ Include the complete test code for each class in separate ```java blocks."""
         for test in validated_tests:
             test["written_to_disk"] = test.get("path") in written_tests
 
+        # Run test feedback loop - execute tests and fix until passing
+        feedback_result = await _run_test_feedback_loop(
+            session_id=session_id,
+            artifact_repo=artifact_repo,
+            agent=agent,
+            validated_tests=validated_tests,
+            project_path=project_path,
+        )
+
         # Calculate metrics
         duration = time.time() - start_time
         metrics = {
@@ -235,6 +250,8 @@ Include the complete test code for each class in separate ```java blocks."""
             "tests_generated": len(validated_tests),
             "compilation_success": all(t.get("compiles", False) for t in validated_tests),
             "coverage_target": coverage_target,
+            "tests_passing": feedback_result.get("success", False),
+            "feedback_iterations": feedback_result.get("iterations", 0),
         }
 
         # Store LLM metrics (T061)
@@ -257,6 +274,7 @@ Include the complete test code for each class in separate ```java blocks."""
             "generated_tests": validated_tests,
             "metrics": metrics,
             "agent_name": config.name,
+            "feedback_result": feedback_result,
         }
 
     except Exception as e:
@@ -827,6 +845,387 @@ async def _store_llm_metrics(
     )
 
     logger.debug("llm_metrics_stored", session_id=str(session_id))
+
+
+async def _run_test_feedback_loop(
+    session_id: UUID,
+    artifact_repo: ArtifactRepository,
+    agent: Any,
+    validated_tests: list[dict[str, Any]],
+    project_path: str,
+    max_iterations: int = MAX_TEST_ITERATIONS,
+) -> dict[str, Any]:
+    """
+    Run tests and iterate with agent corrections until all tests pass.
+
+    This implements a feedback loop:
+    1. Run Maven tests
+    2. Parse failures
+    3. If failures exist, ask agent to fix them
+    4. Write corrected tests
+    5. Repeat until success or max iterations
+
+    Args:
+        session_id: Session UUID
+        artifact_repo: Artifact repository
+        agent: LangGraph agent for corrections
+        validated_tests: List of validated test files
+        project_path: Java project path
+        max_iterations: Maximum correction iterations
+
+    Returns:
+        dict with final test results and iteration count
+    """
+    # Get the test files that were written
+    test_files = [t for t in validated_tests if t.get("written_to_disk")]
+    if not test_files:
+        logger.warning("no_tests_to_run", session_id=str(session_id))
+        return {
+            "success": False,
+            "iterations": 0,
+            "tests": validated_tests,
+            "message": "No tests were written to disk",
+        }
+
+    project_dir = Path(project_path)
+    current_tests = {t["path"]: t["content"] for t in validated_tests}
+
+    for iteration in range(1, max_iterations + 1):
+        logger.info(
+            "test_feedback_iteration",
+            session_id=str(session_id),
+            iteration=iteration,
+            max_iterations=max_iterations,
+        )
+
+        # Step 1: Run Maven tests
+        test_result = await _run_maven_tests(project_dir, test_files)
+
+        if test_result["success"]:
+            logger.info(
+                "test_feedback_success",
+                session_id=str(session_id),
+                iteration=iteration,
+            )
+            return {
+                "success": True,
+                "iterations": iteration,
+                "tests": validated_tests,
+                "message": f"All tests passed after {iteration} iteration(s)",
+            }
+
+        # Step 2: Parse failures
+        failures = _parse_test_failures(test_result["output"])
+
+        if not failures:
+            # Tests failed but couldn't parse failures - might be compilation issue
+            logger.warning(
+                "test_failures_unparseable",
+                session_id=str(session_id),
+                output=test_result["output"][:500],
+            )
+            failures = [{"error": test_result["output"][:2000], "test": "unknown"}]
+
+        logger.info(
+            "test_failures_found",
+            session_id=str(session_id),
+            failure_count=len(failures),
+            iteration=iteration,
+        )
+
+        # Store failure artifact
+        await artifact_repo.create(
+            session_id=session_id,
+            name=f"test_failures_iteration_{iteration}",
+            artifact_type="test_failure",
+            content_type="application/json",
+            file_path=f"artifacts/{session_id}/test_failures/iteration_{iteration}.json",
+            size_bytes=len(json.dumps(failures)),
+        )
+
+        # Step 3: Ask agent to fix failures
+        fix_prompt = _build_fix_prompt(failures, current_tests, project_path)
+
+        fix_response = await _invoke_agent_with_retry(
+            agent=agent,
+            input_data={"messages": [HumanMessage(content=fix_prompt)]},
+            session_id=session_id,
+            artifact_repo=artifact_repo,
+        )
+
+        # Step 4: Extract and write corrected tests
+        corrected_tests = _extract_generated_tests(fix_response)
+
+        if not corrected_tests:
+            logger.warning(
+                "no_corrections_from_agent",
+                session_id=str(session_id),
+                iteration=iteration,
+            )
+            continue
+
+        # Update current tests with corrections
+        for corrected in corrected_tests:
+            path = corrected.get("path")
+            content = corrected.get("content")
+            if path and content:
+                current_tests[path] = content
+                # Write to disk
+                full_path = project_dir / path
+                try:
+                    full_path.parent.mkdir(parents=True, exist_ok=True)
+                    full_path.write_text(content, encoding="utf-8")
+                    logger.info(
+                        "corrected_test_written",
+                        path=str(full_path),
+                        iteration=iteration,
+                    )
+                except Exception as e:
+                    logger.error("corrected_test_write_failed", path=path, error=str(e))
+
+    # Max iterations reached
+    logger.warning(
+        "test_feedback_max_iterations",
+        session_id=str(session_id),
+        max_iterations=max_iterations,
+    )
+    return {
+        "success": False,
+        "iterations": max_iterations,
+        "tests": validated_tests,
+        "message": f"Tests still failing after {max_iterations} iterations",
+    }
+
+
+async def _run_maven_tests(
+    project_dir: Path,
+    test_files: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """
+    Run Maven tests on the project.
+
+    Args:
+        project_dir: Path to the Maven project
+        test_files: List of test file info dicts
+
+    Returns:
+        dict with success flag and output
+    """
+    # Find the module containing the tests (for multi-module projects)
+    # First, try to find a pom.xml in the project directory
+    pom_path = project_dir / "pom.xml"
+
+    # Build test command
+    if pom_path.exists():
+        # Check if it's a multi-module project
+        mvn_cmd = ["mvn", "test", "-f", str(pom_path)]
+    else:
+        # Look for pom.xml in subdirectories
+        for subdir in project_dir.iterdir():
+            if subdir.is_dir() and (subdir / "pom.xml").exists():
+                mvn_cmd = ["mvn", "test", "-f", str(subdir / "pom.xml")]
+                break
+        else:
+            return {
+                "success": False,
+                "output": "No pom.xml found in project",
+                "return_code": -1,
+            }
+
+    # Add specific test classes if we know them
+    test_classes = []
+    for test_file in test_files:
+        path = test_file.get("path", "")
+        if path.endswith(".java"):
+            # Extract class name from path
+            class_name = Path(path).stem
+            test_classes.append(class_name)
+
+    if test_classes:
+        # Run only the generated tests
+        test_pattern = ",".join(test_classes)
+        mvn_cmd.extend(["-Dtest=" + test_pattern, "-DfailIfNoTests=false"])
+
+    logger.info("running_maven_tests", command=" ".join(mvn_cmd))
+
+    try:
+        result = subprocess.run(
+            mvn_cmd,
+            cwd=str(project_dir),
+            capture_output=True,
+            text=True,
+            timeout=TEST_TIMEOUT_SECONDS,
+            shell=True,  # Required on Windows
+        )
+
+        success = result.returncode == 0
+        output = result.stdout + "\n" + result.stderr
+
+        logger.info(
+            "maven_tests_complete",
+            success=success,
+            return_code=result.returncode,
+        )
+
+        return {
+            "success": success,
+            "output": output,
+            "return_code": result.returncode,
+        }
+
+    except subprocess.TimeoutExpired:
+        logger.error("maven_tests_timeout", timeout=TEST_TIMEOUT_SECONDS)
+        return {
+            "success": False,
+            "output": f"Maven tests timed out after {TEST_TIMEOUT_SECONDS} seconds",
+            "return_code": -1,
+        }
+    except Exception as e:
+        logger.error("maven_tests_failed", error=str(e))
+        return {
+            "success": False,
+            "output": str(e),
+            "return_code": -1,
+        }
+
+
+def _parse_test_failures(maven_output: str) -> list[dict[str, Any]]:
+    """
+    Parse Maven test output to extract failure information.
+
+    Args:
+        maven_output: Raw Maven test output
+
+    Returns:
+        List of failure dicts with test name, error message, and stack trace
+    """
+    failures = []
+
+    # Pattern for test failures in Maven output
+    # Example: "Tests run: 5, Failures: 2, Errors: 1"
+    # Example failure block:
+    # "Failed tests:
+    #   shouldRejectInvalidEmail(com.example.OwnerResourceTest): expected: <400> but was: <500>"
+
+    # Look for failure summary
+    failure_pattern = re.compile(
+        r"(?:Failed tests?|Tests in error):\s*\n((?:\s+.+\n)+)",
+        re.MULTILINE
+    )
+
+    matches = failure_pattern.findall(maven_output)
+    for match in matches:
+        # Parse individual failures
+        for line in match.strip().split("\n"):
+            line = line.strip()
+            if not line:
+                continue
+
+            # Parse format: "methodName(className): error message"
+            test_match = re.match(r"(\w+)\(([^)]+)\):\s*(.+)", line)
+            if test_match:
+                failures.append({
+                    "method": test_match.group(1),
+                    "class": test_match.group(2),
+                    "error": test_match.group(3),
+                })
+            else:
+                # Generic format
+                failures.append({"error": line, "test": "unknown"})
+
+    # Also look for compilation errors
+    compile_error_pattern = re.compile(
+        r"\[ERROR\]\s*(.+\.java):\[(\d+),(\d+)\]\s*(.+)",
+        re.MULTILINE
+    )
+
+    for match in compile_error_pattern.finditer(maven_output):
+        failures.append({
+            "type": "compilation",
+            "file": match.group(1),
+            "line": int(match.group(2)),
+            "column": int(match.group(3)),
+            "error": match.group(4),
+        })
+
+    # Look for assertion failures with stack traces
+    assertion_pattern = re.compile(
+        r"(org\.opentest4j\.\w+|java\.lang\.AssertionError):\s*(.+?)(?=\n\tat|\n\n|$)",
+        re.DOTALL
+    )
+
+    for match in assertion_pattern.finditer(maven_output):
+        error_type = match.group(1)
+        message = match.group(2).strip()
+        if message and not any(f.get("error") == message for f in failures):
+            failures.append({
+                "type": "assertion",
+                "error_type": error_type,
+                "error": message,
+            })
+
+    return failures
+
+
+def _build_fix_prompt(
+    failures: list[dict[str, Any]],
+    current_tests: dict[str, str],
+    project_path: str,
+) -> str:
+    """
+    Build a prompt for the agent to fix test failures.
+
+    Args:
+        failures: List of test failures
+        current_tests: Dict of test file path -> content
+        project_path: Project path
+
+    Returns:
+        Prompt string for the agent
+    """
+    prompt = f"""The following tests have failures that need to be fixed.
+
+## Project: {project_path}
+
+## Failures:
+"""
+
+    for i, failure in enumerate(failures, 1):
+        prompt += f"\n### Failure {i}:\n"
+        if failure.get("type") == "compilation":
+            prompt += f"**Compilation Error** in `{failure.get('file')}` line {failure.get('line')}:\n"
+            prompt += f"```\n{failure.get('error')}\n```\n"
+        elif failure.get("method"):
+            prompt += f"**Test**: `{failure.get('class')}.{failure.get('method')}()`\n"
+            prompt += f"**Error**: {failure.get('error')}\n"
+        else:
+            prompt += f"**Error**: {failure.get('error')}\n"
+
+    prompt += "\n## Current Test Files:\n"
+
+    for path, content in current_tests.items():
+        prompt += f"\n### {path}\n```java\n{content}\n```\n"
+
+    prompt += """
+## Instructions:
+
+1. Analyze each failure and understand the root cause
+2. Fix the test code to make it pass
+3. Common issues to check:
+   - Missing imports
+   - Wrong method signatures
+   - Incorrect assertions
+   - Missing mock setup
+   - Wrong exception types
+   - Null pointer issues
+
+4. Return the COMPLETE fixed test files in ```java code blocks
+
+IMPORTANT: Include the full corrected test class content, not just the changed parts.
+Each test file should be in a separate ```java block with the complete class.
+"""
+
+    return prompt
 
 
 __all__ = [

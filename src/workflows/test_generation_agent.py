@@ -34,6 +34,7 @@ from src.lib.config import get_settings
 from src.lib.llm import LLMError, get_llm
 from src.lib.logging import get_logger
 from src.mcp_servers.registry import get_tools_for_servers
+from src.mcp_servers.test_generator.tools.generate_unit import generate_adaptive_tests
 from src.models.impact import TestRequirement
 
 logger = get_logger(__name__)
@@ -59,6 +60,170 @@ class CompilationError(TestGenerationError):
     """Raised when generated tests fail to compile."""
 
     pass
+
+
+def _find_source_files(project_path: str) -> list[str]:
+    """
+    Find Java source files to generate tests for.
+
+    Filters out test files, DTOs, entities, configuration, and other non-testable classes.
+
+    Args:
+        project_path: Path to the Java project root
+
+    Returns:
+        List of relative paths to source files
+    """
+    project_dir = Path(project_path)
+    source_files = []
+
+    # Patterns to include (testable classes)
+    include_patterns = [
+        "**/web/**/*.java",  # Controllers, resources
+        "**/controller/**/*.java",
+        "**/service/**/*.java",
+        "**/application/**/*.java",
+        "**/api/**/*.java",
+    ]
+
+    # Patterns to exclude
+    exclude_patterns = [
+        "**/test/**",  # Test files
+        "**/model/**",  # Entities, DTOs
+        "**/entity/**",
+        "**/dto/**",
+        "**/config/**",  # Configuration
+        "**/configuration/**",
+        "**/mapper/**",  # Mappers (usually simple)
+        "**/*Application.java",  # Main classes
+        "**/*Config.java",
+        "**/*Configuration.java",
+        "**/*Request.java",  # Request/Response DTOs
+        "**/*Response.java",
+        "**/*DTO.java",
+        "**/*Exception.java",  # Exceptions
+    ]
+
+    # Find all Java files in src/main/java
+    main_java_dirs = list(project_dir.glob("**/src/main/java"))
+
+    for main_java_dir in main_java_dirs:
+        for pattern in include_patterns:
+            for source_file in main_java_dir.glob(pattern):
+                # Check if file should be excluded
+                relative_path = str(source_file.relative_to(project_dir))
+                should_exclude = False
+
+                for exclude in exclude_patterns:
+                    # Simple pattern matching
+                    exclude_name = exclude.replace("**/*", "").replace("**", "")
+                    if exclude_name in relative_path or source_file.name.endswith(exclude_name.replace("*", "")):
+                        should_exclude = True
+                        break
+
+                if not should_exclude and relative_path not in source_files:
+                    source_files.append(relative_path)
+
+    logger.info("source_files_found", count=len(source_files), project_path=project_path)
+    return source_files
+
+
+async def _generate_tests_directly(
+    project_path: str,
+    source_files: list[str],
+    test_requirements: list[TestRequirement] | None = None,
+) -> list[dict[str, Any]]:
+    """
+    Generate tests directly by calling the generator tool for each source file.
+
+    This bypasses the LLM agent and calls the generator directly, which produces
+    more reliable results than asking the LLM to use tools.
+
+    Args:
+        project_path: Path to the Java project
+        source_files: List of source files to generate tests for
+        test_requirements: Optional test requirements from impact analysis
+
+    Returns:
+        List of generated test info dicts
+    """
+    generated_tests = []
+
+    # Convert test requirements to dict format
+    requirements_by_file: dict[str, list[dict[str, Any]]] = {}
+    if test_requirements:
+        for req in test_requirements:
+            # Match requirement to source file by class name
+            for source_file in source_files:
+                if req.target_class and req.target_class in source_file:
+                    if source_file not in requirements_by_file:
+                        requirements_by_file[source_file] = []
+                    requirements_by_file[source_file].append({
+                        "suggested_test_name": req.suggested_test_name,
+                        "description": req.description,
+                        "scenario_type": req.scenario_type.value if req.scenario_type else "nominal",
+                        "target_method": req.target_method,
+                    })
+
+    for source_file in source_files:
+        logger.info("generating_tests_for_file", source_file=source_file)
+
+        try:
+            # Get requirements for this file if any
+            file_requirements = requirements_by_file.get(source_file, None)
+
+            # Call generator directly
+            result_json = await generate_adaptive_tests(
+                project_path=project_path,
+                source_file=source_file,
+                test_requirements=file_requirements,
+            )
+
+            result = json.loads(result_json)
+
+            if result.get("success"):
+                test_code = result.get("test_code", "")
+                test_file = result.get("test_file", "")
+
+                if test_code and "@Test" in test_code:
+                    test_info = {
+                        "path": test_file,
+                        "content": test_code,
+                        "class_name": result.get("context", {}).get("class_name", ""),
+                        "package": result.get("context", {}).get("package", ""),
+                        "source_file": source_file,
+                        "test_count": result.get("test_count", 0),
+                    }
+                    generated_tests.append(test_info)
+                    logger.info(
+                        "test_generated",
+                        source_file=source_file,
+                        test_file=test_file,
+                        test_count=result.get("test_count", 0),
+                    )
+                else:
+                    logger.warning("no_tests_generated", source_file=source_file)
+            else:
+                logger.warning(
+                    "test_generation_failed",
+                    source_file=source_file,
+                    error=result.get("error"),
+                )
+
+        except Exception as e:
+            logger.error(
+                "test_generation_error",
+                source_file=source_file,
+                error=str(e),
+            )
+
+    logger.info(
+        "direct_generation_complete",
+        total_source_files=len(source_files),
+        tests_generated=len(generated_tests),
+    )
+
+    return generated_tests
 
 
 async def run_test_generation_with_agent(
@@ -142,92 +307,62 @@ async def run_test_generation_with_agent(
     )
     logger.info("react_agent_created", agent_type="test_generation")
 
-    # Build test requirements section if provided from impact analysis
-    requirements_section = ""
-    if test_requirements:
-        requirements_section = "\n\n## Test Requirements from Impact Analysis\n\n"
-        requirements_section += "The following specific tests MUST be generated based on code impact analysis:\n\n"
-        for req in test_requirements:
-            requirements_section += f"- **{req.suggested_test_name or req.id}** ({req.test_type.value}, {req.scenario_type.value}, P{req.priority}):\n"
-            requirements_section += f"  - Target: `{req.target_class}`"
-            if req.target_method:
-                requirements_section += f".{req.target_method}()"
-            requirements_section += f"\n  - Description: {req.description}\n"
-
-    # Prepare agent input
-    agent_input = {
-        "messages": [
-            HumanMessage(
-                content=f"""Analyze and generate unit tests for Java project at: {project_path}
-
-Target coverage: {coverage_target}%
-Source files: {source_files if source_files else 'all untested classes'}
-{requirements_section}
-## Instructions
-
-1. First, use `test_gen_analyze_project` to understand project structure and frameworks
-2. Use `test_gen_detect_conventions` to identify existing test patterns
-3. Use `test_gen_generate_unit_tests` for each source file found, following conventions
-
-{"## PRIORITY: Generate tests matching the Impact Analysis requirements above FIRST." if test_requirements else ""}
-
-## CRITICAL OUTPUT REQUIREMENT
-
-After using the tools, you MUST include ALL generated test code in your final response.
-Format each test class in a separate ```java code block with the full test class content.
-
-Example format:
-```java
-package com.example;
-
-import org.junit.jupiter.api.Test;
-// ... imports
-
-class ExampleClassTest {{
-    @Test
-    void shouldTestMethod() {{
-        // test implementation
-    }}
-}}
-```
-
-Generate tests for at least 3-5 classes from the project.
-Include the complete test code for each class in separate ```java blocks."""
-            )
-        ]
-    }
-
     try:
-        # Invoke agent with retry logic (T059)
-        response = await _invoke_agent_with_retry(
-            agent=agent,
-            input_data=agent_input,
-            session_id=session_id,
-            artifact_repo=artifact_repo,
+        # ===== DIRECT TEST GENERATION (bypasses unreliable LLM tool calling) =====
+        # Instead of asking the LLM to call tools (which often produces placeholder tests),
+        # we call the generator directly for each source file.
+
+        # Step 1: Discover source files if not provided
+        if not source_files:
+            source_files = _find_source_files(project_path)
+
+        if not source_files:
+            logger.warning("no_source_files_found", project_path=project_path)
+            return {
+                "success": False,
+                "generated_tests": [],
+                "metrics": {"duration_seconds": 0, "tests_generated": 0},
+                "agent_name": config.name,
+                "error": "No testable source files found in project",
+            }
+
+        logger.info(
+            "starting_direct_generation",
+            source_file_count=len(source_files),
+            has_requirements=bool(test_requirements),
         )
 
-        # Store agent reasoning (T061)
-        await _store_agent_reasoning(
-            session_id=session_id,
-            artifact_repo=artifact_repo,
-            response=response,
-            agent_name=config.name,
+        # Step 2: Generate tests directly for each source file
+        generated_tests = await _generate_tests_directly(
+            project_path=project_path,
+            source_files=source_files,
+            test_requirements=test_requirements,
         )
 
-        # Extract generated tests from response
-        generated_tests = _extract_generated_tests(response)
+        if not generated_tests:
+            logger.warning("no_tests_generated", project_path=project_path)
+            return {
+                "success": False,
+                "generated_tests": [],
+                "metrics": {"duration_seconds": time.time() - start_time, "tests_generated": 0},
+                "agent_name": config.name,
+                "error": "No tests could be generated for the source files",
+            }
 
-        # Auto-correction retry logic (T060)
-        if generated_tests:
-            validated_tests = await _validate_and_correct_tests(
-                session_id=session_id,
-                artifact_repo=artifact_repo,
-                agent=agent,
-                generated_tests=generated_tests,
-                project_path=project_path,
-            )
-        else:
-            validated_tests = []
+        # Step 3: Validate tests (basic syntax check)
+        validated_tests = []
+        for test in generated_tests:
+            syntax_result = _check_test_syntax(test.get("content", ""))
+            test["compiles"] = syntax_result["success"]
+            test["compilation_errors"] = syntax_result.get("errors", [])
+            test["correction_attempts"] = 0
+            validated_tests.append(test)
+
+        logger.info(
+            "direct_generation_complete",
+            tests_generated=len(validated_tests),
+            compilable=sum(1 for t in validated_tests if t.get("compiles")),
+        )
 
         # Write validated tests to disk (also sets written_to_disk flag on each test)
         written_tests = _write_tests_to_disk(project_path, validated_tests)
@@ -250,14 +385,15 @@ Include the complete test code for each class in separate ```java blocks."""
             "coverage_target": coverage_target,
             "tests_passing": feedback_result.get("success", False),
             "feedback_iterations": feedback_result.get("iterations", 0),
+            "generation_mode": "direct",  # New: indicates direct generation was used
+            "source_files_processed": len(source_files),
         }
 
-        # Store LLM metrics (T061)
-        await _store_llm_metrics(
+        # Store metrics (without LLM response since we used direct generation)
+        await _store_generation_metrics(
             session_id=session_id,
             artifact_repo=artifact_repo,
             metrics=metrics,
-            response=response,
         )
 
         logger.info(
@@ -913,6 +1049,29 @@ async def _store_tool_calls(
         )
 
     logger.debug("tool_calls_stored", session_id=str(session_id), count=len(tool_calls))
+
+
+async def _store_generation_metrics(
+    session_id: UUID,
+    artifact_repo: ArtifactRepository,
+    metrics: dict[str, Any],
+) -> None:
+    """Store direct generation metrics as artifact."""
+    metrics_content = {
+        **metrics,
+        "timestamp": time.time(),
+    }
+
+    await artifact_repo.create(
+        session_id=session_id,
+        name="generation_metrics",
+        artifact_type="generation_metrics",
+        content_type="application/json",
+        file_path=f"artifacts/{session_id}/metrics/generation_metrics.json",
+        size_bytes=len(json.dumps(metrics_content)),
+    )
+
+    logger.debug("generation_metrics_stored", session_id=str(session_id))
 
 
 async def _store_llm_metrics(

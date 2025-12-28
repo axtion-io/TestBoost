@@ -4,7 +4,8 @@ on:
   push:
     branches: [ main, develop, '002-deepagents-integration', '003-*' ]
   pull_request:
-    # Run on all PRs regardless of target branch
+    branches:
+      - '**'  # Run on all PRs regardless of target branch
   workflow_dispatch:
 
 jobs:

@@ -238,6 +238,58 @@ def show_recommendations(
     asyncio.run(_show_recommendations(project_dir, target_score, strategy))
 
 
+@app.command("impact")
+def analyze_impact(
+    project_path: str = typer.Argument(
+        ".",
+        help="Path to the Java project",
+    ),
+    output: str = typer.Option(
+        None,
+        "--output",
+        "-o",
+        help="Save report to file (default: stdout)",
+    ),
+    verbose: bool = typer.Option(
+        False,
+        "--verbose",
+        "-v",
+        help="Show progress and debug info",
+    ),
+    chunk_size: int = typer.Option(
+        500,
+        "--chunk-size",
+        help="Max lines per chunk for large diffs",
+    ),
+) -> None:
+    """
+    Analyze impact of uncommitted changes.
+
+    Detects uncommitted changes in your working directory,
+    classifies each change by category and risk level,
+    and generates an impact report with test requirements.
+
+    Exit codes:
+      0 - Success, all impacts covered or no business-critical uncovered
+      1 - Business-critical impacts have no tests (for CI enforcement)
+    """
+    project_dir = Path(project_path).resolve()
+    if not project_dir.exists():
+        console.print(f"[red]Error:[/red] Project path not found: {project_path}")
+        raise typer.Exit(1)
+
+    # Check for git repo
+    if not (project_dir / ".git").exists():
+        console.print(f"[red]Error:[/red] Not a git repository: {project_path}")
+        raise typer.Exit(1)
+
+    if verbose:
+        console.print("\n[bold blue]TestBoost[/bold blue] - Impact Analysis")
+        console.print(f"Project: {project_dir}\n")
+
+    asyncio.run(_run_impact_analysis(project_dir, output, verbose, chunk_size))
+
+
 def _run_analysis(project_dir: Path, verbose: bool) -> None:
     """Run project analysis."""
     import json
@@ -321,6 +373,7 @@ async def _run_test_generation(
     """Run test generation workflow with LLM agent (T063)."""
     from src.db import SessionLocal
     from src.db.repository import SessionRepository
+    from src.workflows.impact_analysis import run_impact_analysis
     from src.workflows.test_generation_agent import run_test_generation_with_agent
 
     # Show agent workflow notice
@@ -329,8 +382,28 @@ async def _run_test_generation(
 
     with create_progress(console) as progress:
 
+        # Step 1: Run impact analysis on uncommitted changes
+        test_requirements = None
+        if (project_dir / ".git").exists():
+            task = progress.add_task("Analyzing code changes for test requirements...", total=None)
+            try:
+                impact_report = await run_impact_analysis(str(project_dir))
+                test_requirements = impact_report.test_requirements
+                progress.remove_task(task)
 
+                if test_requirements:
+                    console.print(f"[green]Found {len(test_requirements)} test requirements from impact analysis[/green]")
+                    for req in test_requirements[:5]:
+                        console.print(f"  - {req.suggested_test_name}: {req.description[:60]}...")
+                    if len(test_requirements) > 5:
+                        console.print(f"  ... and {len(test_requirements) - 5} more")
+                else:
+                    console.print("[dim]No uncommitted changes - generating tests for uncovered code[/dim]")
+            except Exception as e:
+                progress.remove_task(task)
+                console.print(f"[yellow]Impact analysis skipped: {e}[/yellow]")
 
+        # Step 2: Run test generation with requirements
         task = progress.add_task("Running test generation workflow with agent...", total=None)
 
         try:
@@ -346,12 +419,13 @@ async def _run_test_generation(
                 )
                 session_id = session.id
 
-                # Run agent-based workflow (T062)
+                # Run agent-based workflow with test requirements from impact analysis
                 result = await run_test_generation_with_agent(
                     session_id=session_id,
                     project_path=str(project_dir),
                     db_session=db_session,
                     coverage_target=mutation_score,
+                    test_requirements=test_requirements,
                 )
 
                 # Update session status
@@ -365,7 +439,15 @@ async def _run_test_generation(
                 console.print("\n[red]Test generation failed[/red]")
                 raise typer.Exit(1)
 
-            console.print("\n[bold green]Test Generation Complete[/bold green]\n")
+            # Get feedback results
+            feedback_result = result.get("feedback_result", {})
+            tests_passing = feedback_result.get("success", False)
+            feedback_iterations = feedback_result.get("iterations", 0)
+
+            if tests_passing:
+                console.print("\n[bold green]Test Generation Complete - All Tests Passing![/bold green]\n")
+            else:
+                console.print("\n[bold yellow]Test Generation Complete - Some Tests Need Review[/bold yellow]\n")
 
             # Results table
             table = Table(title="Generation Results")
@@ -377,11 +459,20 @@ async def _run_test_generation(
 
             table.add_row("Tests Generated", str(metrics.get("tests_generated", 0)))
             table.add_row("Compilation Success", str(metrics.get("compilation_success", False)))
+            table.add_row(
+                "Tests Passing",
+                "[green]Yes[/green]" if tests_passing else "[yellow]No[/yellow]"
+            )
+            table.add_row("Feedback Iterations", str(feedback_iterations))
             table.add_row("Coverage Target", f"{metrics.get('coverage_target', mutation_score)}%")
             table.add_row("Duration", f"{metrics.get('duration_seconds', 0)}s")
             table.add_row("Agent", result.get("agent_name", "unknown"))
 
             console.print(table)
+
+            # Show feedback message if available
+            if feedback_result.get("message"):
+                console.print(f"\n[dim]{feedback_result['message']}[/dim]")
 
             # Show generated test files
             if generated_tests:
@@ -398,10 +489,15 @@ async def _run_test_generation(
                         )
 
             console.print("\n[bold]Next Steps:[/bold]")
-            console.print("1. Review generated tests in src/test/java")
-            console.print("2. Run test suite: mvn test")
-            console.print("3. Check LangSmith traces for agent reasoning")
-            console.print("4. Commit passing tests")
+            if tests_passing:
+                console.print("1. Review generated tests in src/test/java")
+                console.print("2. Commit passing tests: git add . && git commit")
+                console.print("3. Check LangSmith traces for agent reasoning")
+            else:
+                console.print("1. Review failed tests in src/test/java")
+                console.print("2. Run manually: mvn test -Dtest=<TestClass>")
+                console.print("3. Fix remaining issues and re-run generation")
+                console.print("4. Check LangSmith traces for agent reasoning")
 
         except Exception as e:
             progress.remove_task(task)
@@ -522,6 +618,104 @@ async def _show_recommendations(project_dir: Path, target_score: float, strategy
     else:
         console.print("[yellow]No recommendations available.[/yellow]")
         console.print("Run mutation testing first: testboost tests mutation")
+
+
+async def _run_impact_analysis(
+    project_dir: Path,
+    output: str | None,
+    verbose: bool,
+    chunk_size: int,
+) -> None:
+    """Run impact analysis workflow (T029-T032)."""
+    import json
+
+    from src.workflows.impact_analysis import run_impact_analysis, validate_impact_report
+
+    def progress_callback(current: int, total: int, message: str) -> None:
+        if verbose:
+            console.print(f"[dim][{current}/{total}] {message}[/dim]")
+
+    try:
+        if verbose:
+            with create_progress(console) as progress:
+                task = progress.add_task("Analyzing uncommitted changes...", total=None)
+                report = await run_impact_analysis(
+                    str(project_dir),
+                    progress_callback=progress_callback if verbose else None,
+                )
+                progress.remove_task(task)
+        else:
+            report = await run_impact_analysis(str(project_dir))
+
+        # Convert to JSON
+        report_dict = report.to_dict()
+
+        # Validate against schema before output (T035)
+        is_valid, validation_error = validate_impact_report(report_dict)
+        if not is_valid:
+            if verbose:
+                console.print(f"[yellow]Warning: Report validation failed: {validation_error}[/yellow]")
+            logger.warning("impact_report_validation_failed", error=validation_error)
+
+        json_output = json.dumps(report_dict, indent=2)
+
+        # Output to file or stdout (T030)
+        if output:
+            output_path = Path(output)
+            output_path.write_text(json_output, encoding="utf-8")
+            if verbose:
+                console.print(f"[green]Report saved to {output}[/green]")
+        else:
+            # Output to stdout (for piping)
+            print(json_output)
+
+        # Display summary if verbose
+        if verbose:
+            console.print("\n[bold green]Impact Analysis Complete[/bold green]\n")
+
+            summary = report.summary
+            table = Table(title="Impact Summary")
+            table.add_column("Metric", style="cyan")
+            table.add_column("Value", style="green")
+
+            table.add_row("Total Impacts", str(summary["total_impacts"]))
+            table.add_row("Business Critical", str(summary["business_critical"]))
+            table.add_row("Non-Critical", str(summary["non_critical"]))
+            table.add_row("Tests to Generate", str(summary["tests_to_generate"]))
+            table.add_row("Processing Time", f"{report.processing_time_seconds:.2f}s")
+
+            console.print(table)
+
+            # Show impacts
+            if report.impacts:
+                console.print("\n[bold]Impacts Found:[/bold]")
+                critical_mark = "[red]CRIT[/red]" if is_windows() else "[red]!![/red]"
+                normal_mark = "[dim]--[/dim]"
+
+                for impact in report.impacts:
+                    risk_indicator = (
+                        critical_mark
+                        if impact.risk_level.value == "business_critical"
+                        else normal_mark
+                    )
+                    console.print(
+                        f"  {risk_indicator} {impact.id}: {impact.change_summary}"
+                    )
+
+        # Exit code logic (T032)
+        if report.has_uncovered_critical_impacts():
+            if verbose:
+                console.print(
+                    "\n[yellow]Warning: Business-critical impacts detected[/yellow]"
+                )
+            raise typer.Exit(1)
+
+    except typer.Exit:
+        raise
+    except Exception as e:
+        console.print(f"[red]Error:[/red] {str(e)}")
+        logger.exception("impact_analysis_failed", error=str(e))
+        raise typer.Exit(1) from None
 
 
 if __name__ == "__main__":

@@ -67,9 +67,10 @@ public class Calculator {
             mock_agent.ainvoke = AsyncMock(return_value=mock_response)
             return mock_agent
 
-        # Patch create_deep_agent to track usage
+        # Patch create_react_agent and get_llm to track usage
         with (
-            patch("src.workflows.test_generation_agent.create_deep_agent", side_effect=mock_create_deep_agent),
+            patch("src.workflows.test_generation_agent.create_react_agent", side_effect=mock_create_deep_agent),
+            patch("src.workflows.test_generation_agent.get_llm", return_value=MagicMock()),
             patch("src.workflows.test_generation_agent.ArtifactRepository", return_value=mock_artifact_repo),
             patch("src.workflows.test_generation_agent.SessionRepository", return_value=mock_session_repo),
         ):
@@ -138,7 +139,8 @@ public class Calculator {
             return mock_agent
 
         with (
-            patch("src.workflows.test_generation_agent.create_deep_agent", side_effect=mock_create_deep_agent),
+            patch("src.workflows.test_generation_agent.create_react_agent", side_effect=mock_create_deep_agent),
+            patch("src.workflows.test_generation_agent.get_llm", return_value=MagicMock()),
             patch("src.workflows.test_generation_agent.ArtifactRepository", return_value=mock_artifact_repo),
             patch("src.workflows.test_generation_agent.SessionRepository", return_value=mock_session_repo),
         ):

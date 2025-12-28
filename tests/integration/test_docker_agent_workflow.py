@@ -63,7 +63,7 @@ class TestDockerWorkflowUsesAgent:
 
         with patch("src.workflows.docker_deployment_agent.AgentLoader") as mock_loader_class, \
              patch("src.workflows.docker_deployment_agent.get_tools_for_servers") as mock_get_tools, \
-             patch("src.workflows.docker_deployment_agent.create_deep_agent") as mock_create_agent, \
+             patch("src.workflows.docker_deployment_agent.create_react_agent") as mock_create_agent, \
              patch("src.workflows.docker_deployment_agent.get_llm") as mock_get_llm, \
              patch("src.workflows.docker_deployment_agent.get_checkpointer") as mock_checkpointer:
 
@@ -91,9 +91,9 @@ class TestDockerWorkflowUsesAgent:
             # Verify Docker and container-runtime tools were bound
             assert create_call.kwargs["tools"] == [mock_docker_tool, mock_container_tool]
 
-            # Verify system prompt was provided
-            assert "system_prompt" in create_call.kwargs
-            assert "Docker deployment expert" in create_call.kwargs["system_prompt"]
+            # Verify prompt was provided (create_react_agent uses 'prompt' not 'system_prompt')
+            assert "prompt" in create_call.kwargs
+            assert "Docker deployment expert" in create_call.kwargs["prompt"]
 
             # Verify checkpointer was provided
             assert "checkpointer" in create_call.kwargs
@@ -116,7 +116,7 @@ class TestDockerWorkflowUsesAgent:
 
         with patch("src.workflows.docker_deployment_agent.AgentLoader") as mock_loader_class, \
              patch("src.workflows.docker_deployment_agent.get_tools_for_servers") as mock_get_tools, \
-             patch("src.workflows.docker_deployment_agent.create_deep_agent") as mock_create_agent, \
+             patch("src.workflows.docker_deployment_agent.create_react_agent") as mock_create_agent, \
              patch("src.workflows.docker_deployment_agent.get_llm") as mock_get_llm, \
              patch("src.workflows.docker_deployment_agent.get_checkpointer") as mock_checkpointer:
 
@@ -157,7 +157,7 @@ class TestDockerWorkflowUsesAgent:
 
         with patch("src.workflows.docker_deployment_agent.AgentLoader") as mock_loader_class, \
              patch("src.workflows.docker_deployment_agent.get_tools_for_servers") as mock_get_tools, \
-             patch("src.workflows.docker_deployment_agent.create_deep_agent") as mock_create_agent, \
+             patch("src.workflows.docker_deployment_agent.create_react_agent") as mock_create_agent, \
              patch("src.workflows.docker_deployment_agent.get_llm") as mock_get_llm, \
              patch("src.workflows.docker_deployment_agent.get_checkpointer") as mock_checkpointer:
 
@@ -218,7 +218,7 @@ class TestDockerWorkflowStoresArtifacts:
 
         with patch("src.workflows.docker_deployment_agent.AgentLoader") as mock_loader_class, \
              patch("src.workflows.docker_deployment_agent.get_tools_for_servers") as mock_get_tools, \
-             patch("src.workflows.docker_deployment_agent.create_deep_agent") as mock_create_agent, \
+             patch("src.workflows.docker_deployment_agent.create_react_agent") as mock_create_agent, \
              patch("src.workflows.docker_deployment_agent.get_llm") as mock_get_llm, \
              patch("src.workflows.docker_deployment_agent.get_checkpointer") as mock_checkpointer:
 
@@ -291,7 +291,7 @@ class TestDockerAgentHealthCheckMonitoring:
 
         with patch("src.workflows.docker_deployment_agent.AgentLoader") as mock_loader_class, \
              patch("src.workflows.docker_deployment_agent.get_tools_for_servers") as mock_get_tools, \
-             patch("src.workflows.docker_deployment_agent.create_deep_agent") as mock_create_agent, \
+             patch("src.workflows.docker_deployment_agent.create_react_agent") as mock_create_agent, \
              patch("src.workflows.docker_deployment_agent.get_llm") as mock_get_llm, \
              patch("src.workflows.docker_deployment_agent.get_checkpointer") as mock_checkpointer:
 

@@ -8,6 +8,7 @@ import asyncio
 from collections.abc import AsyncGenerator, Callable, Coroutine
 from typing import Any, TypeVar
 
+from sqlalchemy import text
 from sqlalchemy.exc import (
     DBAPIError,
     DisconnectionError,
@@ -194,7 +195,7 @@ async def check_connection_health() -> bool:
     try:
         engine = get_async_engine()
         async with engine.connect() as conn:
-            await conn.execute("SELECT 1")
+            await conn.execute(text("SELECT 1"))
         return True
     except Exception as e:
         logger.error("db_health_check_failed", error=str(e))

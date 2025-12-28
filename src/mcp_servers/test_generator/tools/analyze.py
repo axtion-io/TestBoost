@@ -211,8 +211,9 @@ async def _analyze_source_structure(project_dir: Path, scan_depth: int) -> dict[
             package_match = re.search(r"package\s+([\w.]+);", content)
             if package_match:
                 packages.add(package_match.group(1))
-        except Exception:
-            pass
+        except OSError:
+            # Skip unreadable files (permissions, encoding issues)
+            continue
 
     structure["packages"] = sorted(packages)[:50]
     structure["main_sources"] = [str(d) for d in src_dirs]
@@ -263,8 +264,9 @@ async def _analyze_test_structure(project_dir: Path, scan_depth: int) -> dict[st
             package_match = re.search(r"package\s+([\w.]+);", content)
             if package_match:
                 packages.add(package_match.group(1))
-        except Exception:
-            pass
+        except OSError:
+            # Skip unreadable files
+            continue
 
     structure["test_packages"] = sorted(packages)[:30]
     structure["test_sources"] = [str(d) for d in test_dirs]
@@ -312,8 +314,9 @@ async def _detect_frameworks(project_dir: Path) -> list[str]:
             if "org.hibernate" in content:
                 frameworks.add("hibernate")
 
-        except Exception:
-            pass
+        except OSError:
+            # Skip unreadable files
+            continue
 
     return sorted(frameworks)
 
@@ -364,8 +367,9 @@ async def _detect_test_frameworks(project_dir: Path) -> list[str]:
             if "org.wiremock" in content or "WireMock" in content:
                 test_frameworks.add("wiremock")
 
-        except Exception:
-            pass
+        except OSError:
+            # Skip unreadable files
+            continue
 
     return sorted(test_frameworks)
 

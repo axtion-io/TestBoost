@@ -168,6 +168,7 @@ class TestMavenWorkflowStoresArtifacts:
     async def test_maven_workflow_stores_artifacts(self):
         """Test workflow returns agent reasoning, tool calls, and metrics in JSON response."""
         import json
+
         from src.workflows.maven_maintenance_agent import run_maven_maintenance_with_agent
 
         # Mock agent response with tool calls
@@ -233,6 +234,7 @@ class TestMavenWorkflowStoresArtifacts:
     async def test_maven_workflow_stores_multiple_tool_calls(self):
         """Test workflow returns multiple tool calls in JSON response."""
         import json
+
         from src.workflows.maven_maintenance_agent import run_maven_maintenance_with_agent
 
         # Mock agent response with multiple tool calls
@@ -306,6 +308,7 @@ class TestMavenAgentToolCallRetry:
     async def test_maven_agent_tool_call_retry(self):
         """Test agent completes successfully with tool calls in response."""
         import json
+
         from src.workflows.maven_maintenance_agent import run_maven_maintenance_with_agent
 
         # Response with tool calls (DeepAgents executes via graph)
@@ -364,6 +367,7 @@ class TestMavenAgentToolCallRetry:
         completes successfully as long as DeepAgents returns a valid response.
         """
         import json
+
         from src.workflows.maven_maintenance_agent import run_maven_maintenance_with_agent
 
         # Response without tool calls - still valid for DeepAgents

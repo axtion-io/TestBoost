@@ -1,6 +1,5 @@
 """Integration tests for Docker deployment agent workflow (US5)."""
 
-from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest

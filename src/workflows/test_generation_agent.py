@@ -53,13 +53,24 @@ TEST_TIMEOUT_SECONDS = 300  # 5 minutes timeout for Maven test run
 class TestGenerationError(Exception):
     """Base exception for test generation errors."""
 
-    pass
+    def __init__(self, message: str = "Test generation failed", source_file: str | None = None):
+        if source_file:
+            message = f"{message} for {source_file}"
+        super().__init__(message)
+        self.source_file = source_file
 
 
 class CompilationError(TestGenerationError):
     """Raised when generated tests fail to compile."""
 
-    pass
+    def __init__(self, message: str = "Generated tests failed to compile", test_file: str | None = None, errors: list[str] | None = None):
+        if test_file:
+            message = f"{message}: {test_file}"
+        if errors:
+            message = f"{message}. Errors: {'; '.join(errors[:3])}"
+        super().__init__(message)
+        self.test_file = test_file
+        self.errors = errors or []
 
 
 def _find_source_files(project_path: str) -> list[str]:
@@ -170,7 +181,7 @@ async def _generate_tests_directly(
 
         try:
             # Get requirements for this file if any
-            file_requirements = requirements_by_file.get(source_file, None)
+            file_requirements = requirements_by_file.get(source_file)
 
             # Call generator directly
             result_json = await generate_adaptive_tests(
@@ -749,9 +760,10 @@ def _extract_generated_tests(response: dict[str, Any] | AIMessage) -> list[dict[
                                     test_info["path"] = data["test_file"]
                                 tests.append(test_info)
                     except json.JSONDecodeError:
-                        pass
-            except Exception:
-                pass
+                        # Expected for partial JSON matches, skip silently
+                        continue
+            except Exception as e:
+                logger.debug("test_extraction_error", error=str(e), content_length=len(content))
 
     logger.debug("extracted_tests", count=len(tests))
     return tests

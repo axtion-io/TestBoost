@@ -733,8 +733,12 @@ async def rollback_changes(state: MavenMaintenanceState) -> dict[str, Any]:
 
             tree.write(pom_file, encoding="unicode", xml_declaration=True)
 
-        except Exception:
-            pass
+        except Exception as e:
+            # Log rollback failure but continue with other rollbacks
+            warnings.warn(
+                f"Failed to rollback {rollback.get('artifactId', 'unknown')}: {e}",
+                stacklevel=2
+            )
 
     return {
         "rollback_stack": [],

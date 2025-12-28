@@ -1,0 +1,86 @@
+# Alertmanager Configuration for TestBoost
+# See: https://prometheus.io/docs/alerting/latest/configuration/
+
+global:
+  # Global settings
+  resolve_timeout: 5m
+
+# Route tree
+route:
+  # Default receiver
+  receiver: 'default-receiver'
+  
+  # Group alerts by these labels
+  group_by: ['alertname', 'severity']
+  
+  # Wait before sending first notification
+  group_wait: 30s
+  
+  # Wait before sending updated notification
+  group_interval: 5m
+  
+  # Wait before re-sending same alert
+  repeat_interval: 4h
+
+  # Route specific alerts to specific receivers
+  routes:
+    # Critical alerts - immediate notification
+    - match:
+        severity: critical
+      receiver: 'critical-receiver'
+      group_wait: 10s
+      repeat_interval: 1h
+
+    # Warning alerts - less urgent
+    - match:
+        severity: warning
+      receiver: 'warning-receiver'
+      group_wait: 5m
+      repeat_interval: 4h
+
+# Receivers define notification channels
+receivers:
+  - name: 'default-receiver'
+    # Webhook to custom endpoint (optional)
+    # webhook_configs:
+    #   - url: 'http://localhost:8000/api/alerts'
+    #     send_resolved: true
+
+  - name: 'critical-receiver'
+    # Email configuration (uncomment and configure)
+    # email_configs:
+    #   - to: 'team@example.com'
+    #     from: 'alertmanager@testboost.local'
+    #     smarthost: 'smtp.example.com:587'
+    #     auth_username: 'alertmanager'
+    #     auth_password: 'password'
+    #     require_tls: true
+    #     send_resolved: true
+
+    # Slack configuration (uncomment and configure)
+    # slack_configs:
+    #   - api_url: 'https://hooks.slack.com/services/XXX/YYY/ZZZ'
+    #     channel: '#testboost-alerts'
+    #     send_resolved: true
+    #     title: '[{{ .Status | toUpper }}] {{ .CommonLabels.alertname }}'
+    #     text: '{{ .CommonAnnotations.description }}'
+
+    # PagerDuty configuration (uncomment and configure)
+    # pagerduty_configs:
+    #   - service_key: 'your-pagerduty-key'
+    #     send_resolved: true
+
+  - name: 'warning-receiver'
+    # Less urgent notifications
+    # webhook_configs:
+    #   - url: 'http://localhost:8000/api/alerts'
+
+# Inhibition rules
+inhibit_rules:
+  # If critical is firing, inhibit warning for same alertname
+  - source_match:
+      severity: 'critical'
+    target_match:
+      severity: 'warning'
+    equal: ['alertname']
+

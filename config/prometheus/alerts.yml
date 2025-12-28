@@ -1,0 +1,111 @@
+# TestBoost Alerting Rules
+# See: https://prometheus.io/docs/prometheus/latest/configuration/alerting_rules/
+
+groups:
+  - name: testboost-alerts
+    rules:
+      # LLM Error Rate Alert
+      - alert: HighLLMErrorRate
+        expr: |
+          (
+            sum(rate(testboost_llm_errors_total[5m])) 
+            / 
+            sum(rate(testboost_llm_calls_total[5m]))
+          ) > 0.05
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "High LLM error rate detected"
+          description: "LLM error rate is {{ $value | humanizePercentage }} (threshold: 5%)"
+
+      # Workflow Duration Alert
+      - alert: SlowWorkflowExecution
+        expr: |
+          histogram_quantile(0.95, 
+            sum(rate(testboost_workflow_duration_seconds_bucket[5m])) by (le, workflow_type)
+          ) > 300
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Slow workflow execution detected"
+          description: "95th percentile workflow duration is {{ $value }}s (threshold: 5min)"
+
+      # Database Connection Pool Alert
+      - alert: DBConnectionPoolExhausted
+        expr: testboost_db_connection_pool_size >= testboost_db_connection_pool_max * 0.9
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Database connection pool near capacity"
+          description: "Connection pool is at {{ $value | humanizePercentage }} capacity"
+
+      # Active Sessions Alert
+      - alert: TooManyActiveSessions
+        expr: testboost_active_sessions > 50
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High number of active sessions"
+          description: "{{ $value }} active sessions detected"
+
+      # API Response Time Alert
+      - alert: SlowAPIResponse
+        expr: |
+          histogram_quantile(0.95, 
+            sum(rate(testboost_http_request_duration_seconds_bucket[5m])) by (le)
+          ) > 5
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Slow API response times"
+          description: "95th percentile API response time is {{ $value }}s (threshold: 5s)"
+
+      # Health Check Failure
+      - alert: HealthCheckFailed
+        expr: up{job="testboost-api"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "TestBoost API is down"
+          description: "TestBoost API has been unreachable for more than 1 minute"
+
+      # Rate Limit Alert
+      - alert: LLMRateLimitHit
+        expr: increase(testboost_llm_rate_limit_total[1h]) > 10
+        for: 0m
+        labels:
+          severity: warning
+        annotations:
+          summary: "LLM rate limits being hit frequently"
+          description: "{{ $value }} rate limit errors in the last hour"
+
+  - name: infrastructure-alerts
+    rules:
+      # Disk Space Alert
+      - alert: LowDiskSpace
+        expr: |
+          (node_filesystem_avail_bytes{mountpoint="/"} / node_filesystem_size_bytes{mountpoint="/"}) < 0.1
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Low disk space on {{ $labels.instance }}"
+          description: "Disk space is below 10% on {{ $labels.mountpoint }}"
+
+      # Memory Usage Alert
+      - alert: HighMemoryUsage
+        expr: |
+          (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) > 0.9
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High memory usage on {{ $labels.instance }}"
+          description: "Memory usage is {{ $value | humanizePercentage }}"
+

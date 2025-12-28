@@ -100,36 +100,72 @@ class MetricsCollector:
 metrics = MetricsCollector()
 
 
-def record_workflow_duration(workflow_type: str, duration_seconds: float) -> None:
+def record_workflow_duration(workflow_type: str, duration_seconds: float, status: str = "success") -> None:
     """Record workflow execution duration."""
     metrics.observe_histogram(
-        "workflow_duration_seconds",
+        "testboost_workflow_duration_seconds",
         duration_seconds,
         labels={"workflow_type": workflow_type},
+    )
+    metrics.inc_counter(
+        "testboost_workflow_total",
+        labels={"workflow_type": workflow_type, "status": status},
     )
 
 
 def record_llm_call(provider: str, model: str, success: bool = True) -> None:
     """Record an LLM API call."""
     metrics.inc_counter(
-        "llm_calls_total",
+        "testboost_llm_calls_total",
         labels={"provider": provider, "model": model, "status": "success" if success else "error"},
+    )
+    if not success:
+        metrics.inc_counter(
+            "testboost_llm_errors_total",
+            labels={"provider": provider, "error_type": "api_error"},
+        )
+
+
+def record_llm_rate_limit(provider: str) -> None:
+    """Record an LLM rate limit error."""
+    metrics.inc_counter(
+        "testboost_llm_rate_limit_total",
+        labels={"provider": provider},
+    )
+    metrics.inc_counter(
+        "testboost_llm_errors_total",
+        labels={"provider": provider, "error_type": "rate_limit"},
+    )
+
+
+def record_llm_duration(provider: str, duration_seconds: float) -> None:
+    """Record LLM request duration."""
+    metrics.observe_histogram(
+        "testboost_llm_request_duration_seconds",
+        duration_seconds,
+        labels={"provider": provider},
     )
 
 
 def set_active_sessions(count: int) -> None:
     """Set the number of active sessions."""
-    metrics.set_gauge("active_sessions", float(count))
+    metrics.set_gauge("testboost_active_sessions", float(count))
+
+
+def set_db_connection_pool(active: int, max_size: int) -> None:
+    """Set database connection pool metrics."""
+    metrics.set_gauge("testboost_db_connection_pool_size", float(active))
+    metrics.set_gauge("testboost_db_connection_pool_max", float(max_size))
 
 
 def record_request(method: str, path: str, status_code: int, duration_seconds: float) -> None:
     """Record an HTTP request."""
     metrics.inc_counter(
-        "http_requests_total",
+        "testboost_http_requests_total",
         labels={"method": method, "path": path, "status": str(status_code)},
     )
     metrics.observe_histogram(
-        "http_request_duration_seconds",
+        "testboost_http_request_duration_seconds",
         duration_seconds,
         labels={"method": method, "path": path},
     )
@@ -172,6 +208,9 @@ __all__ = [
     "metrics",
     "record_workflow_duration",
     "record_llm_call",
+    "record_llm_rate_limit",
+    "record_llm_duration",
     "set_active_sessions",
+    "set_db_connection_pool",
     "record_request",
 ]

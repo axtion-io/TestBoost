@@ -11,7 +11,7 @@ from fastapi import APIRouter, BackgroundTasks, HTTPException
 from pydantic import BaseModel, Field
 
 from src.lib.logging import get_logger
-from src.workflows.maven_maintenance import MavenMaintenanceState
+from src.workflows.state import MavenMaintenanceState
 
 logger = get_logger(__name__)
 

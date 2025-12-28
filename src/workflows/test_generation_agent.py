@@ -143,17 +143,17 @@ async def _generate_tests_directly(
     project_path: str,
     source_files: list[str],
     test_requirements: list[TestRequirement] | None = None,
+    use_llm: bool = True,
 ) -> list[dict[str, Any]]:
     """
-    Generate tests directly by calling the generator tool for each source file.
-
-    This bypasses the LLM agent and calls the generator directly, which produces
-    more reliable results than asking the LLM to use tools.
+    Generate tests by calling the generator tool for each source file.
 
     Args:
         project_path: Path to the Java project
         source_files: List of source files to generate tests for
         test_requirements: Optional test requirements from impact analysis
+        use_llm: If True (default), use LLM for intelligent test generation.
+                 If False, use template-based generation (for CI without LLM).
 
     Returns:
         List of generated test info dicts
@@ -183,11 +183,12 @@ async def _generate_tests_directly(
             # Get requirements for this file if any
             file_requirements = requirements_by_file.get(source_file)
 
-            # Call generator directly
+            # Call generator with LLM mode (production) or template mode (CI)
             result_json = await generate_adaptive_tests(
                 project_path=project_path,
                 source_file=source_file,
                 test_requirements=file_requirements,
+                use_llm=use_llm,
             )
 
             result = json.loads(result_json)
@@ -244,9 +245,14 @@ async def run_test_generation_with_agent(
     source_files: list[str] | None = None,
     coverage_target: float = 80.0,
     test_requirements: list[TestRequirement] | None = None,
+    use_llm: bool = True,
 ) -> dict[str, Any]:
     """
-    Run test generation workflow using DeepAgents LLM agent.
+    Run test generation workflow.
+
+    Two modes:
+    - LLM mode (use_llm=True, default): Uses LLM for intelligent test generation
+    - Template mode (use_llm=False): Uses templates for CI without LLM access
 
     Implements:
     - T054-T055: Agent creation with create_deep_agent()
@@ -262,20 +268,25 @@ async def run_test_generation_with_agent(
         db_session: SQLAlchemy async session for artifact storage
         source_files: Optional list of specific source files to test
         coverage_target: Target code coverage percentage
+        test_requirements: Optional test requirements from impact analysis
+        use_llm: If True (default), use LLM for intelligent test generation.
+                 If False, use template-based generation (for CI without LLM).
 
     Returns:
         dict with workflow results including generated tests and metrics
 
     Raises:
         TestGenerationError: If generation fails after retries
-        LLMError: If LLM connection issues persist
+        LLMError: If LLM connection issues persist (only in LLM mode)
     """
     start_time = time.time()
+    generation_mode = "llm" if use_llm else "template"
     logger.info(
         "test_gen_workflow_start",
         session_id=str(session_id),
         project_path=project_path,
         coverage_target=coverage_target,
+        generation_mode=generation_mode,
     )
 
     # Initialize repositories
@@ -343,11 +354,12 @@ async def run_test_generation_with_agent(
             has_requirements=bool(test_requirements),
         )
 
-        # Step 2: Generate tests directly for each source file
+        # Step 2: Generate tests for each source file (LLM or template mode)
         generated_tests = await _generate_tests_directly(
             project_path=project_path,
             source_files=source_files,
             test_requirements=test_requirements,
+            use_llm=use_llm,
         )
 
         if not generated_tests:
@@ -396,7 +408,7 @@ async def run_test_generation_with_agent(
             "coverage_target": coverage_target,
             "tests_passing": feedback_result.get("success", False),
             "feedback_iterations": feedback_result.get("iterations", 0),
-            "generation_mode": "direct",  # New: indicates direct generation was used
+            "generation_mode": "llm" if use_llm else "template",
             "source_files_processed": len(source_files),
         }
 

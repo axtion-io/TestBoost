@@ -3,12 +3,22 @@ Generate adaptive unit tests tool.
 
 Generates unit tests adapted to project conventions and class type,
 using LLM to create intelligent test cases.
+
+Two modes:
+- LLM mode (default): Uses LLM to generate intelligent, context-aware tests
+- Template mode: Uses templates for CI environments without LLM access
 """
 
 import json
 import re
 from pathlib import Path
 from typing import Any
+
+from src.lib.config import get_settings
+from src.lib.llm import get_llm
+from src.lib.logging import get_logger
+
+logger = get_logger(__name__)
 
 
 async def generate_adaptive_tests(
@@ -18,6 +28,7 @@ async def generate_adaptive_tests(
     conventions: dict[str, Any] | None = None,
     coverage_target: float = 80,
     test_requirements: list[dict[str, Any]] | None = None,
+    use_llm: bool = True,
 ) -> str:
     """
     Generate unit tests adapted to project conventions.
@@ -29,6 +40,8 @@ async def generate_adaptive_tests(
         conventions: Test conventions to follow
         coverage_target: Target code coverage percentage
         test_requirements: Optional list of specific test requirements from impact analysis
+        use_llm: If True (default), use LLM for intelligent test generation.
+                 If False, use template-based generation (for CI without LLM).
 
     Returns:
         JSON string with generated test code and metadata
@@ -71,10 +84,16 @@ async def generate_adaptive_tests(
         "test_requirements": test_requirements or [],
         "imports": class_info.get("imports", []),
         "is_record": class_info.get("is_record", False),
+        "source_code": source_code,
     }
 
-    # Generate test code based on class type and requirements
-    test_code = _generate_test_code(context)
+    # Generate test code - LLM mode or template mode
+    if use_llm:
+        logger.info("generating_tests_with_llm", class_name=class_info["class_name"])
+        test_code = await _generate_test_code_with_llm(context, source_code)
+    else:
+        logger.info("generating_tests_with_templates", class_name=class_info["class_name"])
+        test_code = _generate_test_code(context)
 
     results = {
         "success": True,
@@ -89,6 +108,106 @@ async def generate_adaptive_tests(
     }
 
     return json.dumps(results, indent=2)
+
+
+async def _generate_test_code_with_llm(context: dict[str, Any], source_code: str) -> str:
+    """
+    Generate test code using LLM for intelligent, context-aware tests.
+
+    Args:
+        context: Test generation context with class info, methods, dependencies
+        source_code: The original Java source code
+
+    Returns:
+        Generated test code as string
+    """
+    settings = get_settings()
+    llm = get_llm()
+
+    class_name = context["class_name"]
+    package = context["package"]
+    class_type = context["class_type"]
+    methods = context["methods"]
+    dependencies = context["dependencies"]
+    test_requirements = context.get("test_requirements", [])
+
+    # Build the prompt for test generation
+    prompt = f"""You are an expert Java test engineer. Generate comprehensive JUnit 5 unit tests for the following Java class.
+
+## Source Code to Test:
+```java
+{source_code}
+```
+
+## Class Analysis:
+- Class Name: {class_name}
+- Package: {package}
+- Type: {class_type}
+- Dependencies to mock: {json.dumps(dependencies, indent=2)}
+- Public methods: {json.dumps([m["name"] for m in methods], indent=2)}
+
+## Test Requirements:
+{json.dumps(test_requirements, indent=2) if test_requirements else "Generate standard coverage tests for all public methods."}
+
+## Instructions:
+1. Generate a complete, compilable JUnit 5 test class
+2. Use Mockito for mocking dependencies (constructor injection pattern)
+3. Include @BeforeEach setup method
+4. For each public method, generate:
+   - Happy path test (valid inputs, expected output)
+   - Edge case tests (null handling, boundary values)
+   - Error scenario tests where applicable
+5. Use @DisplayName for readable test descriptions
+6. Use meaningful test data, not generic placeholders
+7. For reactive types (Mono/Flux), use StepVerifier
+8. Follow AAA pattern: Arrange, Act, Assert
+9. Include proper imports at the top
+
+## Output Format:
+Return ONLY the complete Java test class code, starting with `package` statement.
+Do not include any explanation or markdown - just the raw Java code.
+"""
+
+    try:
+        # Call LLM to generate tests
+        response = await llm.ainvoke(prompt)
+
+        # Extract the test code from response
+        test_code = response.content if hasattr(response, 'content') else str(response)
+
+        # Clean up any markdown code blocks if present
+        if "```java" in test_code:
+            test_code = test_code.split("```java")[1].split("```")[0].strip()
+        elif "```" in test_code:
+            test_code = test_code.split("```")[1].split("```")[0].strip()
+
+        # Validate that we got actual test code
+        if "@Test" not in test_code or "class" not in test_code:
+            logger.warning(
+                "llm_generated_invalid_test",
+                class_name=class_name,
+                response_preview=test_code[:200],
+            )
+            # Fall back to template generation
+            logger.info("falling_back_to_templates", reason="LLM output validation failed")
+            return _generate_test_code(context)
+
+        logger.info(
+            "llm_test_generation_success",
+            class_name=class_name,
+            test_count=test_code.count("@Test"),
+        )
+        return test_code
+
+    except Exception as e:
+        logger.error(
+            "llm_test_generation_failed",
+            class_name=class_name,
+            error=str(e),
+        )
+        # Fall back to template generation
+        logger.info("falling_back_to_templates", reason=str(e))
+        return _generate_test_code(context)
 
 
 def _analyze_class(source_code: str) -> dict[str, Any]:

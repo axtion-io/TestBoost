@@ -255,9 +255,9 @@
 
 ### MCP Server - Test Generator
 
-- [X] T064 [P] [US2] Create MCP server structure in src/mcp_servers/test_generator/__init__.py
-- [X] T065 [US2] Implement analyze-project-context tool in src/mcp_servers/test_generator/tools/analyze.py
-- [X] T066 [P] [US2] Implement detect-test-conventions tool in src/mcp_servers/test_generator/tools/conventions.py
+- [X] T064b [P] [US2] Create MCP server structure in src/mcp_servers/test_generator/__init__.py
+- [X] T065b [US2] Implement analyze-project-context tool in src/mcp_servers/test_generator/tools/analyze.py
+- [X] T066b [P] [US2] Implement detect-test-conventions tool in src/mcp_servers/test_generator/tools/conventions.py
 - [X] T067 [US2] Implement generate-adaptive-tests tool in src/mcp_servers/test_generator/tools/generate_unit.py
 - [X] T068 [US2] Implement generate-integration-tests tool in src/mcp_servers/test_generator/tools/generate_integration.py
 - [X] T069 [US2] Implement generate-snapshot-tests tool in src/mcp_servers/test_generator/tools/generate_snapshot.py
@@ -283,6 +283,10 @@
 - [X] T083 [US2] Implement compile_and_fix_integration step in src/workflows/test_generation.py
 - [X] T084 [US2] Implement generate_snapshot_tests step in src/workflows/test_generation.py
 - [X] T085 [US2] Implement compile_and_fix_snapshot step in src/workflows/test_generation.py
+- [X] T085b [US2] Implement validate_snapshot_assertions step in src/workflows/test_generation.py
+  > ✓ Vérifie que chaque test snapshot contient au moins 1 assertion JSON/XML
+  > ✓ Vérifie que les fichiers .snap sont créés dans src/test/resources
+  > $ `pytest tests/workflows/test_snapshot_validation.py -v`
 - [X] T086 [US2] Implement deploy_docker step (uses US3 MCP tools) in src/workflows/test_generation.py
 - [X] T087 [US2] Implement check_app_health step in src/workflows/test_generation.py
 - [X] T088 [US2] Implement generate_e2e_tests step in src/workflows/test_generation.py

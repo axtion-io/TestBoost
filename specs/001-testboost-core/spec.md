@@ -182,6 +182,7 @@ En tant qu'utilisateur, je veux choisir entre un mode interactif (avec confirmat
 - **FR-023**: Le système DOIT générer des tests Snapshot pour les réponses API complexes
 - **FR-024**: Le système DOIT tenter l'auto-correction des tests en erreur (max 3 tentatives)
 - **FR-025**: Le système DOIT exécuter le mutation testing et atteindre un score cible de 80%
+  > **Note**: Si le plugin PIT n'est pas configuré dans le pom.xml, le système l'ajoute automatiquement avec la configuration par défaut. L'utilisateur peut désactiver cette fonctionnalité via `--skip-mutation`.
 - **FR-026**: Le système DOIT générer des "killer tests" si des mutants survivent
 
 #### Déploiement Docker

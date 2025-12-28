@@ -2,9 +2,8 @@ name: CI - TestBoost Tests
 
 on:
   push:
-    branches: [ main, develop, '002-deepagents-integration' ]
+    branches: [ main, develop, '001-testboost-core', '002-deepagents-integration', '003-impact-analysis-testing' ]
   pull_request:
-    branches: [ main, develop ]
   workflow_dispatch:
 
 jobs:

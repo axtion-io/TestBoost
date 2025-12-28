@@ -397,10 +397,11 @@ class TestProviderSwitching:
 
         for provider, model in providers_to_test:
             # Mock the provider-specific creation functions
+            # Note: must patch get_settings where it's imported (src.lib.llm), not where it's defined
             with patch("src.lib.llm._create_google_llm") as mock_google, \
                  patch("src.lib.llm._create_anthropic_llm") as mock_anthropic, \
                  patch("src.lib.llm._create_openai_llm") as mock_openai, \
-                 patch("src.lib.config.get_settings") as mock_settings:
+                 patch("src.lib.llm.get_settings") as mock_settings:
 
                 # Configure mocks
                 mock_settings.return_value.llm_provider = provider

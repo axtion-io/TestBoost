@@ -1,7 +1,7 @@
-r"""
+"""
 DeepAgents compatibility patches for Windows.
 
-DeepAgents' FilesystemMiddleware rejects Windows absolute paths (C:\...)
+DeepAgents' FilesystemMiddleware rejects Windows absolute paths (C:\\...)
 but we need to support them for MCP tools on Windows. This module
 patches the path validation to allow Windows paths.
 

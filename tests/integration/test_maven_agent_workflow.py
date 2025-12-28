@@ -52,7 +52,7 @@ class TestMavenWorkflowUsesAgent:
 
         with patch("src.workflows.maven_maintenance_agent.AgentLoader") as mock_loader_class, \
              patch("src.workflows.maven_maintenance_agent.get_tools_for_servers") as mock_get_tools, \
-             patch("src.workflows.maven_maintenance_agent.create_deep_agent") as mock_create_agent, \
+             patch("src.workflows.maven_maintenance_agent.create_react_agent") as mock_create_agent, \
              patch("src.workflows.maven_maintenance_agent.get_llm") as mock_get_llm:
 
             # Setup mocks
@@ -91,7 +91,7 @@ class TestMavenWorkflowUsesAgent:
 
         with patch("src.workflows.maven_maintenance_agent.AgentLoader") as mock_loader_class, \
              patch("src.workflows.maven_maintenance_agent.get_tools_for_servers") as mock_get_tools, \
-             patch("src.workflows.maven_maintenance_agent.create_deep_agent") as mock_create_agent, \
+             patch("src.workflows.maven_maintenance_agent.create_react_agent") as mock_create_agent, \
              patch("src.workflows.maven_maintenance_agent.get_llm") as mock_get_llm:
 
             mock_loader = MagicMock()
@@ -129,7 +129,7 @@ class TestMavenWorkflowUsesAgent:
 
         with patch("src.workflows.maven_maintenance_agent.AgentLoader") as mock_loader_class, \
              patch("src.workflows.maven_maintenance_agent.get_tools_for_servers") as mock_get_tools, \
-             patch("src.workflows.maven_maintenance_agent.create_deep_agent") as mock_create_agent, \
+             patch("src.workflows.maven_maintenance_agent.create_react_agent") as mock_create_agent, \
              patch("src.workflows.maven_maintenance_agent.get_llm") as mock_get_llm:
 
             mock_loader = MagicMock()
@@ -184,7 +184,7 @@ class TestMavenWorkflowStoresArtifacts:
 
         with patch("src.workflows.maven_maintenance_agent.AgentLoader") as mock_loader_class, \
              patch("src.workflows.maven_maintenance_agent.get_tools_for_servers") as mock_get_tools, \
-             patch("src.workflows.maven_maintenance_agent.create_deep_agent") as mock_create_agent, \
+             patch("src.workflows.maven_maintenance_agent.create_react_agent") as mock_create_agent, \
              patch("src.workflows.maven_maintenance_agent.get_llm") as mock_get_llm:
 
             # Setup mocks
@@ -254,7 +254,7 @@ class TestMavenWorkflowStoresArtifacts:
 
         with patch("src.workflows.maven_maintenance_agent.AgentLoader") as mock_loader_class, \
              patch("src.workflows.maven_maintenance_agent.get_tools_for_servers") as mock_get_tools, \
-             patch("src.workflows.maven_maintenance_agent.create_deep_agent") as mock_create_agent, \
+             patch("src.workflows.maven_maintenance_agent.create_react_agent") as mock_create_agent, \
              patch("src.workflows.maven_maintenance_agent.get_llm") as mock_get_llm:
 
             mock_loader = MagicMock()
@@ -322,7 +322,7 @@ class TestMavenAgentToolCallRetry:
 
         with patch("src.workflows.maven_maintenance_agent.AgentLoader") as mock_loader_class, \
              patch("src.workflows.maven_maintenance_agent.get_tools_for_servers") as mock_get_tools, \
-             patch("src.workflows.maven_maintenance_agent.create_deep_agent") as mock_create_agent, \
+             patch("src.workflows.maven_maintenance_agent.create_react_agent") as mock_create_agent, \
              patch("src.workflows.maven_maintenance_agent.get_llm") as mock_get_llm:
 
             mock_loader = MagicMock()
@@ -371,7 +371,7 @@ class TestMavenAgentToolCallRetry:
 
         with patch("src.workflows.maven_maintenance_agent.AgentLoader") as mock_loader_class, \
              patch("src.workflows.maven_maintenance_agent.get_tools_for_servers") as mock_get_tools, \
-             patch("src.workflows.maven_maintenance_agent.create_deep_agent") as mock_create_agent, \
+             patch("src.workflows.maven_maintenance_agent.create_react_agent") as mock_create_agent, \
              patch("src.workflows.maven_maintenance_agent.get_llm") as mock_get_llm:
 
             mock_loader = MagicMock()

@@ -1,0 +1,76 @@
+# Impact Analysis CI Check (T031)
+# This workflow blocks merges when business-critical impacts lack tests.
+#
+# Usage: Copy this file to your project's .github/workflows/ directory
+# and adjust the paths and conditions as needed.
+
+name: Impact Analysis Check
+
+on:
+  pull_request:
+    branches: [main, master, develop]
+    paths:
+      - 'src/**/*.java'
+      - 'pom.xml'
+      - '**/pom.xml'
+
+jobs:
+  impact-check:
+    name: Analyze Code Impact
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Full history for accurate diff
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install TestBoost
+        run: |
+          pip install testboost
+          # Or for development: pip install -e .
+
+      - name: Run Impact Analysis
+        id: impact
+        run: |
+          # Analyze uncommitted changes (PR diff)
+          boost tests impact . -o impact-report.json -v
+        continue-on-error: true
+
+      - name: Upload Impact Report
+        uses: actions/upload-artifact@v4
+        with:
+          name: impact-report
+          path: impact-report.json
+          if-no-files-found: ignore
+
+      - name: Check for Critical Impacts
+        run: |
+          if [ -f impact-report.json ]; then
+            CRITICAL=$(jq '.summary.business_critical' impact-report.json)
+            TESTS=$(jq '.summary.tests_to_generate' impact-report.json)
+
+            echo "## Impact Analysis Results" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "| Metric | Value |" >> $GITHUB_STEP_SUMMARY
+            echo "|--------|-------|" >> $GITHUB_STEP_SUMMARY
+            echo "| Business Critical | $CRITICAL |" >> $GITHUB_STEP_SUMMARY
+            echo "| Tests to Generate | $TESTS |" >> $GITHUB_STEP_SUMMARY
+
+            if [ "$CRITICAL" -gt 0 ]; then
+              echo "" >> $GITHUB_STEP_SUMMARY
+              echo "::warning::$CRITICAL business-critical impacts detected. Please ensure adequate test coverage."
+            fi
+          fi
+
+      - name: Fail if critical impacts uncovered
+        if: steps.impact.outcome == 'failure'
+        run: |
+          echo "::error::Business-critical code changes detected without adequate test coverage."
+          echo "Please run 'boost tests impact' locally to review the impact report."
+          exit 1

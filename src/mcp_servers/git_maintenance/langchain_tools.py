@@ -7,6 +7,7 @@ from src.lib.logging import get_logger
 # Import existing MCP tool implementations
 from src.mcp_servers.git_maintenance.tools.branch import create_maintenance_branch
 from src.mcp_servers.git_maintenance.tools.commit import commit_changes
+from src.mcp_servers.git_maintenance.tools.diff import get_uncommitted_diff
 from src.mcp_servers.git_maintenance.tools.status import get_status
 
 logger = get_logger(__name__)
@@ -105,6 +106,47 @@ async def git_commit_changes(
 
 
 @tool
+async def git_get_uncommitted_diff(
+    repo_path: str,
+    context_lines: int = 3,
+) -> str:
+    """
+    Get the git diff of all uncommitted changes (staged + unstaged vs HEAD).
+
+    Use this tool to:
+    - Analyze what code has changed before test generation
+    - Identify files that need impact analysis
+    - Get the raw diff for categorization
+
+    Args:
+        repo_path: Path to the git repository root directory
+        context_lines: Number of context lines in unified diff (default: 3)
+
+    Returns:
+        JSON with diff content, files changed, and total lines
+    """
+    logger.info(
+        "mcp_tool_called",
+        tool="git_get_uncommitted_diff",
+        repo_path=repo_path,
+        context_lines=context_lines,
+    )
+
+    result = await get_uncommitted_diff(
+        repo_path=repo_path,
+        context_lines=context_lines,
+    )
+
+    logger.info(
+        "mcp_tool_completed",
+        tool="git_get_uncommitted_diff",
+        result_length=len(result),
+    )
+
+    return result
+
+
+@tool
 async def git_get_status(
     repo_path: str,
     include_untracked: bool = True
@@ -151,14 +193,16 @@ def get_git_tools() -> list[BaseTool]:
     Get all Git maintenance tools as BaseTool instances.
 
     Returns:
-        List of 3 Git maintenance tools:
+        List of 4 Git maintenance tools:
         - git_create_maintenance_branch: Create a new branch
         - git_commit_changes: Commit changes
+        - git_get_uncommitted_diff: Get diff of uncommitted changes
         - git_get_status: Get repository status
     """
     return [
         git_create_maintenance_branch,
         git_commit_changes,
+        git_get_uncommitted_diff,
         git_get_status,
     ]
 
@@ -167,5 +211,6 @@ __all__ = [
     "get_git_tools",
     "git_create_maintenance_branch",
     "git_commit_changes",
+    "git_get_uncommitted_diff",
     "git_get_status",
 ]

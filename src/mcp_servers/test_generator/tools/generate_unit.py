@@ -487,11 +487,12 @@ def _generate_requirement_test(
                 matched_method = m
                 break
 
-    # Check if this method returns reactive types
+    # Check if this method returns reactive types (for StepVerifier assertions)
     is_reactive_method = matched_method and (
         "Mono" in matched_method.get("return_type", "") or
         "Flux" in matched_method.get("return_type", "")
     )
+    reactive_return_type = matched_method.get("return_type", "") if is_reactive_method else ""
 
     # Generate test based on scenario type
     tests.extend([
@@ -590,13 +591,26 @@ def _generate_requirement_test(
 
             if matched_method.get("is_void"):
                 tests.append(f"        {instance_name}.{method_call};")
+            elif is_reactive_method:
+                # Use StepVerifier for reactive types (Mono/Flux)
+                tests.append(f"        {reactive_return_type} result = {instance_name}.{method_call};")
             else:
                 tests.append(f"        var result = {instance_name}.{method_call};")
 
             tests.append("")
             tests.append("        // Assert")
             if not matched_method.get("is_void"):
-                if uses_assertj:
+                if is_reactive_method:
+                    # Use StepVerifier for reactive assertions
+                    if "Mono" in reactive_return_type:
+                        tests.append("        StepVerifier.create(result)")
+                        tests.append("            .expectNextCount(1)")
+                        tests.append("            .verifyComplete();")
+                    else:  # Flux
+                        tests.append("        StepVerifier.create(result)")
+                        tests.append("            .thenConsumeWhile(item -> true)")
+                        tests.append("            .verifyComplete();")
+                elif uses_assertj:
                     tests.append("        assertThat(result).isNotNull();")
                 else:
                     tests.append("        assertNotNull(result);")

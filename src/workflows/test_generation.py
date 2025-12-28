@@ -601,7 +601,6 @@ async def generate_e2e_tests(state: TestGenerationState) -> dict[str, Any]:
         Updated state fields
     """
     from pathlib import Path
-    import re
 
     # Skip E2E generation if app is not healthy
     if state.app_health.get("status") not in ["healthy", "skipped"]:

@@ -11,8 +11,6 @@ For production load testing, use tools like locust or k6.
 
 import asyncio
 import gc
-import sys
-from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
 import pytest

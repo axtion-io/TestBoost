@@ -9,9 +9,9 @@ import functools
 import json
 import re
 import time
-from datetime import datetime
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Callable, TypeVar
+from typing import Any, TypeVar
 
 import jsonschema
 from jsonschema import ValidationError, validate
@@ -20,14 +20,12 @@ from src.lib.diff_chunker import chunk_diff, count_lines, is_large_diff, split_b
 from src.lib.llm import LLMError, get_llm
 from src.lib.logging import get_logger
 from src.lib.risk_keywords import (
-    contains_critical_keyword,
     is_critical_path,
     is_non_critical_path,
     score_risk_from_keywords,
 )
 from src.models.impact import (
     ChangeCategory,
-    DiffChunk,
     Impact,
     RiskLevel,
     ScenarioType,
@@ -995,70 +993,70 @@ def _generate_rule_based_tests(
         elif "format validation" in rule_lower:
             tests.append((
                 f"Verify {component} validates input format",
-                f"shouldRejectInvalidFormat",
+                "shouldRejectInvalidFormat",
                 ScenarioType.EDGE_CASE,
             ))
         elif "null check" in rule_lower:
             tests.append((
                 f"Verify {component} handles null input gracefully",
-                f"shouldHandleNullInput",
+                "shouldHandleNullInput",
                 ScenarioType.EDGE_CASE,
             ))
         elif "empty value check" in rule_lower:
             tests.append((
                 f"Verify {component} rejects empty values",
-                f"shouldRejectEmptyValues",
+                "shouldRejectEmptyValues",
                 ScenarioType.EDGE_CASE,
             ))
         elif "database lookup" in rule_lower:
             tests.append((
                 f"Verify {component} queries database correctly",
-                f"shouldQueryDatabaseCorrectly",
+                "shouldQueryDatabaseCorrectly",
                 ScenarioType.NOMINAL,
             ))
             tests.append((
                 f"Verify {component} handles record not found",
-                f"shouldHandleRecordNotFound",
+                "shouldHandleRecordNotFound",
                 ScenarioType.EDGE_CASE,
             ))
         elif "financial calculation" in rule_lower:
             tests.append((
                 f"Verify {component} calculates amounts correctly",
-                f"shouldCalculateAmountCorrectly",
+                "shouldCalculateAmountCorrectly",
                 ScenarioType.NOMINAL,
             ))
             tests.append((
                 f"Verify {component} handles zero amounts",
-                f"shouldHandleZeroAmount",
+                "shouldHandleZeroAmount",
                 ScenarioType.EDGE_CASE,
             ))
         elif "date comparison" in rule_lower or "current date" in rule_lower:
             tests.append((
                 f"Verify {component} validates date constraints",
-                f"shouldEnforceDateConstraints",
+                "shouldEnforceDateConstraints",
                 ScenarioType.NOMINAL,
             ))
             tests.append((
                 f"Verify {component} rejects past dates",
-                f"shouldRejectPastDates",
+                "shouldRejectPastDates",
                 ScenarioType.EDGE_CASE,
             ))
         elif "numeric boundary" in rule_lower or "minimum limit" in rule_lower:
             tests.append((
                 f"Verify {component} enforces numeric limits",
-                f"shouldEnforceNumericLimits",
+                "shouldEnforceNumericLimits",
                 ScenarioType.EDGE_CASE,
             ))
         elif "maximum limit" in rule_lower:
             tests.append((
                 f"Verify {component} respects maximum limits",
-                f"shouldRespectMaximumLimit",
+                "shouldRespectMaximumLimit",
                 ScenarioType.EDGE_CASE,
             ))
         elif "persistence" in rule_lower:
             tests.append((
                 f"Verify {component} persists data correctly",
-                f"shouldPersistDataCorrectly",
+                "shouldPersistDataCorrectly",
                 ScenarioType.NOMINAL,
             ))
 

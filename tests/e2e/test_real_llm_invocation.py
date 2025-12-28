@@ -117,8 +117,9 @@ class TestMavenWorkflowLLMCalls:
         within the graph workflow, so tool_calls are logged via MCP logging
         rather than returned in the AIMessage.
         """
-        from src.workflows.maven_maintenance_agent import run_maven_maintenance_with_agent
         import json
+
+        from src.workflows.maven_maintenance_agent import run_maven_maintenance_with_agent
 
         project_path = tmp_path / "test-project"
         project_path.mkdir()
@@ -274,8 +275,11 @@ class TestMavenWorkflowEdgeCases:
         This tests the A5 edge case - error handling in the workflow.
         DeepAgents handles errors through its internal retry/error handling.
         """
-        from src.workflows.maven_maintenance_agent import run_maven_maintenance_with_agent, MavenAgentError
         import json
+
+        from src.workflows.maven_maintenance_agent import (
+            run_maven_maintenance_with_agent,
+        )
 
         # Create project WITHOUT pom.xml
         project_path = tmp_path / "test-project"
@@ -510,7 +514,7 @@ class TestTestGenerationWorkflowLLMCalls:
     @pytest.mark.e2e
     async def test_test_gen_workflow_llm_calls(self, tmp_path):
         """Test Test Generation workflow makes at least 3 real LLM API calls (T052, SC-002)."""
-        from unittest.mock import AsyncMock, MagicMock
+        from unittest.mock import AsyncMock
         from uuid import uuid4
 
         # Create a minimal Java project for test generation

@@ -64,18 +64,18 @@ class MetricsCollector:
         lines: list[str] = []
 
         # Format counters
-        for key, value in sorted(self._counters.items()):
-            name = key.split("{")[0] if "{" in key else key
+        for counter_key, counter_value in sorted(self._counters.items()):
+            name = counter_key.split("{")[0] if "{" in counter_key else counter_key
             if not any(line.startswith(f"# TYPE {name}") for line in lines):
                 lines.append(f"# TYPE {name} counter")
-            lines.append(f"{key} {value}")
+            lines.append(f"{counter_key} {counter_value}")
 
         # Format gauges
-        for key, value in sorted(self._gauges.items()):
-            name = key.split("{")[0] if "{" in key else key
+        for gauge_key, gauge_value in sorted(self._gauges.items()):
+            name = gauge_key.split("{")[0] if "{" in gauge_key else gauge_key
             if not any(line.startswith(f"# TYPE {name}") for line in lines):
                 lines.append(f"# TYPE {name} gauge")
-            lines.append(f"{key} {value}")
+            lines.append(f"{gauge_key} {gauge_value}")
 
         # Format histograms (simplified - just expose sum and count)
         histogram_names = set()
@@ -181,8 +181,15 @@ async def get_metrics() -> str:
     Returns:
         Plain text metrics in Prometheus format
     """
-    # Add some default metrics
+    # Initialize default metrics for Grafana dashboard visibility
     metrics.set_gauge("app_info", 1.0, labels={"version": "0.1.0"})
+
+    # Initialize gauges with defaults if not set
+    if "testboost_active_sessions" not in str(metrics._gauges):
+        metrics.set_gauge("testboost_active_sessions", 0.0)
+    if "testboost_db_connection_pool_size" not in str(metrics._gauges):
+        metrics.set_gauge("testboost_db_connection_pool_size", 5.0)
+        metrics.set_gauge("testboost_db_connection_pool_max", 20.0)
 
     return metrics.format_prometheus()
 

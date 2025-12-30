@@ -108,11 +108,14 @@ class HTTPClient:
     async def _get_client(self) -> httpx.AsyncClient:
         """Get or create the async client."""
         if self._client is None or self._client.is_closed:
-            self._client = httpx.AsyncClient(
-                base_url=self._base_url,
-                timeout=self._timeout.to_httpx(),
-                headers=self._headers,
-            )
+            # Build kwargs, only include base_url if set
+            client_kwargs: dict[str, Any] = {
+                "timeout": self._timeout.to_httpx(),
+                "headers": self._headers,
+            }
+            if self._base_url:
+                client_kwargs["base_url"] = self._base_url
+            self._client = httpx.AsyncClient(**client_kwargs)
         return self._client
 
     async def close(self) -> None:

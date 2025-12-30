@@ -173,7 +173,9 @@ Do not include any explanation or markdown - just the raw Java code.
         response = await llm.ainvoke(prompt)
 
         # Extract the test code from response
-        test_code = response.content if hasattr(response, 'content') else str(response)
+        raw_content = response.content if hasattr(response, 'content') else str(response)
+        # Ensure test_code is a string (LangChain content can be str or list)
+        test_code: str = str(raw_content) if not isinstance(raw_content, str) else raw_content
 
         # Clean up any markdown code blocks if present
         if "```java" in test_code:
@@ -607,11 +609,11 @@ def _generate_requirement_test(
                 break
 
     # Check if this method returns reactive types (for StepVerifier assertions)
-    is_reactive_method = matched_method and (
-        "Mono" in matched_method.get("return_type", "") or
-        "Flux" in matched_method.get("return_type", "")
+    is_reactive_method = matched_method is not None and (
+        "Mono" in (matched_method.get("return_type") or "") or
+        "Flux" in (matched_method.get("return_type") or "")
     )
-    reactive_return_type = matched_method.get("return_type", "") if is_reactive_method else ""
+    reactive_return_type = (matched_method.get("return_type") or "") if is_reactive_method and matched_method else ""
 
     # Generate test based on scenario type
     tests.extend([
@@ -925,7 +927,7 @@ def _generate_mock_stubs(
     This adds Mockito.when(...).thenReturn(...) stubs for methods that likely
     call repository/service dependencies.
     """
-    stubs = []
+    stubs: list[str] = []
     method_lower = method_name.lower()
 
     # Find repository and mapper dependency names
@@ -974,7 +976,7 @@ def _generate_mock_stubs(
         actual_entity = entity_type
         if entity_type == "void" or not entity_type or _is_primitive_type(entity_type):
             # Try to infer entity from repo type (e.g., OwnerRepository -> Owner)
-            repo_type = next((d.get("type", "") for d in dependencies if d.get("name") == repo_name), "")
+            repo_type = next((d.get("type", "") for d in (dependencies or []) if d.get("name") == repo_name), "")
             if "Repository" in repo_type:
                 actual_entity = repo_type.replace("Repository", "")
 

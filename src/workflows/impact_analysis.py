@@ -44,8 +44,8 @@ def retry_with_backoff(
     max_attempts: int = 3,
     base_delay: float = 2.0,
     max_delay: float = 30.0,
-    exceptions: tuple = (Exception,),
-) -> Callable:
+    exceptions: tuple[type[Exception], ...] = (Exception,),
+) -> Callable[[Callable[..., T]], Callable[..., T]]:
     """
     Reusable retry decorator with exponential backoff (T033, FR-012).
 
@@ -73,7 +73,7 @@ def retry_with_backoff(
             last_exception = None
             for attempt in range(max_attempts):
                 try:
-                    return await func(*args, **kwargs)
+                    return await func(*args, **kwargs)  # type: ignore[misc,no-any-return]
                 except exceptions as e:
                     last_exception = e
                     if attempt < max_attempts - 1:
@@ -125,8 +125,8 @@ def retry_with_backoff(
             raise last_exception  # type: ignore
 
         if asyncio.iscoroutinefunction(func):
-            return async_wrapper  # type: ignore
-        return sync_wrapper  # type: ignore
+            return async_wrapper  # type: ignore[return-value]
+        return sync_wrapper
 
     return decorator
 
@@ -663,7 +663,10 @@ Is this change business-critical or non-critical?"""
         ]
 
         response = await llm.ainvoke(messages)
-        result = response.content.strip().upper()
+        raw_content = response.content
+        # Handle case where content might be a list (LangChain message content)
+        content_str = str(raw_content) if not isinstance(raw_content, str) else raw_content
+        result = content_str.strip().upper()
 
         if "CRITICAL" in result and "NON" not in result:
             return RiskLevel.BUSINESS_CRITICAL

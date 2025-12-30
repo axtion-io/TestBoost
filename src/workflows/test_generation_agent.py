@@ -933,7 +933,7 @@ def _detect_maven_modules(project_dir: Path) -> list[Path]:
     Returns:
         List of module directory paths (empty if not multi-module)
     """
-    modules = []
+    modules: list[Path] = []
     parent_pom = project_dir / "pom.xml"
 
     if not parent_pom.exists():

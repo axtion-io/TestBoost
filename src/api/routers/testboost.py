@@ -11,7 +11,7 @@ from fastapi import APIRouter, BackgroundTasks, HTTPException
 from pydantic import BaseModel, Field
 
 from src.lib.logging import get_logger
-from src.workflows.state import MavenMaintenanceState
+from src.workflows.state import MavenMaintenanceState, TestGenerationStateModel
 
 logger = get_logger(__name__)
 
@@ -161,8 +161,9 @@ async def _run_maintenance_task(session_id: str, request: MaintenanceRequest) ->
     """
     try:
         # Initialize state
+        from uuid import UUID as UUIDType
         initial_state = MavenMaintenanceState(
-            session_id=session_id,
+            session_id=UUIDType(session_id),
             project_path=request.project_path,
             user_approved=request.auto_approve,
         )
@@ -172,11 +173,25 @@ async def _run_maintenance_task(session_id: str, request: MaintenanceRequest) ->
 
         _sessions[session_id] = initial_state
 
-        # Import and run workflow
-        from src.workflows.maven_maintenance import maven_maintenance_graph
+        # Import and run workflow using the agent-based approach
+        from src.workflows.maven_maintenance_agent import run_maven_maintenance_with_agent
 
-        result = await maven_maintenance_graph.ainvoke(initial_state)  # type: ignore[arg-type]
-        final_state = result if isinstance(result, MavenMaintenanceState) else initial_state
+        result_json = await run_maven_maintenance_with_agent(
+            project_path=request.project_path,
+            session_id=session_id,
+            mode="autonomous" if request.auto_approve else "interactive"
+        )
+
+        # Parse result and update state
+        import json as json_module
+        result_data = json_module.loads(result_json)
+
+        # Update state with results
+        initial_state.completed = result_data.get("success", False)
+        if result_data.get("agent_reasoning"):
+            initial_state.output_data = result_data
+
+        final_state = initial_state
 
         # Update session with final state
         _sessions[session_id] = final_state
@@ -433,30 +448,50 @@ class TestGenerationStatus(BaseModel):
 
 
 # Test generation session storage
-_test_sessions: dict[str, Any] = {}
+_test_sessions: dict[str, TestGenerationStateModel] = {}
 
 
 async def _run_test_generation_task(session_id: str, request: TestGenerateRequest) -> None:
     """Background task to run the test generation workflow."""
     try:
-        from src.workflows.test_generation import TestGenerationState, test_generation_graph
+        from uuid import UUID as UUIDType
 
-        initial_state = TestGenerationState(
-            session_id=session_id,
+        from src.workflows.test_generation_agent import run_test_generation_with_agent
+
+        session_uuid = UUIDType(session_id)
+        initial_state = TestGenerationStateModel(
+            session_id=session_uuid,
             project_path=request.project_path,
             target_mutation_score=request.target_mutation_score,
         )
 
         _test_sessions[session_id] = initial_state
-        result = await test_generation_graph.ainvoke(initial_state)  # type: ignore[arg-type]
-        final_state = result if isinstance(result, TestGenerationState) else initial_state
+
+        # Run test generation using agent-based approach
+        # Note: run_test_generation_with_agent returns a dict, not JSON
+        result_data = await run_test_generation_with_agent(
+            session_id=session_uuid,
+            project_path=request.project_path,
+            db_session=None,  # No DB session in background task context
+            coverage_target=request.target_mutation_score,
+            use_llm=True,
+        )
+
+        # Update state with results
+        initial_state.completed = True
+        initial_state.generated_unit_tests = result_data.get("generated_tests", [])
+        initial_state.mutation_score = result_data.get("mutation_score", 0.0)
+        if result_data.get("quality_report"):
+            initial_state.quality_report = result_data["quality_report"]
+
+        final_state = initial_state
         _test_sessions[session_id] = final_state
 
         logger.info(
             "test_generation_complete",
             session_id=session_id,
-            unit_tests=len(getattr(final_state, "generated_unit_tests", [])),
-            mutation_score=getattr(final_state, "mutation_score", 0.0),
+            unit_tests=len(final_state.generated_unit_tests),
+            mutation_score=final_state.mutation_score,
         )
 
     except Exception as e:

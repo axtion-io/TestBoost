@@ -12,27 +12,27 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "prometheus"
+        "uid": "PBFA97CFB590B2093"
       },
       "fieldConfig": {
         "defaults": {
           "color": {
-            "mode": "palette-classic"
+            "mode": "thresholds"
           },
           "mappings": [],
           "thresholds": {
             "mode": "absolute",
             "steps": [
               {"color": "green", "value": null},
-              {"color": "yellow", "value": 50},
-              {"color": "red", "value": 100}
+              {"color": "yellow", "value": 10},
+              {"color": "red", "value": 50}
             ]
           },
           "unit": "short"
         },
         "overrides": []
       },
-      "gridPos": {"h": 4, "w": 6, "x": 0, "y": 0},
+      "gridPos": {"h": 6, "w": 6, "x": 0, "y": 0},
       "id": 1,
       "options": {
         "colorMode": "value",
@@ -50,6 +50,7 @@
       "targets": [
         {
           "expr": "testboost_active_sessions",
+          "legendFormat": "Active Sessions",
           "refId": "A"
         }
       ],
@@ -59,30 +60,80 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "prometheus"
+        "uid": "PBFA97CFB590B2093"
       },
       "fieldConfig": {
         "defaults": {
           "color": {
-            "mode": "palette-classic"
+            "mode": "thresholds"
           },
           "mappings": [],
+          "max": 20,
+          "min": 0,
           "thresholds": {
             "mode": "absolute",
             "steps": [
               {"color": "green", "value": null},
-              {"color": "red", "value": 0.05}
+              {"color": "yellow", "value": 15},
+              {"color": "red", "value": 18}
             ]
           },
-          "unit": "percentunit"
+          "unit": "short"
         },
         "overrides": []
       },
-      "gridPos": {"h": 4, "w": 6, "x": 6, "y": 0},
+      "gridPos": {"h": 6, "w": 6, "x": 6, "y": 0},
       "id": 2,
       "options": {
-        "colorMode": "value",
-        "graphMode": "area",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "showThresholdLabels": false,
+        "showThresholdMarkers": true
+      },
+      "pluginVersion": "10.2.0",
+      "targets": [
+        {
+          "expr": "testboost_db_connection_pool_size",
+          "legendFormat": "Active",
+          "refId": "A"
+        }
+      ],
+      "title": "DB Connection Pool",
+      "type": "gauge"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "PBFA97CFB590B2093"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [
+            {"options": {"0": {"color": "red", "text": "DOWN"}}, "type": "value"},
+            {"options": {"1": {"color": "green", "text": "UP"}}, "type": "value"}
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"color": "red", "value": null},
+              {"color": "green", "value": 1}
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {"h": 6, "w": 6, "x": 12, "y": 0},
+      "id": 3,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
         "justifyMode": "auto",
         "orientation": "auto",
         "reduceOptions": {
@@ -95,17 +146,18 @@
       "pluginVersion": "10.2.0",
       "targets": [
         {
-          "expr": "sum(rate(testboost_llm_errors_total[5m])) / sum(rate(testboost_llm_calls_total[5m]))",
+          "expr": "up{job=\"testboost-api\"}",
+          "legendFormat": "API Status",
           "refId": "A"
         }
       ],
-      "title": "LLM Error Rate",
+      "title": "API Status",
       "type": "stat"
     },
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "prometheus"
+        "uid": "PBFA97CFB590B2093"
       },
       "fieldConfig": {
         "defaults": {
@@ -119,58 +171,11 @@
               {"color": "green", "value": null}
             ]
           },
-          "unit": "short"
-        },
-        "overrides": []
-      },
-      "gridPos": {"h": 4, "w": 6, "x": 12, "y": 0},
-      "id": 3,
-      "options": {
-        "colorMode": "value",
-        "graphMode": "area",
-        "justifyMode": "auto",
-        "orientation": "auto",
-        "reduceOptions": {
-          "calcs": ["lastNotNull"],
-          "fields": "",
-          "values": false
-        },
-        "textMode": "auto"
-      },
-      "pluginVersion": "10.2.0",
-      "targets": [
-        {
-          "expr": "sum(increase(testboost_llm_calls_total[24h]))",
-          "refId": "A"
-        }
-      ],
-      "title": "LLM Calls (24h)",
-      "type": "stat"
-    },
-    {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {"color": "green", "value": null},
-              {"color": "yellow", "value": 120},
-              {"color": "red", "value": 300}
-            ]
-          },
           "unit": "s"
         },
         "overrides": []
       },
-      "gridPos": {"h": 4, "w": 6, "x": 18, "y": 0},
+      "gridPos": {"h": 6, "w": 6, "x": 18, "y": 0},
       "id": 4,
       "options": {
         "colorMode": "value",
@@ -187,17 +192,18 @@
       "pluginVersion": "10.2.0",
       "targets": [
         {
-          "expr": "histogram_quantile(0.95, sum(rate(testboost_workflow_duration_seconds_bucket[5m])) by (le))",
+          "expr": "scrape_duration_seconds{job=\"testboost-api\"}",
+          "legendFormat": "Scrape Duration",
           "refId": "A"
         }
       ],
-      "title": "Workflow Duration (p95)",
+      "title": "Scrape Duration",
       "type": "stat"
     },
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "prometheus"
+        "uid": "PBFA97CFB590B2093"
       },
       "fieldConfig": {
         "defaults": {
@@ -211,15 +217,15 @@
             "axisPlacement": "auto",
             "barAlignment": 0,
             "drawStyle": "line",
-            "fillOpacity": 10,
+            "fillOpacity": 20,
             "gradientMode": "none",
             "hideFrom": {
               "legend": false,
               "tooltip": false,
               "viz": false
             },
-            "lineInterpolation": "linear",
-            "lineWidth": 1,
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
             "pointSize": 5,
             "scaleDistribution": {
               "type": "linear"
@@ -245,7 +251,7 @@
         },
         "overrides": []
       },
-      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 4},
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 6},
       "id": 5,
       "options": {
         "legend": {
@@ -262,18 +268,18 @@
       "pluginVersion": "10.2.0",
       "targets": [
         {
-          "expr": "sum(rate(testboost_llm_calls_total[5m])) by (provider)",
-          "legendFormat": "{{provider}}",
+          "expr": "testboost_active_sessions",
+          "legendFormat": "Active Sessions",
           "refId": "A"
         }
       ],
-      "title": "LLM Calls by Provider",
+      "title": "Active Sessions Over Time",
       "type": "timeseries"
     },
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "prometheus"
+        "uid": "PBFA97CFB590B2093"
       },
       "fieldConfig": {
         "defaults": {
@@ -287,15 +293,15 @@
             "axisPlacement": "auto",
             "barAlignment": 0,
             "drawStyle": "line",
-            "fillOpacity": 10,
+            "fillOpacity": 20,
             "gradientMode": "none",
             "hideFrom": {
               "legend": false,
               "tooltip": false,
               "viz": false
             },
-            "lineInterpolation": "linear",
-            "lineWidth": 1,
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
             "pointSize": 5,
             "scaleDistribution": {
               "type": "linear"
@@ -307,21 +313,24 @@
               "mode": "none"
             },
             "thresholdsStyle": {
-              "mode": "off"
+              "mode": "line"
             }
           },
           "mappings": [],
+          "max": 20,
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              {"color": "green", "value": null}
+              {"color": "green", "value": null},
+              {"color": "yellow", "value": 15},
+              {"color": "red", "value": 18}
             ]
           },
-          "unit": "s"
+          "unit": "short"
         },
         "overrides": []
       },
-      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 4},
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 6},
       "id": 6,
       "options": {
         "legend": {
@@ -338,89 +347,13 @@
       "pluginVersion": "10.2.0",
       "targets": [
         {
-          "expr": "histogram_quantile(0.95, sum(rate(testboost_workflow_duration_seconds_bucket[5m])) by (le, workflow_type))",
-          "legendFormat": "{{workflow_type}}",
-          "refId": "A"
-        }
-      ],
-      "title": "Workflow Duration by Type (p95)",
-      "type": "timeseries"
-    },
-    {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "axisCenteredZero": false,
-            "axisColorMode": "text",
-            "axisLabel": "",
-            "axisPlacement": "auto",
-            "barAlignment": 0,
-            "drawStyle": "line",
-            "fillOpacity": 10,
-            "gradientMode": "none",
-            "hideFrom": {
-              "legend": false,
-              "tooltip": false,
-              "viz": false
-            },
-            "lineInterpolation": "linear",
-            "lineWidth": 1,
-            "pointSize": 5,
-            "scaleDistribution": {
-              "type": "linear"
-            },
-            "showPoints": "never",
-            "spanNulls": false,
-            "stacking": {
-              "group": "A",
-              "mode": "none"
-            },
-            "thresholdsStyle": {
-              "mode": "off"
-            }
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {"color": "green", "value": null}
-            ]
-          },
-          "unit": "short"
-        },
-        "overrides": []
-      },
-      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 12},
-      "id": 7,
-      "options": {
-        "legend": {
-          "calcs": ["mean", "max"],
-          "displayMode": "table",
-          "placement": "bottom",
-          "showLegend": true
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "none"
-        }
-      },
-      "pluginVersion": "10.2.0",
-      "targets": [
-        {
           "expr": "testboost_db_connection_pool_size",
-          "legendFormat": "Active",
+          "legendFormat": "Active Connections",
           "refId": "A"
         },
         {
           "expr": "testboost_db_connection_pool_max",
-          "legendFormat": "Max",
+          "legendFormat": "Max Connections",
           "refId": "B"
         }
       ],
@@ -430,7 +363,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "prometheus"
+        "uid": "PBFA97CFB590B2093"
       },
       "fieldConfig": {
         "defaults": {
@@ -451,7 +384,7 @@
               "tooltip": false,
               "viz": false
             },
-            "lineInterpolation": "linear",
+            "lineInterpolation": "smooth",
             "lineWidth": 1,
             "pointSize": 5,
             "scaleDistribution": {
@@ -478,8 +411,8 @@
         },
         "overrides": []
       },
-      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 12},
-      "id": 8,
+      "gridPos": {"h": 8, "w": 24, "x": 0, "y": 14},
+      "id": 7,
       "options": {
         "legend": {
           "calcs": ["mean", "max"],
@@ -495,26 +428,21 @@
       "pluginVersion": "10.2.0",
       "targets": [
         {
-          "expr": "histogram_quantile(0.50, sum(rate(testboost_http_request_duration_seconds_bucket[5m])) by (le))",
-          "legendFormat": "p50",
+          "expr": "scrape_duration_seconds{job=\"testboost-api\"}",
+          "legendFormat": "API Scrape",
           "refId": "A"
         },
         {
-          "expr": "histogram_quantile(0.95, sum(rate(testboost_http_request_duration_seconds_bucket[5m])) by (le))",
-          "legendFormat": "p95",
+          "expr": "scrape_duration_seconds{job=\"prometheus\"}",
+          "legendFormat": "Prometheus",
           "refId": "B"
-        },
-        {
-          "expr": "histogram_quantile(0.99, sum(rate(testboost_http_request_duration_seconds_bucket[5m])) by (le))",
-          "legendFormat": "p99",
-          "refId": "C"
         }
       ],
-      "title": "API Response Time",
+      "title": "Prometheus Scrape Duration",
       "type": "timeseries"
     }
   ],
-  "refresh": "30s",
+  "refresh": "10s",
   "schemaVersion": 38,
   "style": "dark",
   "tags": ["testboost", "monitoring"],
@@ -522,14 +450,13 @@
     "list": []
   },
   "time": {
-    "from": "now-1h",
+    "from": "now-15m",
     "to": "now"
   },
   "timepicker": {},
   "timezone": "browser",
   "title": "TestBoost Overview",
   "uid": "testboost-overview",
-  "version": 1,
+  "version": 2,
   "weekStart": ""
 }
-

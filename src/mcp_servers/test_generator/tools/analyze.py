@@ -176,8 +176,8 @@ async def _analyze_source_structure(project_dir: Path, scan_depth: int) -> dict[
     structure = {"main_sources": [], "packages": [], "class_count": 0, "interface_count": 0}
 
     # Find main source directories - support multi-module Maven projects
-    src_dirs = []
-    java_files = []
+    src_dirs: list[Path] = []
+    java_files: list[Path] = []
 
     # Check for standard single-module structure first
     standard_src = project_dir / "src" / "main" / "java"
@@ -247,7 +247,7 @@ async def _analyze_test_structure(project_dir: Path, scan_depth: int) -> dict[st
             test_dirs.append(generic_test)
 
     # Collect all test files from all test directories
-    test_files = []
+    test_files: list[Path] = []
     for test_dir in test_dirs:
         test_files.extend(test_dir.rglob("*Test.java"))
         test_files.extend(test_dir.rglob("*Tests.java"))

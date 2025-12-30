@@ -6,6 +6,7 @@ risk classification, and test requirements.
 
 from dataclasses import dataclass, field
 from enum import Enum
+from typing import Any
 
 
 class ChangeCategory(str, Enum):
@@ -89,7 +90,7 @@ class Impact:
             and self.risk_level == RiskLevel.BUSINESS_CRITICAL
         )
 
-    def to_dict(self) -> dict:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for JSON serialization."""
         return {
             "id": self.id,
@@ -130,9 +131,9 @@ class TestRequirement:
     suggested_test_name: str = ""
     target_method: str | None = None
 
-    def to_dict(self) -> dict:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for JSON serialization."""
-        result = {
+        result: dict[str, Any] = {
             "id": self.id,
             "impact_id": self.impact_id,
             "test_type": self.test_type.value,

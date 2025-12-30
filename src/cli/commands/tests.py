@@ -53,7 +53,7 @@ def generate_tests(
         "--snapshot/--no-snapshot",
         help="Generate snapshot tests",
     ),
-    output_dir: str = typer.Option(
+    output_dir: str | None = typer.Option(
         None,
         "--output",
         "-o",
@@ -119,9 +119,10 @@ def generate_tests(
     # Reset connection pool before running workflow
     # This is necessary because startup checks use a different asyncio.run() call
     # which creates a different event loop, leaving stale connections in the pool
-    from src.db import get_async_engine
     import asyncio
-    
+
+    from src.db import get_async_engine
+
     async def _run_with_fresh_pool() -> None:
         # Dispose old connections that may be tied to old event loop
         engine = get_async_engine()
@@ -136,7 +137,7 @@ def generate_tests(
             output_dir,
             verbose,
         )
-    
+
     asyncio.run(_run_with_fresh_pool())
 
 

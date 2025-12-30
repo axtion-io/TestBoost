@@ -21,7 +21,7 @@ if sys.platform == "win32":
         # Save original function for reference
         _original_validate_path = filesystem._validate_path
 
-        def _patched_validate_path(path: str, *, allowed_prefixes=None) -> str:
+        def _patched_validate_path(path: str, *, allowed_prefixes: list[str] | None = None) -> str:
             """Patched version that allows Windows absolute paths."""
             # Reject path traversal for security
             if ".." in path:

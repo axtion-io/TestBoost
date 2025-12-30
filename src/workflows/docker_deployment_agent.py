@@ -200,14 +200,18 @@ Please proceed with the deployment workflow.
 """
 
         # Invoke agent with checkpointing enabled
-        config_dict = {"configurable": {"thread_id": session_id}}
+        from langchain_core.runnables import RunnableConfig
+        runnable_config = RunnableConfig(
+            configurable={"thread_id": session_id},
+            recursion_limit=100,
+        )
 
         logger.info("agent_invoking", session_id=session_id)
 
         # Set higher recursion limit to allow agent to complete complex tasks
         response = await agent.ainvoke(
             {"messages": [HumanMessage(content=user_message)]},
-            config={**config_dict, "recursion_limit": 100},
+            config=runnable_config,
         )
 
         logger.info(

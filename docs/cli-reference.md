@@ -8,112 +8,197 @@
 ## Installation
 
 ```bash
-# Install via pip
-pip install testboost
+# Clone the repository
+git clone https://github.com/cheche71/TestBoost.git
+cd TestBoost
+
+# Install in development mode
+pip install -e .
 
 # Or via poetry
 poetry install
+```
+
+> **Note**: TestBoost n'est pas encore publié sur PyPI. Utilisez l'installation locale ci-dessus.
+
+---
+
+## Prerequisites
+
+### PostgreSQL Database
+
+TestBoost requires a PostgreSQL database for session management. Start it using Docker Compose:
+
+```bash
+# Start PostgreSQL only
+docker compose up -d postgres
+
+# Verify it's running
+docker compose ps
+```
+
+The database will be available at `localhost:5433` with:
+- **User**: `testboost`
+- **Password**: `testboost`
+- **Database**: `testboost`
+
+### Environment Variables
+
+Create a `.env` file or set these environment variables:
+
+```bash
+# Required - At least one LLM provider
+export GOOGLE_API_KEY="your-google-api-key"      # For Gemini
+export ANTHROPIC_API_KEY="your-anthropic-key"   # For Claude
+export OPENAI_API_KEY="your-openai-key"         # For GPT-4
+
+# Optional - API authentication
+export TESTBOOST_API_KEY="your-api-key"
+
+# Optional - LangSmith tracing
+export LANGSMITH_API_KEY="your-langsmith-key"
+export LANGSMITH_TRACING=true
+```
+
+### Docker (Optional)
+
+For deployment features, ensure Docker and Docker Compose are installed and running:
+
+```bash
+docker --version
+docker compose version
 ```
 
 ---
 
 ## Commands
 
-### boost maintenance
+### boost maintenance run
 
 Run Maven project maintenance workflow.
 
 ```bash
-boost maintenance <project-path> [OPTIONS]
+boost maintenance run [PROJECT_PATH] [OPTIONS]
 ```
 
 **Arguments**:
-- `project-path`: Path to Maven project root (required)
+- `PROJECT_PATH`: Path to Maven project root (default: current directory)
+
+**Options**:
+| Option | Short | Description | Default |
+|--------|-------|-------------|---------|
+| `--mode` | `-m` | Execution mode: interactive, autonomous, analysis_only, debug | interactive |
+| `--auto-approve` | `-y` | Automatically approve all updates | false |
+| `--dry-run` | `-n` | Analyze without applying changes | false |
+| `--skip-tests` | | Skip test validation | false |
+| `--format` | `-f` | Output format: rich, json | rich |
+
+**Example**:
+```bash
+# Interactive mode (default)
+boost maintenance run ./my-project
+
+# Autonomous mode with auto-approve
+boost maintenance run ./my-project -m autonomous -y
+
+# Analysis only (dry-run)
+boost maintenance run ./my-project -n
+
+# JSON output for CI/CD
+boost maintenance run ./my-project -m autonomous -y -f json
+```
+
+**Other maintenance commands**:
+```bash
+# List available updates
+boost maintenance list ./my-project
+
+# Check session status
+boost maintenance status <session-id>
+```
+
+---
+
+### boost tests generate
+
+Generate tests for Java classes.
+
+```bash
+boost tests generate [PROJECT_PATH] [OPTIONS]
+```
+
+**Arguments**:
+- `PROJECT_PATH`: Path to Maven project root (default: current directory)
+
+**Options**:
+| Option | Short | Description | Default |
+|--------|-------|-------------|---------|
+| `--mode` | `-m` | Execution mode: interactive, autonomous, analysis_only, debug | interactive |
+| `--target` | `-t` | Specific class or package to target | all |
+| `--mutation-score` | | Target mutation score percentage | 80 |
+| `--integration/--no-integration` | | Include integration tests | true |
+| `--snapshot/--no-snapshot` | | Generate snapshot tests | true |
+| `--output` | `-o` | Output directory for generated tests | auto |
+| `--dry-run` | | Preview without generating | false |
+
+**Example**:
+```bash
+# Generate all tests
+boost tests generate ./my-project
+
+# Generate tests for specific class
+boost tests generate ./my-project -t com.example.MyService
+
+# Generate with custom mutation score target
+boost tests generate ./my-project --mutation-score 90
+```
+
+**Other test commands**:
+```bash
+# Analyze project for test opportunities
+boost tests analyze ./my-project
+
+# Run mutation testing
+boost tests mutation ./my-project
+
+# Show improvement recommendations
+boost tests recommendations ./my-project
+
+# Analyze impact of code changes
+boost tests impact ./my-project
+```
+
+---
+
+### boost deploy run
+
+Deploy project using Docker.
+
+```bash
+boost deploy run [PROJECT_PATH] [OPTIONS]
+```
+
+**Arguments**:
+- `PROJECT_PATH`: Path to project root (default: current directory)
 
 **Options**:
 | Option | Short | Description | Default |
 |--------|-------|-------------|---------|
 | `--mode` | `-m` | Execution mode: interactive, autonomous, analysis_only | interactive |
-| `--timeout` | `-t` | Timeout in seconds | 300 |
-| `--skip-tests` | | Skip baseline test validation | false |
-| `--dry-run` | | Show what would be done without applying | false |
-
-**Example**:
-```bash
-# Interactive mode
-boost maintenance ./my-project
-
-# Autonomous mode with custom timeout
-boost maintenance ./my-project -m autonomous -t 600
-
-# Analysis only (no changes)
-boost maintenance ./my-project -m analysis_only
-```
-
----
-
-### boost generate
-
-Generate tests for Java classes.
-
-```bash
-boost generate <project-path> [OPTIONS]
-```
-
-**Arguments**:
-- `project-path`: Path to Maven project root (required)
-
-**Options**:
-| Option | Short | Description | Default |
-|--------|-------|-------------|---------|
-| `--class` | `-c` | Specific class to generate tests for | all |
-| `--type` | `-t` | Test type: unit, integration, snapshot, all | all |
-| `--coverage` | | Target coverage percentage | 80 |
-| `--mutation` | | Run mutation testing after generation | false |
-
-**Example**:
-```bash
-# Generate all tests
-boost generate ./my-project
-
-# Generate unit tests for specific class
-boost generate ./my-project -c com.example.MyService -t unit
-
-# Generate with mutation testing
-boost generate ./my-project --mutation
-```
-
----
-
-### boost deploy
-
-Deploy project using Docker.
-
-```bash
-boost deploy <project-path> [OPTIONS]
-```
-
-**Arguments**:
-- `project-path`: Path to project root (required)
-
-**Options**:
-| Option | Short | Description | Default |
-|--------|-------|-------------|---------|
 | `--compose-file` | `-f` | Docker Compose file name | docker-compose.yml |
 | `--environment` | `-e` | Target environment | development |
 | `--no-cache` | | Build without Docker cache | false |
-| `--detach` | `-d` | Run containers in background | true |
 
 **Example**:
 ```bash
 # Deploy with default settings
-boost deploy ./my-project
+boost deploy run ./my-project
 
 # Deploy to production
-boost deploy ./my-project -e production
+boost deploy run ./my-project -e production
 
 # Deploy with fresh build
-boost deploy ./my-project --no-cache
+boost deploy run ./my-project --no-cache
 ```
 
 ---

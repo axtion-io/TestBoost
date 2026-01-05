@@ -262,10 +262,15 @@ def serve(
     ),
 ) -> None:
     """Start the TestBoost API server."""
+    import os
+
     import uvicorn
 
     logger.info("serve_command", host=host, port=port, reload=reload)
     typer.echo(f"Starting TestBoost API server on {host}:{port}")
+
+    # Skip API startup checks since CLI already ran them
+    os.environ["TESTBOOST_SKIP_API_STARTUP_CHECKS"] = "1"
 
     uvicorn.run(
         "src.api.main:app",

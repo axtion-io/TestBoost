@@ -1,6 +1,7 @@
 """FastAPI application with CORS, middleware, and exception handlers."""
 
 import json
+import os
 import uuid
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
@@ -35,14 +36,20 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """
     logger.info("application_startup", version=app.version)
 
-    try:
-        # T008: Run all startup checks (currently LLM connectivity only)
-        await run_all_startup_checks()
-        logger.info("startup_checks_passed")
-    except StartupCheckError as e:
-        logger.error("startup_checks_failed", error=str(e))
-        # Application MUST fail if startup checks fail (FR-010)
-        raise RuntimeError(f"Application startup failed: {e}") from e
+    # Check if startup checks should be skipped (already done by CLI)
+    skip_checks = os.environ.get("TESTBOOST_SKIP_API_STARTUP_CHECKS", "").lower() in ("1", "true", "yes")
+
+    if skip_checks:
+        logger.info("startup_checks_skipped", reason="TESTBOOST_SKIP_API_STARTUP_CHECKS set")
+    else:
+        try:
+            # T008: Run all startup checks (currently LLM connectivity only)
+            await run_all_startup_checks()
+            logger.info("startup_checks_passed")
+        except StartupCheckError as e:
+            logger.error("startup_checks_failed", error=str(e))
+            # Application MUST fail if startup checks fail (FR-010)
+            raise RuntimeError(f"Application startup failed: {e}") from e
 
     yield
     logger.info("application_shutdown")

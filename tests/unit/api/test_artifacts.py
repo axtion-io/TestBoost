@@ -1,8 +1,8 @@
 """Tests for artifacts API endpoints."""
 
-import pytest
-from unittest.mock import patch, MagicMock
 import uuid
+
+import pytest
 
 
 class TestArtifactsEndpoint:

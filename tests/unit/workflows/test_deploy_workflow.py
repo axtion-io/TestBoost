@@ -1,8 +1,5 @@
 """Tests for deployment workflow operations."""
 
-import pytest
-from unittest.mock import patch, MagicMock, AsyncMock
-
 
 class TestDockerMCPTools:
     """Tests for Docker MCP tools."""
@@ -61,7 +58,9 @@ class TestDeployWorkflowState:
         """SessionType should have DOCKER_DEPLOYMENT value."""
         from src.db.models import SessionType
 
-        assert hasattr(SessionType, "DOCKER_DEPLOYMENT") or "docker_deployment" in [s.value for s in SessionType]
+        assert hasattr(SessionType, "DOCKER_DEPLOYMENT") or "docker_deployment" in [
+            s.value for s in SessionType
+        ]
 
     def test_session_status_enum_values(self):
         """SessionStatus should have expected values."""

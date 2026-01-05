@@ -1,8 +1,5 @@
 """Tests for database models."""
 
-import pytest
-from unittest.mock import patch, MagicMock
-from datetime import datetime
 import uuid
 
 
@@ -24,7 +21,9 @@ class TestSessionModel:
         from src.db.models import SessionStatus
 
         for status in valid_statuses:
-            assert hasattr(SessionStatus, status.upper()) or status in [s.value for s in SessionStatus]
+            assert hasattr(SessionStatus, status.upper()) or status in [
+                s.value for s in SessionStatus
+            ]
 
     def test_session_id_is_uuid(self):
         """Session ID should be a UUID."""
@@ -32,13 +31,11 @@ class TestSessionModel:
 
         # Session requires session_type, so provide it
         session = Session(
-            project_path="/test/path",
-            status="pending",
-            session_type="maven_maintenance"
+            project_path="/test/path", status="pending", session_type="maven_maintenance"
         )
         # ID should be set or settable as UUID
-        if hasattr(session, 'id') and session.id:
-            assert isinstance(session.id, (str, uuid.UUID))
+        if hasattr(session, "id") and session.id:
+            assert isinstance(session.id, str | uuid.UUID)
 
 
 class TestStepModel:
@@ -77,6 +74,5 @@ class TestArtifactModel:
         # artifact_type is a String field, not an enum
         assert hasattr(Artifact, "artifact_type")
         # Valid artifact types are convention-based strings
-        valid_types = ["test_file", "report", "diff", "backup", "log", "generated_test"]
         # Just verify the field exists and accepts strings
         assert True  # Field existence verified above

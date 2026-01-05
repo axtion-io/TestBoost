@@ -121,7 +121,7 @@ async def _generate_test_code_with_llm(context: dict[str, Any], source_code: str
     Returns:
         Generated test code as string
     """
-    settings = get_settings()
+    get_settings()
     llm = get_llm()
 
     class_name = context["class_name"]

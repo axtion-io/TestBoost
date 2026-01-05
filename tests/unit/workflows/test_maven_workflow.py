@@ -1,7 +1,6 @@
 """Tests for Maven workflow operations."""
 
 import pytest
-from unittest.mock import patch, MagicMock, AsyncMock
 
 
 class TestMavenWorkflowAgent:

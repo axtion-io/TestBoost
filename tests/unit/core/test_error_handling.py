@@ -1,8 +1,6 @@
 """Tests for error handling functionality."""
 
-import pytest
-from unittest.mock import patch, MagicMock, AsyncMock
-from fastapi import Request, status
+from fastapi import status
 
 
 class TestErrorClasses:
@@ -28,10 +26,7 @@ class TestErrorClasses:
         """TestBoostError should store context."""
         from src.api.middleware.error import TestBoostError
 
-        error = TestBoostError(
-            message="Test error",
-            context={"key": "value"}
-        )
+        error = TestBoostError(message="Test error", context={"key": "value"})
         assert error.context == {"key": "value"}
 
     def test_validation_error_includes_field(self):
@@ -58,9 +53,7 @@ class TestErrorClasses:
         from src.api.middleware.error import WorkflowError
 
         error = WorkflowError(
-            message="Failed to parse POM file",
-            step_code="analyze_pom",
-            session_id="session-123"
+            message="Failed to parse POM file", step_code="analyze_pom", session_id="session-123"
         )
         assert error.context.get("step_code") == "analyze_pom"
         assert error.context.get("session_id") == "session-123"
@@ -97,10 +90,7 @@ class TestErrorClasses:
         """ProjectLockedError should include lock info."""
         from src.api.middleware.error import ProjectLockedError
 
-        error = ProjectLockedError(
-            project_path="/test/project",
-            locked_by_session="session-456"
-        )
+        error = ProjectLockedError(project_path="/test/project", locked_by_session="session-456")
         assert error.context.get("project_path") == "/test/project"
         assert error.context.get("locked_by_session") == "session-456"
         assert error.error_code == "PROJECT_LOCKED"
@@ -112,13 +102,13 @@ class TestErrorInheritance:
     def test_all_errors_inherit_from_testboost_error(self):
         """All custom errors should inherit from TestBoostError."""
         from src.api.middleware.error import (
-            TestBoostError,
-            ValidationError,
-            NotFoundError,
             ConflictError,
-            ProjectLockedError,
             LLMError,
+            NotFoundError,
+            ProjectLockedError,
+            TestBoostError,
             TimeoutError,
+            ValidationError,
             WorkflowError,
         )
 
@@ -151,4 +141,3 @@ class TestErrorResponse:
         from src.api.middleware.error import ErrorHandlerMiddleware
 
         assert ErrorHandlerMiddleware is not None
-

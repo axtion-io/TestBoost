@@ -1,8 +1,9 @@
 """Tests for database CRUD operations using Repository pattern."""
 
-import pytest
-from unittest.mock import patch, MagicMock, AsyncMock
 import uuid
+from unittest.mock import AsyncMock, MagicMock
+
+import pytest
 
 
 class TestSessionRepository:
@@ -22,9 +23,7 @@ class TestSessionRepository:
 
         # Create session
         result = await repo.create(
-            project_path="/test/project",
-            status="pending",
-            session_type="maven_maintenance"
+            project_path="/test/project", status="pending", session_type="maven_maintenance"
         )
 
         assert result is not None
@@ -35,14 +34,12 @@ class TestSessionRepository:
     @pytest.mark.asyncio
     async def test_get_session_by_id(self):
         """Should retrieve session by ID using repository."""
-        from src.db.repository import SessionRepository
         from src.db.models import Session
+        from src.db.repository import SessionRepository
 
         mock_db_session = AsyncMock()
         mock_session = Session(
-            project_path="/test/project",
-            status="pending",
-            session_type="maven_maintenance"
+            project_path="/test/project", status="pending", session_type="maven_maintenance"
         )
         mock_session.id = uuid.uuid4()
         mock_db_session.get = AsyncMock(return_value=mock_session)
@@ -70,14 +67,12 @@ class TestSessionRepository:
     @pytest.mark.asyncio
     async def test_update_session_status(self):
         """Should update session status using repository."""
-        from src.db.repository import SessionRepository
         from src.db.models import Session
+        from src.db.repository import SessionRepository
 
         mock_db_session = AsyncMock()
         mock_session = Session(
-            project_path="/test/project",
-            status="pending",
-            session_type="maven_maintenance"
+            project_path="/test/project", status="pending", session_type="maven_maintenance"
         )
         mock_session.id = uuid.uuid4()
         mock_db_session.get = AsyncMock(return_value=mock_session)
@@ -92,14 +87,12 @@ class TestSessionRepository:
     @pytest.mark.asyncio
     async def test_delete_session(self):
         """Should delete session using repository."""
-        from src.db.repository import SessionRepository
         from src.db.models import Session
+        from src.db.repository import SessionRepository
 
         mock_db_session = AsyncMock()
         mock_session = Session(
-            project_path="/test/project",
-            status="pending",
-            session_type="maven_maintenance"
+            project_path="/test/project", status="pending", session_type="maven_maintenance"
         )
         mock_session.id = uuid.uuid4()
         mock_db_session.get = AsyncMock(return_value=mock_session)
@@ -129,10 +122,7 @@ class TestStepRepository:
         repo = StepRepository(mock_db_session)
 
         result = await repo.create(
-            session_id=session_id,
-            name="analyze",
-            status="pending",
-            sequence=1
+            session_id=session_id, name="analyze", status="pending", sequence=1
         )
 
         assert result is not None
@@ -142,8 +132,8 @@ class TestStepRepository:
     @pytest.mark.asyncio
     async def test_get_steps_by_session(self):
         """Should list all steps for a session."""
-        from src.db.repository import StepRepository
         from src.db.models import Step
+        from src.db.repository import StepRepository
 
         mock_db_session = AsyncMock()
         session_id = uuid.uuid4()

@@ -144,7 +144,7 @@ class TestSessionListPagination:
         """Test that session list returns pagination metadata."""
 
         # Mock data
-        mock_sessions = [
+        [
             MagicMock(
                 id=uuid4(),
                 session_type="maven_maintenance",

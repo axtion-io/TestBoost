@@ -63,16 +63,29 @@ public class Calculator {
             mock_response.content = "Generated tests for Calculator class"
             mock_response.tool_calls = []
             mock_response.response_metadata = {"model": "test-model", "usage": {}}
-            mock_response.usage_metadata = {"input_tokens": 100, "output_tokens": 200, "total_tokens": 300}
+            mock_response.usage_metadata = {
+                "input_tokens": 100,
+                "output_tokens": 200,
+                "total_tokens": 300,
+            }
             mock_agent.ainvoke = AsyncMock(return_value=mock_response)
             return mock_agent
 
         # Patch create_react_agent and get_llm to track usage
         with (
-            patch("src.workflows.test_generation_agent.create_react_agent", side_effect=mock_create_deep_agent),
+            patch(
+                "src.workflows.test_generation_agent.create_react_agent",
+                side_effect=mock_create_deep_agent,
+            ),
             patch("src.workflows.test_generation_agent.get_llm", return_value=MagicMock()),
-            patch("src.workflows.test_generation_agent.ArtifactRepository", return_value=mock_artifact_repo),
-            patch("src.workflows.test_generation_agent.SessionRepository", return_value=mock_session_repo),
+            patch(
+                "src.workflows.test_generation_agent.ArtifactRepository",
+                return_value=mock_artifact_repo,
+            ),
+            patch(
+                "src.workflows.test_generation_agent.SessionRepository",
+                return_value=mock_session_repo,
+            ),
         ):
             # Run workflow
             session_id = uuid4()
@@ -80,7 +93,7 @@ public class Calculator {
                 session_id=session_id,
                 project_path=str(project_path),
                 db_session=mock_db_session,
-                coverage_target=80.0
+                coverage_target=80.0,
             )
 
             # Verify agent was created
@@ -157,15 +170,28 @@ public class Calculator {
             mock_response.content = "Generated test analysis"
             mock_response.tool_calls = []
             mock_response.response_metadata = {"model": "test-model", "usage": {}}
-            mock_response.usage_metadata = {"input_tokens": 100, "output_tokens": 200, "total_tokens": 300}
+            mock_response.usage_metadata = {
+                "input_tokens": 100,
+                "output_tokens": 200,
+                "total_tokens": 300,
+            }
             mock_agent.ainvoke = AsyncMock(return_value=mock_response)
             return mock_agent
 
         with (
-            patch("src.workflows.test_generation_agent.create_react_agent", side_effect=mock_create_deep_agent),
+            patch(
+                "src.workflows.test_generation_agent.create_react_agent",
+                side_effect=mock_create_deep_agent,
+            ),
             patch("src.workflows.test_generation_agent.get_llm", return_value=MagicMock()),
-            patch("src.workflows.test_generation_agent.ArtifactRepository", return_value=mock_artifact_repo),
-            patch("src.workflows.test_generation_agent.SessionRepository", return_value=mock_session_repo),
+            patch(
+                "src.workflows.test_generation_agent.ArtifactRepository",
+                return_value=mock_artifact_repo,
+            ),
+            patch(
+                "src.workflows.test_generation_agent.SessionRepository",
+                return_value=mock_session_repo,
+            ),
             patch("src.workflows.test_generation_agent.AgentLoader", return_value=mock_loader),
             patch("src.workflows.test_generation_agent.get_tools_for_servers", return_value=[]),
         ):
@@ -175,7 +201,7 @@ public class Calculator {
                 session_id=session_id,
                 project_path=str(project_path),
                 db_session=mock_db_session,
-                coverage_target=80.0
+                coverage_target=80.0,
             )
 
             # Verify result is valid (artifacts may or may not be stored depending on control flow)
@@ -185,8 +211,12 @@ public class Calculator {
             # If artifacts were stored, verify structure
             if len(artifact_calls) > 0:
                 # Check for reasoning artifact
-                reasoning_artifacts = [a for a in artifact_calls if a.get("artifact_type") == "agent_reasoning"]
+                reasoning_artifacts = [
+                    a for a in artifact_calls if a.get("artifact_type") == "agent_reasoning"
+                ]
                 # Check for metrics artifact
-                metrics_artifacts = [a for a in artifact_calls if a.get("artifact_type") == "llm_metrics"]
+                metrics_artifacts = [
+                    a for a in artifact_calls if a.get("artifact_type") == "llm_metrics"
+                ]
                 # At least one type should be present if any artifacts were stored
                 assert len(reasoning_artifacts) > 0 or len(metrics_artifacts) > 0 or True

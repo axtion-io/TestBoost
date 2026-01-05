@@ -1,10 +1,11 @@
 """Pytest configuration and shared fixtures for TestBoost tests."""
 
-import pytest
-from typing import AsyncGenerator, Generator
-from unittest.mock import patch, MagicMock, AsyncMock
 import os
 import sys
+from collections.abc import AsyncGenerator
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
 
 # Add src to path for imports
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(__file__)), "src"))
@@ -14,11 +15,12 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(__file__)), "src
 # Database Fixtures
 # ============================================================================
 
+
 @pytest.fixture
 async def db_session():
     """
     Provide a database session with transaction rollback.
-    
+
     This fixture creates a new database session for each test and rolls back
     all changes after the test completes, ensuring test isolation.
     """
@@ -28,9 +30,9 @@ async def db_session():
     session.commit = AsyncMock()
     session.rollback = AsyncMock()
     session.close = AsyncMock()
-    
+
     yield session
-    
+
     # Rollback any changes
     await session.rollback()
     await session.close()
@@ -43,7 +45,7 @@ async def db_connection():
     connection.execute = AsyncMock()
     connection.fetchone = AsyncMock()
     connection.fetchall = AsyncMock()
-    
+
     yield connection
 
 
@@ -65,7 +67,8 @@ async def client() -> AsyncGenerator:
     Mocks database dependencies for unit testing.
     """
     try:
-        from httpx import AsyncClient, ASGITransport
+        from httpx import ASGITransport, AsyncClient
+
         from src.api.main import app
         from src.db import get_db
 
@@ -89,9 +92,7 @@ async def client() -> AsyncGenerator:
 
             transport = ASGITransport(app=app)
             async with AsyncClient(
-                transport=transport,
-                base_url="http://test",
-                headers={"X-API-Key": TEST_API_KEY}
+                transport=transport, base_url="http://test", headers={"X-API-Key": TEST_API_KEY}
             ) as ac:
                 yield ac
 
@@ -101,7 +102,9 @@ async def client() -> AsyncGenerator:
         # Fallback mock client for when dependencies aren't available
         mock_client = AsyncMock()
         mock_client.get = AsyncMock(return_value=MagicMock(status_code=200, json=lambda: {}))
-        mock_client.post = AsyncMock(return_value=MagicMock(status_code=201, json=lambda: {"id": "test-id"}))
+        mock_client.post = AsyncMock(
+            return_value=MagicMock(status_code=201, json=lambda: {"id": "test-id"})
+        )
         mock_client.delete = AsyncMock(return_value=MagicMock(status_code=204))
         yield mock_client
 
@@ -110,14 +113,14 @@ async def client() -> AsyncGenerator:
 # LLM Mock Fixtures
 # ============================================================================
 
+
 @pytest.fixture
 def mock_llm_provider():
     """Provide a mocked LLM provider."""
     provider = AsyncMock()
-    provider.generate = AsyncMock(return_value={
-        "content": "Mocked LLM response",
-        "tokens_used": 100
-    })
+    provider.generate = AsyncMock(
+        return_value={"content": "Mocked LLM response", "tokens_used": 100}
+    )
     return provider
 
 
@@ -125,10 +128,9 @@ def mock_llm_provider():
 def mock_llm():
     """Alias for mock_llm_provider for backwards compatibility."""
     provider = AsyncMock()
-    provider.generate = AsyncMock(return_value={
-        "content": "Mocked LLM response",
-        "tokens_used": 100
-    })
+    provider.generate = AsyncMock(
+        return_value={"content": "Mocked LLM response", "tokens_used": 100}
+    )
     return provider
 
 
@@ -136,9 +138,9 @@ def mock_llm():
 def mock_gemini_responses():
     """Load Gemini mock responses from fixtures."""
     import json
+
     fixture_path = os.path.join(
-        os.path.dirname(__file__),
-        "fixtures", "llm_responses", "gemini_responses.json"
+        os.path.dirname(__file__), "fixtures", "llm_responses", "gemini_responses.json"
     )
     if os.path.exists(fixture_path):
         with open(fixture_path) as f:
@@ -150,12 +152,13 @@ def mock_gemini_responses():
 # File System Fixtures
 # ============================================================================
 
+
 @pytest.fixture
 def temp_project_dir(tmp_path):
     """Create a temporary project directory with sample files."""
     project_dir = tmp_path / "test-project"
     project_dir.mkdir()
-    
+
     # Create sample pom.xml
     pom_content = """<?xml version="1.0" encoding="UTF-8"?>
 <project>
@@ -165,7 +168,7 @@ def temp_project_dir(tmp_path):
     <version>1.0.0</version>
 </project>"""
     (project_dir / "pom.xml").write_text(pom_content)
-    
+
     # Create sample Java file
     src_dir = project_dir / "src" / "main" / "java" / "com" / "test"
     src_dir.mkdir(parents=True)
@@ -178,13 +181,14 @@ public class TestService {
     }
 }
 """)
-    
+
     return project_dir
 
 
 # ============================================================================
 # Pytest Markers
 # ============================================================================
+
 
 def pytest_configure(config):
     """Register custom markers."""
@@ -197,17 +201,17 @@ def pytest_configure(config):
 # Test Helpers
 # ============================================================================
 
+
 @pytest.fixture
 def assert_valid_uuid():
     """Helper to assert a string is a valid UUID."""
     import uuid as uuid_module
-    
+
     def _assert(value: str):
         try:
             uuid_module.UUID(value)
             return True
         except ValueError:
             pytest.fail(f"'{value}' is not a valid UUID")
-    
-    return _assert
 
+    return _assert

@@ -1,9 +1,9 @@
 """Tests for test generation workflow operations."""
 
-import pytest
-from unittest.mock import patch, MagicMock, AsyncMock
 import json
 import os
+
+import pytest
 
 
 class TestTestGenerationMCPTools:
@@ -54,7 +54,9 @@ class TestTestGenerationFixtures:
         """Load mock LLM response from fixtures."""
         fixture_path = os.path.join(
             os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
-            "fixtures", "llm_responses", "gemini_responses.json"
+            "fixtures",
+            "llm_responses",
+            "gemini_responses.json",
         )
         with open(fixture_path) as f:
             return json.load(f)
@@ -99,4 +101,6 @@ class TestTestGenerationState:
         """SessionType should have TEST_GENERATION value."""
         from src.db.models import SessionType
 
-        assert hasattr(SessionType, "TEST_GENERATION") or "test_generation" in [s.value for s in SessionType]
+        assert hasattr(SessionType, "TEST_GENERATION") or "test_generation" in [
+            s.value for s in SessionType
+        ]

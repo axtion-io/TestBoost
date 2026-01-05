@@ -31,7 +31,13 @@
       "Bash(\"c:/Users/jfran/axtion/TestBoost/.venv/Scripts/python.exe\" -c \"\nimport requests\nimport json\n\nBASE = ''http://localhost:8000''\n\n# API-S01: Create session\nprint\\(''=== API-S01: Create Session ===''\\)\nr = requests.post\\(f''{BASE}/api/v2/sessions'', json={\n    ''project_path'': ''test-projects/spring-petclinic-microservices'',\n    ''session_type'': ''test_generation'',\n    ''mode'': ''interactive''\n}, headers={''X-API-Key'': ''test-key''}\\)\nprint\\(f''Status: {r.status_code}''\\)\nprint\\(f''Response: {json.dumps\\(r.json\\(\\), indent=2\\)[:500]}''\\)\n\")",
       "Bash(\"c:/Users/jfran/axtion/TestBoost/.venv/Scripts/python.exe\" -c:*)",
       "Bash(\"c:/Users/jfran/axtion/TestBoost/.venv/Scripts/python.exe\" -c \"\nimport requests\nimport json\n\nBASE = ''http://localhost:8000''\nAPI_KEY = ''your-api-key-here''\n\n# API-M01: Metrics endpoint \\(correct path\\)\nprint\\(''=== API-M01: Metrics Endpoint ===''\\)\nr = requests.get\\(f''{BASE}/metrics/json'', headers={''X-API-Key'': API_KEY}\\)\nprint\\(f''Status: {r.status_code}''\\)\nif r.status_code == 200:\n    print\\(f''Response: {json.dumps\\(r.json\\(\\), indent=2\\)[:800]}''\\)\nelse:\n    print\\(f''Response: {r.text}''\\)\n\n# Test steps endpoints\nprint\\(\\)\nprint\\(''=== API-S05: Session Steps ===''\\)\n# Create a session first\nr1 = requests.post\\(f''{BASE}/api/v2/sessions'', json={\n    ''project_path'': ''test-projects/spring-petclinic-microservices'',\n    ''session_type'': ''maven_maintenance'',\n    ''mode'': ''interactive''\n}, headers={''X-API-Key'': API_KEY}\\)\n\nif r1.status_code == 201:\n    session_id = r1.json\\(\\).get\\(''id''\\)\n    \n    # Get steps\n    r2 = requests.get\\(f''{BASE}/api/v2/sessions/{session_id}/steps'', headers={''X-API-Key'': API_KEY}\\)\n    print\\(f''Get Steps Status: {r2.status_code}''\\)\n    print\\(f''Steps: {json.dumps\\(r2.json\\(\\), indent=2\\)[:400]}''\\)\n\")",
-      "Bash(rm:*)"
+      "Bash(rm:*)",
+      "Bash(git push:*)",
+      "Bash(ruff check:*)",
+      "Bash(\"c:/Users/jfran/axtion/TestBoost/.venv/Scripts/python.exe\" -m ruff check tests/ --output-format=concise)",
+      "Bash(\"c:/Users/jfran/axtion/TestBoost/.venv/Scripts/python.exe\" -m ruff check tests/ --fix --unsafe-fixes)",
+      "Bash(\"c:/Users/jfran/axtion/TestBoost/.venv/Scripts/python.exe\" -m ruff format:*)",
+      "Bash(\"c:/Users/jfran/axtion/TestBoost/.venv/Scripts/python.exe\" -m ruff check:*)"
     ],
     "deny": [],
     "ask": []

@@ -162,7 +162,7 @@ def _default_input_mapper(input_data: dict[str, Any]) -> str:
     # Format as key-value pairs
     parts: list[str] = []
     for key, value in input_data.items():
-        if isinstance(value, (dict, list)):
+        if isinstance(value, dict | list):
             import json
 
             value = json.dumps(value, indent=2)

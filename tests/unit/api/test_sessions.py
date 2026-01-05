@@ -1,9 +1,8 @@
 """Tests for sessions API endpoints."""
 
-import pytest
-from unittest.mock import patch, MagicMock, AsyncMock
 import uuid
-from datetime import datetime
+
+import pytest
 
 
 class TestSessionsEndpoint:
@@ -15,7 +14,7 @@ class TestSessionsEndpoint:
         session_data = {
             "session_type": "maven_maintenance",
             "project_path": "/path/to/project",
-            "mode": "interactive"
+            "mode": "interactive",
         }
         response = await client.post("/api/v2/sessions", json=session_data)
         # With mocked DB, may return 400/500 due to incomplete session object
@@ -45,7 +44,7 @@ class TestSessionsEndpoint:
         response = await client.get("/api/v2/sessions")
         assert response.status_code == 200
         data = response.json()
-        assert isinstance(data, (list, dict))
+        assert isinstance(data, list | dict)
 
     @pytest.mark.asyncio
     async def test_delete_session(self, client):
@@ -57,10 +56,7 @@ class TestSessionsEndpoint:
     @pytest.mark.asyncio
     async def test_create_session_invalid_type(self, client):
         """Creating session with invalid type should return 400/422."""
-        session_data = {
-            "session_type": "invalid_type",
-            "project_path": "/path/to/project"
-        }
+        session_data = {"session_type": "invalid_type", "project_path": "/path/to/project"}
         response = await client.post("/api/v2/sessions", json=session_data)
         assert response.status_code in [400, 422]
 
@@ -70,7 +66,7 @@ class TestSessionsEndpoint:
         session_data = {
             "session_type": "maven_maintenance",
             "project_path": "/path/to/project",
-            "mode": "invalid_mode"
+            "mode": "invalid_mode",
         }
         response = await client.post("/api/v2/sessions", json=session_data)
         assert response.status_code in [400, 422]
@@ -90,4 +86,3 @@ class TestSessionsEndpoint:
         response = await client.get("/api/v2/sessions/not-a-uuid")
         # Invalid UUID should return 422 (validation error)
         assert response.status_code == 422
-

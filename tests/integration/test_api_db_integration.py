@@ -1,8 +1,6 @@
 """Integration tests for API and Database interaction."""
 
 import pytest
-from unittest.mock import patch, MagicMock
-import uuid
 
 
 @pytest.mark.integration
@@ -18,8 +16,8 @@ class TestAPIDBIntegration:
             json={
                 "project_path": "/test/integration/project",
                 "session_type": "maven_maintenance",
-                "mode": "interactive"
-            }
+                "mode": "interactive",
+            },
         )
         # With mocked DB, we may get various responses
         assert create_response.status_code in [200, 201, 400, 500]
@@ -45,8 +43,8 @@ class TestAPIDBIntegration:
             json={
                 "project_path": "/test/cascade",
                 "session_type": "test_generation",
-                "mode": "interactive"
-            }
+                "mode": "interactive",
+            },
         )
 
         if create_response.status_code in [200, 201]:
@@ -78,8 +76,8 @@ class TestAPIDBIntegration:
                 json={
                     "project_path": f"/test/concurrent/{index}",
                     "session_type": "maven_maintenance",
-                    "mode": "interactive"
-                }
+                    "mode": "interactive",
+                },
             )
             return response
 
@@ -112,8 +110,8 @@ class TestAPIDBIntegration:
             json={
                 "project_path": "/test/rollback",
                 "session_type": "invalid_type_should_fail",
-                "mode": "interactive"
-            }
+                "mode": "interactive",
+            },
         )
         # Should return validation error
         assert response.status_code in [400, 422]
@@ -127,4 +125,3 @@ class TestAPIDBIntegration:
             count_after = 0
 
         assert count_after == count_before
-

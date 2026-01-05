@@ -1,9 +1,9 @@
 """Integration tests for LLM provider interaction."""
 
-import pytest
-from unittest.mock import patch, MagicMock, AsyncMock
 import json
 import os
+
+import pytest
 
 
 @pytest.mark.integration
@@ -66,7 +66,6 @@ class TestLLMIntegration:
     @pytest.mark.asyncio
     async def test_provider_fallback_chain(self, mock_gemini_response):
         """Test that provider factory handles errors gracefully."""
-        from src.lib.llm import get_llm
         from src.lib.config import get_settings
 
         settings = get_settings()
@@ -85,11 +84,12 @@ class TestLLMIntegration:
     async def test_llm_response_parsing(self, mock_gemini_response):
         """Test parsing of LLM responses."""
         # Verify that fixture has expected structure
-        response = mock_gemini_response.get("generate_test", mock_gemini_response.get("default_response"))
+        response = mock_gemini_response.get(
+            "generate_test", mock_gemini_response.get("default_response")
+        )
         assert response is not None
 
         # If it has test_code field, it's a proper test generation response
         if isinstance(response, dict):
             # Response should be a dictionary with content
             assert "content" in response or "test_code" in response or isinstance(response, dict)
-

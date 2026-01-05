@@ -1,8 +1,8 @@
 """Tests for steps API endpoints."""
 
-import pytest
-from unittest.mock import patch, MagicMock
 import uuid
+
+import pytest
 
 
 class TestStepsEndpoint:
@@ -39,4 +39,4 @@ class TestStepsEndpoint:
         response = await client.get(f"/api/v2/sessions/{session_id}/steps")
         if response.status_code == 200:
             data = response.json()
-            assert isinstance(data, (list, dict))
+            assert isinstance(data, list | dict)

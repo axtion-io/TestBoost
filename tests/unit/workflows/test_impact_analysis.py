@@ -10,7 +10,6 @@ Tests cover:
 - validate_impact_report() - T9
 """
 
-import pytest
 
 from src.models.impact import ChangeCategory, Impact, RiskLevel, ScenarioType, TestType
 from src.workflows.impact_analysis import (
@@ -28,7 +27,6 @@ from src.workflows.impact_analysis import (
     select_test_type,
     validate_impact_report,
 )
-
 
 # ============================================================================
 # T3: Tests for parse_diff()
@@ -415,7 +413,7 @@ class TestGenerateTestRequirements:
 
         requirements = generate_test_requirements([sample_impact])
 
-        invariant_tests = [r for r in requirements if r.scenario_type == ScenarioType.INVARIANT]
+        [r for r in requirements if r.scenario_type == ScenarioType.INVARIANT]
         # Invariant tests should be created for critical impacts with rules
         assert any(r.scenario_type == ScenarioType.INVARIANT for r in requirements) or True
 

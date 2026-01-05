@@ -37,7 +37,9 @@
       "Bash(\"c:/Users/jfran/axtion/TestBoost/.venv/Scripts/python.exe\" -m ruff check tests/ --output-format=concise)",
       "Bash(\"c:/Users/jfran/axtion/TestBoost/.venv/Scripts/python.exe\" -m ruff check tests/ --fix --unsafe-fixes)",
       "Bash(\"c:/Users/jfran/axtion/TestBoost/.venv/Scripts/python.exe\" -m ruff format:*)",
-      "Bash(\"c:/Users/jfran/axtion/TestBoost/.venv/Scripts/python.exe\" -m ruff check:*)"
+      "Bash(\"c:/Users/jfran/axtion/TestBoost/.venv/Scripts/python.exe\" -m ruff check:*)",
+      "Bash(\"c:/Users/jfran/axtion/TestBoost/.venv/Scripts/python.exe\" -m pip install pytest-rerunfailures)",
+      "Bash(git commit:*)"
     ],
     "deny": [],
     "ask": []

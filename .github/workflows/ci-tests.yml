@@ -150,6 +150,7 @@ jobs:
             -v \
             --tb=short \
             --reruns=2 \
+            --no-cov \
             -m "not slow"
 
   all-tests-pass:

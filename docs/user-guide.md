@@ -333,6 +333,70 @@ Logs détaillés pour le troubleshooting.
 python -m src.cli.main maintenance run <project_path> --mode debug
 ```
 
+### Gestion des Sessions
+
+Les workflows créent des sessions qui peuvent être gérées manuellement pour plus de contrôle.
+
+#### Lister les Sessions
+
+```bash
+# Voir toutes les sessions
+python -m src.cli.main maintenance sessions
+
+# Filtrer par statut
+python -m src.cli.main maintenance sessions --status in_progress
+
+# Filtrer par type
+python -m src.cli.main maintenance sessions --type maven_maintenance
+```
+
+#### Contrôle Pause/Resume
+
+Pour mettre en pause un workflow en cours et le reprendre plus tard :
+
+```bash
+# Mettre en pause
+python -m src.cli.main maintenance pause <session_id> --reason "Waiting for approval"
+
+# Reprendre
+python -m src.cli.main maintenance resume <session_id>
+```
+
+#### Exécution Step-by-Step
+
+Pour exécuter les étapes individuellement (mode avancé) :
+
+```bash
+# Lister les étapes d'une session
+python -m src.cli.main maintenance steps <session_id>
+
+# Exécuter une étape spécifique
+python -m src.cli.main maintenance step <session_id> analyze
+python -m src.cli.main maintenance step <session_id> apply_updates
+```
+
+#### Récupérer les Artifacts
+
+Les artifacts incluent les réponses LLM et traces d'agent :
+
+```bash
+# Afficher les artifacts
+python -m src.cli.main maintenance artifacts <session_id>
+
+# Sauvegarder en JSON
+python -m src.cli.main maintenance artifacts <session_id> --output artifacts.json
+```
+
+#### Annuler un Workflow
+
+```bash
+# Avec confirmation
+python -m src.cli.main maintenance cancel <session_id>
+
+# Sans confirmation (CI/CD)
+python -m src.cli.main maintenance cancel <session_id> --force
+```
+
 ---
 
 ## Intégration CI/CD

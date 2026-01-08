@@ -283,3 +283,221 @@ With multiple developers:
 - Commit after each task or logical group
 - Stop at any checkpoint to validate story independently
 - All tests must follow Constitution Principle 1: No fake success, real failures only
+
+---
+
+# Part 2: CLI vs API Parity Tasks
+
+**Input**: Gap analysis between CLI and API implementations (2026-01-07)
+**Goal**: Combler les gaps de parité entre CLI et API identifiés
+
+## Format: `[ID] [P?] [Story] Description`
+
+- **[P]**: Can run in parallel (different files, no dependencies)
+- **[Story]**: US5=Step Execution, US6=Session Control, US7=Artifacts, US8=Audit API, US9=Impact API
+
+---
+
+## Phase 8: Setup (CLI Utilities)
+
+**Purpose**: Préparer les utilitaires communs pour les nouvelles commandes CLI
+
+- [ ] T059 [P] Créer helper HTTP client réutilisable dans src/cli/utils/api_client.py
+- [ ] T060 [P] Ajouter constantes API_BASE_URL et endpoints dans src/cli/constants.py
+
+---
+
+## Phase 9: Foundational (CLI Error Handling)
+
+**Purpose**: Infrastructure partagée par toutes les nouvelles commandes
+
+- [ ] T061 Ajouter gestion des erreurs API dans src/cli/utils/api_client.py (401, 404, 409, 500)
+- [ ] T062 [P] Créer formatters Rich réutilisables pour sessions/steps/artifacts dans src/cli/formatters.py
+
+**Checkpoint**: Foundation ready - CLI commands can now be implemented
+
+---
+
+## Phase 10: User Story 5 - Step Execution CLI (Priority: P1) 🎯 MVP
+
+**Goal**: Permettre l'exécution de steps spécifiques via CLI pour le mode interactif
+
+**Independent Test**: `python -m src.cli.main maintenance step <session_id> <step_code>` exécute le step
+
+### Implementation for User Story 5
+
+- [ ] T063 [US5] Ajouter commande `step` dans src/cli/commands/maintenance.py
+  - Signature: `step(session_id: str, step_code: str)`
+  - Appeler `POST /api/v2/sessions/{id}/steps/{code}/execute`
+  - Afficher résultat avec Rich Panel (status, message)
+
+- [ ] T064 [US5] Ajouter commande `steps` pour lister les steps d'une session dans src/cli/commands/maintenance.py
+  - Signature: `steps(session_id: str)`
+  - Appeler `GET /api/v2/sessions/{id}/steps`
+  - Afficher tableau Rich (code, name, status, sequence)
+
+- [ ] T065 [US5] Documenter les nouvelles commandes step dans docs/cli-reference.md
+
+**Checkpoint**: Step execution via CLI is functional
+
+---
+
+## Phase 11: User Story 6 - Session Control CLI (Priority: P1)
+
+**Goal**: Permettre pause/resume et listing des sessions via CLI
+
+**Independent Test**:
+- `python -m src.cli.main maintenance sessions` affiche la liste
+- `python -m src.cli.main maintenance pause <id>` met en pause
+
+### Implementation for User Story 6
+
+- [ ] T066 [US6] Ajouter commande `sessions` dans src/cli/commands/maintenance.py
+  - Signature: `sessions(status: str = None, session_type: str = None, limit: int = 20)`
+  - Appeler `GET /api/v2/sessions` avec query params
+  - Afficher tableau paginé Rich (id, type, status, project_path, created_at)
+
+- [ ] T067 [US6] Ajouter commande `pause` dans src/cli/commands/maintenance.py
+  - Signature: `pause(session_id: str, reason: str = None)`
+  - Appeler `POST /api/v2/sessions/{id}/pause`
+  - Afficher confirmation avec checkpoint_id
+
+- [ ] T068 [US6] Ajouter commande `resume` dans src/cli/commands/maintenance.py
+  - Signature: `resume(session_id: str, checkpoint: str = None)`
+  - Appeler `POST /api/v2/sessions/{id}/resume`
+  - Afficher confirmation
+
+- [ ] T069 [US6] Documenter pause/resume dans docs/user-guide.md section "Modes d'Exécution"
+
+**Checkpoint**: Full session control via CLI is functional
+
+---
+
+## Phase 12: User Story 7 - Artifacts & Cancel CLI (Priority: P2)
+
+**Goal**: Permettre récupération des artifacts et annulation de workflows via CLI
+
+**Independent Test**:
+- `python -m src.cli.main maintenance artifacts <id>` affiche les artifacts
+- `python -m src.cli.main maintenance cancel <id>` annule le workflow
+
+### Implementation for User Story 7
+
+- [ ] T070 [US7] Ajouter commande `artifacts` dans src/cli/commands/maintenance.py
+  - Signature: `artifacts(session_id: str, artifact_type: str = None, output: str = None)`
+  - Appeler `GET /api/v2/sessions/{id}/artifacts`
+  - Afficher liste ou sauvegarder JSON si --output spécifié
+
+- [ ] T071 [US7] Ajouter commande `cancel` dans src/cli/commands/maintenance.py
+  - Signature: `cancel(session_id: str, force: bool = False)`
+  - Demander confirmation (sauf si --force)
+  - Appeler `DELETE /api/testboost/maintenance/maven/{id}`
+  - Afficher confirmation
+
+- [ ] T072 [US7] Documenter artifacts et cancel dans docs/cli-reference.md
+
+**Checkpoint**: Artifact retrieval and workflow cancellation via CLI functional
+
+---
+
+## Phase 13: User Story 8 - Audit API Endpoints (Priority: P2)
+
+**Goal**: Exposer les fonctionnalités d'audit via API pour intégration CI/CD
+
+**Independent Test**:
+- `POST /api/audit/scan` lance un scan
+- `GET /api/audit/report/{id}` récupère le rapport
+
+### Implementation for User Story 8
+
+- [ ] T073 [P] [US8] Créer router src/api/routers/audit.py avec modèles Pydantic
+  - AuditScanRequest(project_path, severity, output_format)
+  - AuditScanResponse(success, session_id, vulnerabilities[])
+  - AuditReportResponse(project_path, vulnerabilities[], dependencies[])
+
+- [ ] T074 [US8] Implémenter endpoint `POST /api/audit/scan` dans src/api/routers/audit.py
+  - Réutiliser src/mcp_servers/maven_maintenance/tools/analyze.py
+  - Retourner résultats JSON
+
+- [ ] T075 [US8] Implémenter endpoint `GET /api/audit/report/{session_id}` dans src/api/routers/audit.py
+  - Retourner rapport JSON avec vulnérabilités et dépendances
+
+- [ ] T076 [US8] Implémenter endpoint `GET /api/audit/report/{session_id}/html` dans src/api/routers/audit.py
+  - Réutiliser _generate_html_report() de src/cli/commands/audit.py
+  - Retourner HTML response
+
+- [ ] T077 [US8] Enregistrer router audit dans src/api/main.py
+  - `app.include_router(audit.router)`
+
+- [ ] T078 [US8] Documenter endpoints audit dans docs/api-authentication.md
+
+**Checkpoint**: Audit functionality exposed via API
+
+---
+
+## Phase 14: User Story 9 - Impact Analysis API (Priority: P2)
+
+**Goal**: Exposer l'analyse d'impact via API pour intégration CI/CD
+
+**Independent Test**: `POST /api/tests/impact` retourne ImpactReport JSON
+
+### Implementation for User Story 9
+
+- [ ] T079 [P] [US9] Ajouter modèles Pydantic pour Impact dans src/api/routers/testboost.py
+  - ImpactAnalysisRequest(project_path, chunk_size, verbose)
+  - ImpactAnalysisResponse(success, impacts[], test_requirements[], summary)
+
+- [ ] T080 [US9] Implémenter endpoint `POST /api/tests/impact` dans src/api/routers/testboost.py
+  - Appeler src/workflows/impact_analysis.run_impact_analysis()
+  - Retourner ImpactReport.to_dict()
+
+- [ ] T081 [US9] Documenter endpoint impact dans docs/api-authentication.md
+
+**Checkpoint**: Impact analysis exposed via API
+
+---
+
+## Phase 15: CLI/API Parity - Polish
+
+**Purpose**: Validation finale et tests
+
+- [ ] T082 [P] Ajouter tests unitaires pour nouvelles commandes CLI dans tests/unit/cli/test_maintenance.py
+- [ ] T083 [P] Ajouter tests unitaires pour nouveaux endpoints API dans tests/unit/api/test_audit.py
+- [ ] T084 [P] Mettre à jour docs/user-guide.md avec toutes les nouvelles commandes
+- [ ] T085 Vérifier que `--help` affiche correctement toutes les commandes
+- [ ] T086 Run quickstart.md validation avec nouvelles fonctionnalités
+
+---
+
+## CLI vs API Parity - Dependencies
+
+### Phase Dependencies
+
+- **Phase 8-9 (Setup/Foundational)**: Foundation for CLI commands
+- **Phase 10-12 (CLI)**: Depend on Phase 8-9, can run in parallel
+- **Phase 13-14 (API)**: Independent of CLI phases, can run in parallel
+
+### Parallel Execution
+
+```text
+After Phase 9 (Foundational) completes:
+
+CLI Track:                        API Track:
+├── US5: Step Execution (P1)      ├── US8: Audit Endpoints (P2)
+├── US6: Session Control (P1)     └── US9: Impact Endpoint (P2)
+└── US7: Artifacts/Cancel (P2)
+
+Both tracks can run in parallel!
+```
+
+### Priority Summary
+
+| Priority | User Story | Files Modified |
+|----------|------------|----------------|
+| P1 | US5: Step Execution | maintenance.py, cli-reference.md |
+| P1 | US6: Session Control | maintenance.py, user-guide.md |
+| P2 | US7: Artifacts/Cancel | maintenance.py, cli-reference.md |
+| P2 | US8: Audit API | audit.py (new), main.py, api-authentication.md |
+| P2 | US9: Impact API | testboost.py, api-authentication.md |
+
+### Total New Tasks: 28 (T059-T086)

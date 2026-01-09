@@ -20,16 +20,15 @@ class TestReadmeCompleteness:
 
         # Check for agent requirements section
         assert "agent" in readme.lower(), "README should mention agents"
-        assert any(term in readme.lower() for term in [
-            "requirements", "prerequisites", "dependencies"
-        ]), "README should have requirements section"
+        assert any(
+            term in readme.lower() for term in ["requirements", "prerequisites", "dependencies"]
+        ), "README should have requirements section"
 
     def test_readme_has_troubleshooting_section(self):
         """Test README contains Troubleshooting section."""
         readme = Path("README.md").read_text(encoding="utf-8")
 
-        assert "troubleshoot" in readme.lower(), \
-            "README should have troubleshooting section"
+        assert "troubleshoot" in readme.lower(), "README should have troubleshooting section"
 
     def test_readme_has_edge_case_section(self):
         """Test README documents edge case handling."""
@@ -37,16 +36,16 @@ class TestReadmeCompleteness:
 
         # Check for edge case documentation
         edge_case_terms = ["edge case", "error handling", "retry", "rate limit"]
-        assert any(term in readme.lower() for term in edge_case_terms), \
-            "README should document edge case handling"
+        assert any(
+            term in readme.lower() for term in edge_case_terms
+        ), "README should document edge case handling"
 
     def test_readme_minimum_content(self):
         """Test README has minimum content length."""
         readme = Path("README.md").read_text(encoding="utf-8")
         word_count = len(readme.split())
 
-        assert word_count >= 500, \
-            f"README should have at least 500 words, found {word_count}"
+        assert word_count >= 500, f"README should have at least 500 words, found {word_count}"
 
 
 class TestQuickstartCompleteness:
@@ -61,29 +60,27 @@ class TestQuickstartCompleteness:
         """Test quickstart contains Developer scenario."""
         quickstart = Path("specs/002-deepagents-integration/quickstart.md").read_text()
 
-        assert "developer" in quickstart.lower(), \
-            "Quickstart should have Developer scenario"
+        assert "developer" in quickstart.lower(), "Quickstart should have Developer scenario"
 
     def test_quickstart_has_cli_user_scenario(self):
         """Test quickstart contains CLI User scenario."""
         quickstart = Path("specs/002-deepagents-integration/quickstart.md").read_text()
 
-        assert "cli" in quickstart.lower(), \
-            "Quickstart should have CLI User scenario"
+        assert "cli" in quickstart.lower(), "Quickstart should have CLI User scenario"
 
     def test_quickstart_has_administrator_scenario(self):
         """Test quickstart contains Administrator scenario."""
         quickstart = Path("specs/002-deepagents-integration/quickstart.md").read_text()
 
-        assert "administrator" in quickstart.lower(), \
-            "Quickstart should have Administrator scenario"
+        assert (
+            "administrator" in quickstart.lower()
+        ), "Quickstart should have Administrator scenario"
 
     def test_quickstart_has_tester_scenario(self):
         """Test quickstart contains Tester scenario."""
         quickstart = Path("specs/002-deepagents-integration/quickstart.md").read_text()
 
-        assert "tester" in quickstart.lower(), \
-            "Quickstart should have Tester scenario"
+        assert "tester" in quickstart.lower(), "Quickstart should have Tester scenario"
 
 
 class TestMigrationGuide:
@@ -93,22 +90,19 @@ class TestMigrationGuide:
         """Test quickstart.md has migration guide section."""
         quickstart = Path("specs/002-deepagents-integration/quickstart.md").read_text()
 
-        assert "migration" in quickstart.lower(), \
-            "Quickstart should have migration guide section"
+        assert "migration" in quickstart.lower(), "Quickstart should have migration guide section"
 
     def test_migration_guide_has_breaking_changes(self):
         """Test migration guide documents breaking changes."""
         quickstart = Path("specs/002-deepagents-integration/quickstart.md").read_text()
 
-        assert "breaking" in quickstart.lower(), \
-            "Migration guide should document breaking changes"
+        assert "breaking" in quickstart.lower(), "Migration guide should document breaking changes"
 
     def test_migration_guide_has_rollback(self):
         """Test migration guide has rollback procedure."""
         quickstart = Path("specs/002-deepagents-integration/quickstart.md").read_text()
 
-        assert "rollback" in quickstart.lower(), \
-            "Migration guide should have rollback procedure"
+        assert "rollback" in quickstart.lower(), "Migration guide should have rollback procedure"
 
 
 class TestPromptTemplatesDocumented:
@@ -117,8 +111,7 @@ class TestPromptTemplatesDocumented:
     def test_maven_prompt_exists(self):
         """Test Maven dependency update prompt exists."""
         prompt_path = Path("config/prompts/maven/dependency_update.md")
-        assert prompt_path.exists(), \
-            "Maven dependency update prompt not found"
+        assert prompt_path.exists(), "Maven dependency update prompt not found"
 
     def test_maven_prompt_has_header(self):
         """Test Maven prompt has explanatory header."""
@@ -127,13 +120,13 @@ class TestPromptTemplatesDocumented:
             content = prompt_path.read_text()
 
             # Check for header with purpose
-            assert len(content) > 100, \
-                "Prompt should have substantial content"
+            assert len(content) > 100, "Prompt should have substantial content"
 
             # Check for role/purpose definition
             role_terms = ["role", "purpose", "objective", "you are"]
-            assert any(term in content.lower() for term in role_terms), \
-                "Prompt should define agent role/purpose"
+            assert any(
+                term in content.lower() for term in role_terms
+            ), "Prompt should define agent role/purpose"
 
 
 class TestAgentConfigsDocumented:
@@ -142,20 +135,17 @@ class TestAgentConfigsDocumented:
     def test_maven_agent_config_exists(self):
         """Test Maven agent YAML config exists."""
         config_path = Path("config/agents/maven_maintenance_agent.yaml")
-        assert config_path.exists(), \
-            "Maven maintenance agent config not found"
+        assert config_path.exists(), "Maven maintenance agent config not found"
 
     def test_test_gen_agent_config_exists(self):
         """Test Test generation agent YAML config exists."""
         config_path = Path("config/agents/test_gen_agent.yaml")
-        assert config_path.exists(), \
-            "Test generation agent config not found"
+        assert config_path.exists(), "Test generation agent config not found"
 
     def test_deployment_agent_config_exists(self):
         """Test Deployment agent YAML config exists."""
         config_path = Path("config/agents/deployment_agent.yaml")
-        assert config_path.exists(), \
-            "Deployment agent config not found"
+        assert config_path.exists(), "Deployment agent config not found"
 
     def test_agent_configs_have_required_fields(self):
         """Test agent configs have required fields."""
@@ -168,14 +158,11 @@ class TestAgentConfigsDocumented:
             # Check required top-level fields
             required_fields = ["name", "llm", "tools", "prompts"]
             for field in required_fields:
-                assert field in config, \
-                    f"Agent config missing required field: {field}"
+                assert field in config, f"Agent config missing required field: {field}"
 
             # Check LLM config
-            assert "provider" in config.get("llm", {}), \
-                "Agent config missing llm.provider"
-            assert "model" in config.get("llm", {}), \
-                "Agent config missing llm.model"
+            assert "provider" in config.get("llm", {}), "Agent config missing llm.provider"
+            assert "model" in config.get("llm", {}), "Agent config missing llm.model"
 
 
 class TestCodeDocumentation:
@@ -191,8 +178,7 @@ class TestCodeDocumentation:
 
             content = py_file.read_text()
             # Check for module docstring (triple quotes at start)
-            assert content.strip().startswith('"""'), \
-                f"{py_file.name} missing module docstring"
+            assert content.strip().startswith('"""'), f"{py_file.name} missing module docstring"
 
     def test_workflow_modules_have_docstrings(self):
         """Test that workflow modules have module docstrings."""
@@ -200,8 +186,7 @@ class TestCodeDocumentation:
 
         for py_file in workflows_path.glob("*_agent.py"):
             content = py_file.read_text()
-            assert content.strip().startswith('"""'), \
-                f"{py_file.name} missing module docstring"
+            assert content.strip().startswith('"""'), f"{py_file.name} missing module docstring"
 
 
 class TestAPIDocumentation:
@@ -212,8 +197,7 @@ class TestAPIDocumentation:
         from src.api.main import app
 
         # FastAPI generates OpenAPI schema by default
-        assert hasattr(app, "openapi"), \
-            "FastAPI app should have OpenAPI support"
+        assert hasattr(app, "openapi"), "FastAPI app should have OpenAPI support"
 
     def test_api_endpoints_documented(self):
         """Test that API endpoints have descriptions."""

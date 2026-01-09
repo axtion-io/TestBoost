@@ -80,6 +80,54 @@ class MaintenanceStatus(BaseModel):
     warnings: list[str]
 
 
+# ============================================================================
+# Impact Analysis Models (T079)
+# ============================================================================
+
+
+class ImpactInfo(BaseModel):
+    """Impact information from analysis."""
+
+    id: str
+    file_path: str
+    change_category: str
+    risk_level: str
+    affected_methods: list[str] = []
+    change_description: str = ""
+
+
+class TestRequirementInfo(BaseModel):
+    """Test requirement from impact analysis."""
+
+    id: str
+    impact_id: str
+    test_type: str
+    scenario: str
+    priority: str
+    suggested_assertions: list[str] = []
+
+
+class ImpactAnalysisRequest(BaseModel):
+    """Request model for impact analysis."""
+
+    project_path: str = Field(..., description="Path to the project to analyze")
+    verbose: bool = Field(False, description="Include detailed impact descriptions")
+
+
+class ImpactAnalysisResponse(BaseModel):
+    """Response model for impact analysis."""
+
+    success: bool
+    project_path: str
+    git_ref: str
+    total_lines_changed: int
+    processing_time_seconds: float
+    summary: dict[str, Any]
+    impacts: list[ImpactInfo]
+    test_requirements: list[TestRequirementInfo]
+    error: str | None = None
+
+
 # In-memory session storage (replace with database in production)
 _sessions: dict[str, MavenMaintenanceState] = {}
 
@@ -598,3 +646,99 @@ async def get_test_generation_result(session_id: str) -> TestGenerateResponse:
         quality_report=state.quality_report if state.quality_report else None,
         error=state.errors[0] if state.errors else None,
     )
+
+
+# ============================================================================
+# Impact Analysis Endpoint (T080)
+# ============================================================================
+
+
+@router.post("/tests/impact", response_model=ImpactAnalysisResponse)
+async def analyze_impact(request: ImpactAnalysisRequest) -> ImpactAnalysisResponse:
+    """
+    Analyze code changes to identify impacts and generate test requirements.
+
+    Uses git diff to analyze uncommitted changes and classifies them by:
+    - Risk level (business_critical, non_critical)
+    - Change category (logic_change, api_signature, security, etc.)
+    - Test requirements (unit, integration, boundary, etc.)
+
+    Args:
+        request: Impact analysis request parameters
+
+    Returns:
+        Impact report with identified impacts and test requirements
+    """
+    from pathlib import Path
+
+    from src.workflows.impact_analysis import run_impact_analysis
+
+    logger.info("impact_analysis_start", project_path=request.project_path)
+
+    # Validate project path
+    project_dir = Path(request.project_path).resolve()
+    if not project_dir.exists():
+        raise HTTPException(
+            status_code=404, detail=f"Project path not found: {request.project_path}"
+        )
+
+    try:
+        # Run impact analysis
+        report = await run_impact_analysis(str(project_dir))
+
+        # Convert to response model
+        impacts = [
+            ImpactInfo(
+                id=impact.id,
+                file_path=impact.file_path,
+                change_category=impact.change_category.value,
+                risk_level=impact.risk_level.value,
+                affected_methods=impact.affected_methods,
+                change_description=impact.change_description if request.verbose else "",
+            )
+            for impact in report.impacts
+        ]
+
+        test_requirements = [
+            TestRequirementInfo(
+                id=req.id,
+                impact_id=req.impact_id,
+                test_type=req.test_type.value,
+                scenario=req.scenario.value,
+                priority=req.priority,
+                suggested_assertions=req.suggested_assertions if request.verbose else [],
+            )
+            for req in report.test_requirements
+        ]
+
+        logger.info(
+            "impact_analysis_complete",
+            project_path=request.project_path,
+            impacts_found=len(impacts),
+            tests_required=len(test_requirements),
+        )
+
+        return ImpactAnalysisResponse(
+            success=True,
+            project_path=report.project_path,
+            git_ref=report.git_ref,
+            total_lines_changed=report.total_lines_changed,
+            processing_time_seconds=report.processing_time_seconds,
+            summary=report.summary,
+            impacts=impacts,
+            test_requirements=test_requirements,
+        )
+
+    except Exception as e:
+        logger.error("impact_analysis_error", project_path=request.project_path, error=str(e))
+        return ImpactAnalysisResponse(
+            success=False,
+            project_path=str(project_dir),
+            git_ref="",
+            total_lines_changed=0,
+            processing_time_seconds=0.0,
+            summary={},
+            impacts=[],
+            test_requirements=[],
+            error=str(e),
+        )

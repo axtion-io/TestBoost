@@ -151,10 +151,10 @@ Summary: 3 updates available (1 security, 1 major, 1 minor)
 
 ```bash
 # Mode interactif (confirmation avant chaque action)
-python -m src.cli.main maintenance apply test-projects/spring-petclinic
+python -m src.cli.main maintenance run test-projects/spring-petclinic
 
 # Mode autonome (CI/CD)
-python -m src.cli.main maintenance apply test-projects/spring-petclinic --mode autonomous
+python -m src.cli.main maintenance run test-projects/spring-petclinic --mode autonomous
 ```
 
 #### 4. Interpréter les Résultats
@@ -195,10 +195,10 @@ Next Steps:
 python -m src.cli.main maintenance list <project_path>
 
 # Appliquer les mises à jour
-python -m src.cli.main maintenance apply <project_path> [--mode autonomous]
+python -m src.cli.main maintenance run <project_path> [--mode autonomous]
 
-# Auditer une session passée
-python -m src.cli.main audit <session_id>
+# Vérifier le statut d'une session
+python -m src.cli.main maintenance status <session_id>
 ```
 
 **Options** :
@@ -232,20 +232,26 @@ python -m src.cli.main tests generate <project_path> --mutation-score 80
 **Objectif** : Déployer l'application dans Docker pour validation.
 
 ```bash
-# Générer Dockerfile et docker-compose
-python -m src.cli.main deploy docker <project_path>
+# Déployer le projet dans Docker
+python -m src.cli.main deploy run <project_path>
 
-# Déployer et attendre le health check
-python -m src.cli.main deploy docker <project_path> --wait-healthy
+# Construire uniquement l'image
+python -m src.cli.main deploy build <project_path>
 
-# Collecter les logs en cas d'erreur
+# Collecter les logs des containers
 python -m src.cli.main deploy logs <project_path>
+
+# Vérifier le statut des containers
+python -m src.cli.main deploy status <project_path>
+
+# Arrêter les containers
+python -m src.cli.main deploy stop <project_path>
 ```
 
 **Options** :
-- `--port` : Port à exposer (défaut: 8080)
-- `--include-db` : Inclure PostgreSQL/MySQL
-- `--timeout` : Timeout du health check (défaut: 120s)
+- `--dependency/-d` : Services dépendants (postgres, mysql, redis, mongodb)
+- `--endpoint/-e` : Endpoint de health check
+- `--skip-health` : Ignorer la validation health check
 
 ### 4. Impact Analysis
 
@@ -286,7 +292,7 @@ python -m src.cli.main tests impact <project_path> --output impact-report.json
 Le système demande confirmation avant chaque action critique.
 
 ```bash
-python -m src.cli.main maintenance apply <project_path>
+python -m src.cli.main maintenance run <project_path>
 ```
 
 ```
@@ -306,7 +312,7 @@ Continue with remaining updates? [Y/n]: y
 Pour l'intégration CI/CD, toutes les décisions sont automatiques.
 
 ```bash
-python -m src.cli.main maintenance apply <project_path> --mode autonomous
+python -m src.cli.main maintenance run <project_path> --mode autonomous
 ```
 
 En cas d'erreur, le workflow s'arrête et génère un rapport d'échec.
@@ -316,7 +322,7 @@ En cas d'erreur, le workflow s'arrête et génère un rapport d'échec.
 Aucune modification n'est appliquée au projet.
 
 ```bash
-python -m src.cli.main maintenance apply <project_path> --mode analyze
+python -m src.cli.main maintenance run <project_path> --mode analysis_only
 ```
 
 ### Mode Debug
@@ -324,7 +330,71 @@ python -m src.cli.main maintenance apply <project_path> --mode analyze
 Logs détaillés pour le troubleshooting.
 
 ```bash
-python -m src.cli.main maintenance apply <project_path> --mode debug
+python -m src.cli.main maintenance run <project_path> --mode debug
+```
+
+### Gestion des Sessions
+
+Les workflows créent des sessions qui peuvent être gérées manuellement pour plus de contrôle.
+
+#### Lister les Sessions
+
+```bash
+# Voir toutes les sessions
+python -m src.cli.main maintenance sessions
+
+# Filtrer par statut
+python -m src.cli.main maintenance sessions --status in_progress
+
+# Filtrer par type
+python -m src.cli.main maintenance sessions --type maven_maintenance
+```
+
+#### Contrôle Pause/Resume
+
+Pour mettre en pause un workflow en cours et le reprendre plus tard :
+
+```bash
+# Mettre en pause
+python -m src.cli.main maintenance pause <session_id> --reason "Waiting for approval"
+
+# Reprendre
+python -m src.cli.main maintenance resume <session_id>
+```
+
+#### Exécution Step-by-Step
+
+Pour exécuter les étapes individuellement (mode avancé) :
+
+```bash
+# Lister les étapes d'une session
+python -m src.cli.main maintenance steps <session_id>
+
+# Exécuter une étape spécifique
+python -m src.cli.main maintenance step <session_id> analyze
+python -m src.cli.main maintenance step <session_id> apply_updates
+```
+
+#### Récupérer les Artifacts
+
+Les artifacts incluent les réponses LLM et traces d'agent :
+
+```bash
+# Afficher les artifacts
+python -m src.cli.main maintenance artifacts <session_id>
+
+# Sauvegarder en JSON
+python -m src.cli.main maintenance artifacts <session_id> --output artifacts.json
+```
+
+#### Annuler un Workflow
+
+```bash
+# Avec confirmation
+python -m src.cli.main maintenance cancel <session_id>
+
+# Sans confirmation (CI/CD)
+python -m src.cli.main maintenance cancel <session_id> --force
 ```
 
 ---
@@ -377,7 +447,7 @@ jobs:
           MODEL: gemini-2.0-flash
         run: |
           poetry run alembic upgrade head
-          poetry run python -m src.cli.main maintenance apply . --mode autonomous
+          poetry run python -m src.cli.main maintenance run . --mode autonomous
       
       - name: Create Pull Request
         if: success()
@@ -409,7 +479,7 @@ testboost:
     - pip install poetry
     - poetry install
     - poetry run alembic upgrade head
-    - poetry run python -m src.cli.main maintenance apply . --mode autonomous
+    - poetry run python -m src.cli.main maintenance run . --mode autonomous
   rules:
     - if: $CI_PIPELINE_SOURCE == "schedule"
 ```
@@ -561,7 +631,7 @@ Pour activer le mode debug :
 
 ```bash
 export LOG_LEVEL=DEBUG
-python -m src.cli.main maintenance apply <project_path>
+python -m src.cli.main maintenance run <project_path>
 ```
 
 Pour consulter les logs en temps réel :

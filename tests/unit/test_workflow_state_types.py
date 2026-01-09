@@ -223,7 +223,9 @@ class TestTestGenerationState:
         )
 
         state.generated_unit_tests.append({"class": "TestFoo", "methods": ["testBar"]})
-        state.generated_integration_tests.append({"class": "TestFooIT", "methods": ["testIntegration"]})
+        state.generated_integration_tests.append(
+            {"class": "TestFooIT", "methods": ["testIntegration"]}
+        )
         state.mutation_score = 82.5
 
         assert len(state.generated_unit_tests) == 1

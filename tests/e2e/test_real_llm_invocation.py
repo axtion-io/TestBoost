@@ -8,7 +8,7 @@ import pytest
 # Skip E2E tests if no API key configured
 pytestmark = pytest.mark.skipif(
     not os.getenv("GOOGLE_API_KEY") and not os.getenv("ANTHROPIC_API_KEY"),
-    reason="No LLM API key configured (GOOGLE_API_KEY or ANTHROPIC_API_KEY required)"
+    reason="No LLM API key configured (GOOGLE_API_KEY or ANTHROPIC_API_KEY required)",
 )
 
 
@@ -56,6 +56,7 @@ class TestMavenWorkflowLLMCalls:
 
         class LLMWrapper:
             """Wrapper that counts LLM calls and delegates to real LLM."""
+
             def __init__(self, real_llm, counter):
                 self._real_llm = real_llm
                 self._counter = counter
@@ -79,6 +80,7 @@ class TestMavenWorkflowLLMCalls:
         with patch("src.workflows.maven_maintenance_agent.get_llm") as mock_get_llm:
             # Import original get_llm
             from src.lib import llm as llm_module
+
             original_get_llm = llm_module.get_llm
 
             def get_llm_with_counter(*args, **kwargs):
@@ -94,8 +96,7 @@ class TestMavenWorkflowLLMCalls:
 
             # Execute workflow with real LLM (wrapped with counter)
             result = await run_maven_maintenance_with_agent(
-                project_path=str(project_path),
-                session_id="e2e-test-maven-llm"
+                project_path=str(project_path), session_id="e2e-test-maven-llm"
             )
 
             # Verify at least 2 LLM calls (SC-002: verifies real LLM invocation)
@@ -136,8 +137,7 @@ class TestMavenWorkflowLLMCalls:
 
         # Run the workflow - MCP tools are called within the DeepAgents graph
         result = await run_maven_maintenance_with_agent(
-            project_path=str(project_path),
-            session_id="e2e-test-tools"
+            project_path=str(project_path), session_id="e2e-test-tools"
         )
 
         # Parse result
@@ -155,7 +155,9 @@ class TestMavenWorkflowLLMCalls:
         analysis_lower = analysis.lower()
         tool_keywords = ["dependencies", "vulnerabilities", "updates", "status", "project"]
         found_keywords = [kw for kw in tool_keywords if kw in analysis_lower]
-        assert len(found_keywords) >= 2, f"Analysis missing tool output keywords. Found: {found_keywords}"
+        assert (
+            len(found_keywords) >= 2
+        ), f"Analysis missing tool output keywords. Found: {found_keywords}"
 
 
 class TestLangSmithTraceValidation:
@@ -164,8 +166,7 @@ class TestLangSmithTraceValidation:
     @pytest.mark.asyncio
     @pytest.mark.e2e
     @pytest.mark.skipif(
-        not os.getenv("LANGSMITH_API_KEY"),
-        reason="LANGSMITH_API_KEY not configured"
+        not os.getenv("LANGSMITH_API_KEY"), reason="LANGSMITH_API_KEY not configured"
     )
     async def test_langsmith_trace_validation(self, tmp_path):
         """Test LangSmith captures all agent invocations and tool calls."""
@@ -199,8 +200,7 @@ class TestLangSmithTraceValidation:
         try:
             # Execute workflow
             result = await run_maven_maintenance_with_agent(
-                project_path=str(project_path),
-                session_id="e2e-langsmith-test"
+                project_path=str(project_path), session_id="e2e-langsmith-test"
             )
 
             # LangSmith validation would require:
@@ -214,16 +214,16 @@ class TestLangSmithTraceValidation:
             assert result is not None
 
             # Log instructions for manual validation
-            print("\n" + "="*80)
+            print("\n" + "=" * 80)
             print("MANUAL LANGSMITH VALIDATION REQUIRED:")
-            print("="*80)
+            print("=" * 80)
             print("1. Go to: https://smith.langchain.com/")
             print("2. Search for session_id: e2e-langsmith-test")
             print("3. Verify trace shows:")
             print("   - Agent invocations (≥3)")
             print("   - Tool calls (analyze_dependencies, compile_tests, etc.)")
             print("   - Input/output for each step")
-            print("="*80 + "\n")
+            print("=" * 80 + "\n")
 
         finally:
             # Clean up env
@@ -257,8 +257,7 @@ class TestLangSmithTraceValidation:
 
         # Should work without LangSmith
         result = await run_maven_maintenance_with_agent(
-            project_path=str(project_path),
-            session_id="e2e-no-langsmith"
+            project_path=str(project_path), session_id="e2e-no-langsmith"
         )
 
         assert result is not None
@@ -290,8 +289,7 @@ class TestMavenWorkflowEdgeCases:
         # 1. Return an error in the result
         # 2. Return analysis indicating no pom.xml found
         result = await run_maven_maintenance_with_agent(
-            project_path=str(project_path),
-            session_id="e2e-error-handling"
+            project_path=str(project_path), session_id="e2e-error-handling"
         )
 
         # Verify workflow completed (even if with "error" result)
@@ -308,8 +306,9 @@ class TestMavenWorkflowEdgeCases:
 
         # Either success with "no dependencies" message or analysis mentions the issue
         if success:
-            assert "dependencies" in analysis or "project" in analysis, \
-                f"Analysis should mention dependencies: {analysis[:200]}"
+            assert (
+                "dependencies" in analysis or "project" in analysis
+            ), f"Analysis should mention dependencies: {analysis[:200]}"
         else:
             # If not successful, error handling worked
             assert "error" in str(result_data).lower() or len(analysis) > 0
@@ -370,6 +369,7 @@ class TestDockerWorkflowLLMCalls:
 
         class LLMWrapper:
             """Wrapper that counts LLM calls and delegates to real LLM."""
+
             def __init__(self, real_llm, counter):
                 self._real_llm = real_llm
                 self._counter = counter
@@ -393,6 +393,7 @@ class TestDockerWorkflowLLMCalls:
         with patch("src.workflows.docker_deployment_agent.get_llm") as mock_get_llm:
             # Import original get_llm
             from src.lib import llm as llm_module
+
             original_get_llm = llm_module.get_llm
 
             def get_llm_with_counter(*args, **kwargs):
@@ -407,7 +408,7 @@ class TestDockerWorkflowLLMCalls:
             result = await run_docker_deployment_with_agent(
                 project_path=str(project_path),
                 service_dependencies=["postgres"],
-                session_id="e2e-test-docker-llm"
+                session_id="e2e-test-docker-llm",
             )
 
             # Verify at least 1 LLM call (SC-002: verifies real LLM invocation)
@@ -419,7 +420,10 @@ class TestDockerWorkflowLLMCalls:
             assert result["success"] is True or "agent_response" in result
             # Response should mention Java version detection or Docker
             response_text = result.get("agent_response", "").lower()
-            assert any(keyword in response_text for keyword in ["java", "docker", "17", "postgres", "deployment"])
+            assert any(
+                keyword in response_text
+                for keyword in ["java", "docker", "17", "postgres", "deployment"]
+            )
 
     @pytest.mark.asyncio
     @pytest.mark.e2e
@@ -449,8 +453,7 @@ class TestDockerWorkflowLLMCalls:
 
         # Execute workflow
         result = await run_docker_deployment_with_agent(
-            project_path=str(project_path),
-            session_id="e2e-java21-detection"
+            project_path=str(project_path), session_id="e2e-java21-detection"
         )
 
         # Verify agent detected Java 21
@@ -488,13 +491,14 @@ class TestDockerWorkflowLLMCalls:
 
         # Run the workflow - MCP tools are called within the DeepAgents graph
         result = await run_docker_deployment_with_agent(
-            project_path=str(project_path),
-            session_id="e2e-docker-tools"
+            project_path=str(project_path), session_id="e2e-docker-tools"
         )
 
         # Verify workflow completed successfully
         assert result is not None
-        assert result.get("success") is True or "agent_response" in result, f"Workflow failed: {result}"
+        assert (
+            result.get("success") is True or "agent_response" in result
+        ), f"Workflow failed: {result}"
 
         # Verify Docker deployment analysis was performed
         response = result.get("agent_response", "")
@@ -504,7 +508,9 @@ class TestDockerWorkflowLLMCalls:
         response_lower = response.lower()
         docker_keywords = ["docker", "container", "java", "deployment", "application", "image"]
         found_keywords = [kw for kw in docker_keywords if kw in response_lower]
-        assert len(found_keywords) >= 2, f"Response missing tool output keywords. Found: {found_keywords}"
+        assert (
+            len(found_keywords) >= 2
+        ), f"Response missing tool output keywords. Found: {found_keywords}"
 
 
 class TestTestGenerationWorkflowLLMCalls:
@@ -587,6 +593,7 @@ public class Calculator {
 
         class LLMWrapper:
             """Wrapper that counts LLM calls and delegates to real LLM."""
+
             def __init__(self, real_llm, counter):
                 self._real_llm = real_llm
                 self._counter = counter
@@ -619,6 +626,7 @@ public class Calculator {
         with patch("src.workflows.test_generation_agent.get_llm") as mock_get_llm:
             # Import original get_llm
             from src.lib import llm as llm_module
+
             original_get_llm = llm_module.get_llm
 
             def get_llm_with_counter(*args, **kwargs):
@@ -631,8 +639,14 @@ public class Calculator {
 
             # Patch repositories to avoid database operations
             with (
-                patch("src.workflows.test_generation_agent.ArtifactRepository", return_value=mock_artifact_repo),
-                patch("src.workflows.test_generation_agent.SessionRepository", return_value=mock_session_repo),
+                patch(
+                    "src.workflows.test_generation_agent.ArtifactRepository",
+                    return_value=mock_artifact_repo,
+                ),
+                patch(
+                    "src.workflows.test_generation_agent.SessionRepository",
+                    return_value=mock_session_repo,
+                ),
             ):
                 # Import workflow function AFTER patch is applied (critical!)
                 from src.workflows.test_generation_agent import run_test_generation_with_agent
@@ -643,7 +657,7 @@ public class Calculator {
                     session_id=session_id,
                     project_path=str(project_path),
                     db_session=mock_db_session,
-                    coverage_target=80.0
+                    coverage_target=80.0,
                 )
 
                 # Verify at least 2 LLM calls (SC-002: verifies real LLM invocation)

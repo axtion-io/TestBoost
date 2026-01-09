@@ -17,10 +17,10 @@ class TestSessionPurgeJob:
     async def test_purge_deletes_old_sessions(self):
         """Test that purge job deletes sessions older than retention period."""
         old_session_id = uuid4()
-        cutoff_date = datetime.utcnow() - timedelta(days=365)
+        datetime.utcnow() - timedelta(days=365)
 
         # Mock database session and queries
-        with patch("src.db.jobs.purge.get_async_engine") as mock_engine:
+        with patch("src.db.jobs.purge.get_async_engine"):
             mock_async_session = AsyncMock()
 
             # Mock session query result - old completed session
@@ -34,10 +34,10 @@ class TestSessionPurgeJob:
             mock_async_session.execute = AsyncMock(
                 side_effect=[
                     mock_sessions_result,  # SELECT sessions
-                    mock_delete_result,     # DELETE artifacts
-                    mock_delete_result,     # DELETE events
-                    mock_delete_result,     # DELETE steps
-                    mock_delete_result,     # DELETE sessions
+                    mock_delete_result,  # DELETE artifacts
+                    mock_delete_result,  # DELETE events
+                    mock_delete_result,  # DELETE steps
+                    mock_delete_result,  # DELETE sessions
                 ]
             )
             mock_async_session.begin = MagicMock(return_value=AsyncMock())
@@ -55,7 +55,7 @@ class TestSessionPurgeJob:
     @pytest.mark.asyncio
     async def test_purge_preserves_recent_sessions(self):
         """Test that purge job does not delete recent sessions."""
-        with patch("src.db.jobs.purge.get_async_engine") as mock_engine:
+        with patch("src.db.jobs.purge.get_async_engine"):
             mock_async_session = AsyncMock()
 
             # Mock empty session query result - no old sessions
@@ -80,7 +80,7 @@ class TestSessionPurgeJob:
     @pytest.mark.asyncio
     async def test_purge_handles_empty_database(self):
         """Test that purge job handles empty database gracefully."""
-        with patch("src.db.jobs.purge.get_async_engine") as mock_engine:
+        with patch("src.db.jobs.purge.get_async_engine"):
             mock_async_session = AsyncMock()
 
             # Mock empty result
@@ -103,34 +103,40 @@ class TestSessionPurgeJob:
     @pytest.mark.asyncio
     async def test_purge_logs_deletion_count(self):
         """Test that purge job logs the deletion count."""
-        with patch("src.db.jobs.purge.get_async_engine") as mock_engine:
-            with patch("src.db.jobs.purge.logger") as mock_logger:
-                mock_async_session = AsyncMock()
+        with (
+            patch("src.db.jobs.purge.get_async_engine"),
+            patch("src.db.jobs.purge.logger") as mock_logger,
+        ):
+            mock_async_session = AsyncMock()
 
-                # Mock empty result
-                mock_sessions_result = MagicMock()
-                mock_sessions_result.all.return_value = []
+            # Mock empty result
+            mock_sessions_result = MagicMock()
+            mock_sessions_result.all.return_value = []
 
-                mock_async_session.execute = AsyncMock(return_value=mock_sessions_result)
-                mock_async_session.begin = MagicMock(return_value=AsyncMock())
+            mock_async_session.execute = AsyncMock(return_value=mock_sessions_result)
+            mock_async_session.begin = MagicMock(return_value=AsyncMock())
 
-                with patch("src.db.jobs.purge.AsyncSession", return_value=mock_async_session):
-                    mock_async_session.__aenter__ = AsyncMock(return_value=mock_async_session)
-                    mock_async_session.__aexit__ = AsyncMock(return_value=None)
+            with patch(
+                "src.db.jobs.purge.AsyncSession", return_value=mock_async_session
+            ):
+                mock_async_session.__aenter__ = AsyncMock(
+                    return_value=mock_async_session
+                )
+                mock_async_session.__aexit__ = AsyncMock(return_value=None)
 
-                    job = SessionPurgeJob(retention_days=365)
-                    await job.execute()
+                job = SessionPurgeJob(retention_days=365)
+                await job.execute()
 
-                    # Verify logging was called
-                    mock_logger.info.assert_called()
-                    # Check for purge_job_completed log
-                    log_calls = [str(c) for c in mock_logger.info.call_args_list]
-                    assert any("purge_job" in str(c) for c in log_calls)
+                # Verify logging was called
+                mock_logger.info.assert_called()
+                # Check for purge_job_completed log
+                log_calls = [str(c) for c in mock_logger.info.call_args_list]
+                assert any("purge_job" in str(c) for c in log_calls)
 
     @pytest.mark.asyncio
     async def test_purge_uses_configured_retention(self):
         """Test that purge job uses configured retention days."""
-        with patch("src.db.jobs.purge.get_async_engine") as mock_engine:
+        with patch("src.db.jobs.purge.get_async_engine"):
             mock_async_session = AsyncMock()
 
             # Mock empty result
@@ -239,7 +245,7 @@ class TestDryRun:
     @pytest.mark.asyncio
     async def test_dry_run_returns_counts(self):
         """Test dry run returns counts without deleting."""
-        with patch("src.db.jobs.purge.get_async_engine") as mock_engine:
+        with patch("src.db.jobs.purge.get_async_engine"):
             mock_async_session = AsyncMock()
 
             # Mock session query result

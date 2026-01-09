@@ -119,6 +119,198 @@ boost maintenance status <session-id>
 
 ---
 
+### boost maintenance sessions
+
+List all maintenance sessions.
+
+```bash
+boost maintenance sessions [OPTIONS]
+```
+
+**Options**:
+| Option | Short | Description | Default |
+|--------|-------|-------------|---------|
+| `--status` | `-s` | Filter by status: pending, in_progress, completed, failed, paused | all |
+| `--type` | `-t` | Filter by session type | all |
+| `--limit` | `-l` | Maximum number of results | 20 |
+| `--format` | `-f` | Output format: rich, json | rich |
+
+**Example**:
+```bash
+# List all sessions
+boost maintenance sessions
+
+# List only in-progress sessions
+boost maintenance sessions -s in_progress
+
+# JSON output
+boost maintenance sessions -f json
+```
+
+---
+
+### boost maintenance steps
+
+List steps for a session.
+
+```bash
+boost maintenance steps <SESSION_ID> [OPTIONS]
+```
+
+**Arguments**:
+- `SESSION_ID`: Session UUID (required)
+
+**Options**:
+| Option | Short | Description | Default |
+|--------|-------|-------------|---------|
+| `--format` | `-f` | Output format: rich, json | rich |
+
+**Example**:
+```bash
+# List steps for a session
+boost maintenance steps abc123-def456
+```
+
+---
+
+### boost maintenance step
+
+Execute a specific step for a session.
+
+```bash
+boost maintenance step <SESSION_ID> <STEP_CODE> [OPTIONS]
+```
+
+**Arguments**:
+- `SESSION_ID`: Session UUID (required)
+- `STEP_CODE`: Step code to execute (e.g., analyze, apply_updates)
+
+**Options**:
+| Option | Short | Description | Default |
+|--------|-------|-------------|---------|
+| `--format` | `-f` | Output format: rich, json | rich |
+
+**Example**:
+```bash
+# Execute the analyze step
+boost maintenance step abc123-def456 analyze
+
+# Execute apply_updates step
+boost maintenance step abc123-def456 apply_updates
+```
+
+---
+
+### boost maintenance pause
+
+Pause a running session.
+
+```bash
+boost maintenance pause <SESSION_ID> [OPTIONS]
+```
+
+**Arguments**:
+- `SESSION_ID`: Session UUID (required)
+
+**Options**:
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--reason` | Reason for pausing | - |
+
+**Example**:
+```bash
+# Pause a session
+boost maintenance pause abc123-def456
+
+# Pause with reason
+boost maintenance pause abc123-def456 --reason "Waiting for approval"
+```
+
+---
+
+### boost maintenance resume
+
+Resume a paused session.
+
+```bash
+boost maintenance resume <SESSION_ID> [OPTIONS]
+```
+
+**Arguments**:
+- `SESSION_ID`: Session UUID (required)
+
+**Options**:
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--checkpoint` | Checkpoint ID to resume from | latest |
+
+**Example**:
+```bash
+# Resume a session
+boost maintenance resume abc123-def456
+
+# Resume from specific checkpoint
+boost maintenance resume abc123-def456 --checkpoint checkpoint-xyz
+```
+
+---
+
+### boost maintenance artifacts
+
+Get artifacts for a session.
+
+```bash
+boost maintenance artifacts <SESSION_ID> [OPTIONS]
+```
+
+**Arguments**:
+- `SESSION_ID`: Session UUID (required)
+
+**Options**:
+| Option | Short | Description | Default |
+|--------|-------|-------------|---------|
+| `--type` | `-t` | Filter by artifact type | all |
+| `--output` | `-o` | Save to file | - |
+| `--format` | `-f` | Output format: rich, json | rich |
+
+**Example**:
+```bash
+# List all artifacts
+boost maintenance artifacts abc123-def456
+
+# Save artifacts to JSON file
+boost maintenance artifacts abc123-def456 -o artifacts.json
+```
+
+---
+
+### boost maintenance cancel
+
+Cancel a running session.
+
+```bash
+boost maintenance cancel <SESSION_ID> [OPTIONS]
+```
+
+**Arguments**:
+- `SESSION_ID`: Session UUID (required)
+
+**Options**:
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--force` | Skip confirmation prompt | false |
+
+**Example**:
+```bash
+# Cancel with confirmation
+boost maintenance cancel abc123-def456
+
+# Cancel without confirmation (CI/CD)
+boost maintenance cancel abc123-def456 --force
+```
+
+---
+
 ### boost tests generate
 
 Generate tests for Java classes.
@@ -269,31 +461,70 @@ boost config validate
 
 ---
 
-### boost audit
+### boost audit scan
 
-Audit project security.
+Scan a Maven project for security vulnerabilities.
 
 ```bash
-boost audit <project-path> [OPTIONS]
+boost audit scan [PROJECT_PATH] [OPTIONS]
 ```
 
 **Arguments**:
-- `project-path`: Path to project root (required)
+- `PROJECT_PATH`: Path to Maven project (default: current directory)
 
 **Options**:
-| Option | Description | Default |
-|--------|-------------|---------|
-| `--dependencies` | Check dependency vulnerabilities | true |
-| `--api-keys` | Check for exposed API keys | true |
-| `--output` | Output format: text, json, sarif | text |
+| Option | Short | Description | Default |
+|--------|-------|-------------|---------|
+| `--mode` | `-m` | Execution mode: interactive, autonomous, analysis_only, debug | interactive |
+| `--severity` | `-s` | Minimum severity to report: all, low, medium, high, critical | all |
+| `--format` | `-f` | Output format: rich, json, sarif | rich |
+| `--output` | `-o` | Output file path | - |
+| `--fail-on` | | Fail if vulnerabilities found at or above this severity | - |
 
 **Example**:
 ```bash
-# Full audit
-boost audit ./my-project
+# Scan current project
+boost audit scan
 
-# JSON output for CI
-boost audit ./my-project --output json
+# Scan with minimum severity filter
+boost audit scan ./my-project -s high
+
+# Output in SARIF format for security tools
+boost audit scan ./my-project -f sarif -o results.sarif
+
+# Fail CI if high or critical vulnerabilities found
+boost audit scan ./my-project --fail-on high
+```
+
+---
+
+### boost audit report
+
+Generate a comprehensive HTML security report.
+
+```bash
+boost audit report [PROJECT_PATH] [OPTIONS]
+```
+
+**Arguments**:
+- `PROJECT_PATH`: Path to Maven project (default: current directory)
+
+**Options**:
+| Option | Short | Description | Default |
+|--------|-------|-------------|---------|
+| `--output` | `-o` | Output file path | security-report.html |
+| `--include-deps/--no-deps` | | Include dependency tree | true |
+
+**Example**:
+```bash
+# Generate default report
+boost audit report ./my-project
+
+# Custom output path
+boost audit report ./my-project -o audit-report.html
+
+# Without dependency tree
+boost audit report ./my-project --no-deps
 ```
 
 ---

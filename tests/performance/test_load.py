@@ -41,7 +41,7 @@ class TestConcurrentSessionHandling:
 
         assert len(results) == num_sessions
         assert all(r["status"] == "completed" for r in results)
-        assert len(set(r["session_id"] for r in results)) == num_sessions
+        assert len({r["session_id"] for r in results}) == num_sessions
 
     @pytest.mark.asyncio
     async def test_concurrent_session_isolation(self):
@@ -62,10 +62,7 @@ class TestConcurrentSessionHandling:
             return {"session_id": session_id, "value": stored_value}
 
         # Run concurrent sessions with different values
-        tasks = [
-            session_operation(str(uuid4()), i)
-            for i in range(20)
-        ]
+        tasks = [session_operation(str(uuid4()), i) for i in range(20)]
 
         results = await asyncio.gather(*tasks)
 
@@ -107,9 +104,9 @@ class TestMemoryUsageUnderLoad:
         # Allow some growth but not proportional to sessions created
         object_growth = final_objects - initial_objects
 
-        assert object_growth < 1000, (
-            f"Object count grew by {object_growth}, indicating potential memory leak"
-        )
+        assert (
+            object_growth < 1000
+        ), f"Object count grew by {object_growth}, indicating potential memory leak"
         assert len(results) == 100
 
     @pytest.mark.asyncio
@@ -242,6 +239,7 @@ class TestAPILoadHandling:
     @pytest.mark.asyncio
     async def test_request_timeout_handling(self):
         """Test that slow requests are properly timed out."""
+
         async def slow_operation():
             """Simulate a slow operation."""
             await asyncio.sleep(10)  # Very slow
@@ -253,6 +251,7 @@ class TestAPILoadHandling:
     @pytest.mark.asyncio
     async def test_error_isolation_under_load(self):
         """Test that errors in one request don't affect others."""
+
         async def request_handler(request_id: int, should_fail: bool) -> dict:
             """Handle a request, possibly failing."""
             await asyncio.sleep(0.001)
@@ -263,10 +262,7 @@ class TestAPILoadHandling:
             return {"request_id": request_id, "status": "success"}
 
         # Mix of successful and failing requests
-        tasks = [
-            request_handler(i, should_fail=(i % 5 == 0))
-            for i in range(25)
-        ]
+        tasks = [request_handler(i, should_fail=(i % 5 == 0)) for i in range(25)]
 
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
@@ -275,5 +271,5 @@ class TestAPILoadHandling:
         failures = [r for r in results if isinstance(r, Exception)]
 
         assert len(successes) == 20  # 80% success rate
-        assert len(failures) == 5   # 20% failure rate
+        assert len(failures) == 5  # 20% failure rate
         assert all(s["status"] == "success" for s in successes)

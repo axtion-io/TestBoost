@@ -61,7 +61,7 @@ def _is_retryable_error(exception: Exception) -> bool:
         True if error should be retried, False otherwise
     """
     # Check if it's a timeout error
-    if isinstance(exception, (TimeoutError, asyncio.TimeoutError, LLMTimeoutError)):
+    if isinstance(exception, TimeoutError | asyncio.TimeoutError | LLMTimeoutError):
         return True
 
     # Check if it's a connection error

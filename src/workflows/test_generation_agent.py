@@ -388,7 +388,7 @@ async def run_test_generation_with_agent(
         )
 
         # Write validated tests to disk (also sets written_to_disk flag on each test)
-        written_tests = _write_tests_to_disk(project_path, validated_tests)
+        _write_tests_to_disk(project_path, validated_tests)
 
         # Run test feedback loop - execute tests and fix until passing
         feedback_result = await _run_test_feedback_loop(

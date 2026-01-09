@@ -204,3 +204,125 @@ Retry-After: 60
 3. **Rotate regularly**: Rotate keys every 90 days
 4. **Limit scope**: Use environment-specific keys
 5. **Monitor usage**: Alert on unusual patterns
+
+## API Endpoints
+
+### Session Management
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/v2/sessions` | List all sessions |
+| POST | `/api/v2/sessions` | Create new session |
+| GET | `/api/v2/sessions/{session_id}` | Get session details |
+| GET | `/api/v2/sessions/{session_id}/steps` | Get session steps |
+| POST | `/api/v2/sessions/{session_id}/steps/{step_code}/execute` | Execute a step |
+| POST | `/api/v2/sessions/{session_id}/pause` | Pause session |
+| POST | `/api/v2/sessions/{session_id}/resume` | Resume session |
+| GET | `/api/v2/sessions/{session_id}/artifacts` | Get session artifacts |
+| DELETE | `/api/v2/sessions/{session_id}` | Cancel session |
+
+### Security Audit
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/audit/scan` | Scan for vulnerabilities |
+| GET | `/api/audit/report/{session_id}` | Get audit report (JSON) |
+| GET | `/api/audit/report/{session_id}/html` | Get audit report (HTML) |
+
+**Example - Scan vulnerabilities**:
+```http
+POST /api/audit/scan HTTP/1.1
+Host: localhost:8000
+X-API-Key: tb_dev_0123456789abcdef0123456789abcdef
+Content-Type: application/json
+
+{
+  "project_path": "/path/to/project",
+  "severity": "high",
+  "output_format": "json"
+}
+```
+
+**Response**:
+```json
+{
+  "success": true,
+  "session_id": "abc123-def456",
+  "project_path": "/path/to/project",
+  "total_vulnerabilities": 2,
+  "vulnerabilities": [
+    {
+      "cve": "CVE-2021-1234",
+      "severity": "high",
+      "dependency": "org.example:lib:1.0",
+      "description": "Remote code execution vulnerability"
+    }
+  ],
+  "summary": {
+    "critical": 0,
+    "high": 2,
+    "medium": 0,
+    "low": 0
+  }
+}
+```
+
+### Impact Analysis
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/testboost/tests/impact` | Analyze code change impact |
+
+**Example - Analyze impact**:
+```http
+POST /api/testboost/tests/impact HTTP/1.1
+Host: localhost:8000
+X-API-Key: tb_dev_0123456789abcdef0123456789abcdef
+Content-Type: application/json
+
+{
+  "project_path": "/path/to/project",
+  "verbose": true
+}
+```
+
+**Response**:
+```json
+{
+  "success": true,
+  "impacts": [
+    {
+      "file": "src/main/java/com/example/UserService.java",
+      "change_category": "business_rule",
+      "risk_level": "high",
+      "required_tests": ["unit", "integration"],
+      "test_requirements": [
+        {
+          "type": "nominal",
+          "description": "Test user creation with valid data"
+        }
+      ]
+    }
+  ],
+  "summary": {
+    "total_files": 1,
+    "high_risk": 1,
+    "medium_risk": 0,
+    "low_risk": 0
+  }
+}
+```
+
+### Test Generation
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/testboost/tests/analyze` | Analyze test coverage |
+| POST | `/api/testboost/tests/generate` | Generate tests |
+
+### Health & Metrics
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/health` | Health check |
+| GET | `/metrics/json` | Prometheus metrics (JSON) |

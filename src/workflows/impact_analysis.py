@@ -696,10 +696,7 @@ def detect_bug_fix(diff_content: str, file_path: str) -> bool:
     """
     # Check for bug fix indicators in the diff content
     content_lower = diff_content.lower()
-    for keyword in BUG_FIX_KEYWORDS:
-        if keyword in content_lower:
-            return True
-    return False
+    return any(keyword in content_lower for keyword in BUG_FIX_KEYWORDS)
 
 
 def generate_change_summary(

@@ -2,9 +2,10 @@
 
 import uuid
 from datetime import datetime
+from typing import Any
 
 from sqlalchemy import BigInteger, DateTime, ForeignKey, Index, String, Text
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from src.db.base import Base
@@ -27,6 +28,10 @@ class Artifact(Base):
     content_type: Mapped[str] = mapped_column(String(100), nullable=False)
     file_path: Mapped[str] = mapped_column(Text, nullable=False)
     size_bytes: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+    # Note: Using artifact_metadata to avoid conflict with SQLAlchemy's metadata attribute
+    artifact_metadata: Mapped[dict[str, Any] | None] = mapped_column(
+        "metadata", JSONB, nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=datetime.utcnow
     )

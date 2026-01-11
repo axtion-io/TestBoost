@@ -193,12 +193,25 @@ class APIClient:
         return self.get(Endpoints.SESSION_STEPS, session_id=session_id)
 
     def execute_step(
-        self, session_id: str, step_code: str, inputs: dict[str, Any] | None = None
+        self, session_id: str, step_code: str, inputs: dict[str, Any] | None = None,
+        run_workflow: bool = True, run_in_background: bool = True
     ) -> dict[str, Any]:
-        """Execute a specific step."""
+        """Execute a specific step.
+        
+        Args:
+            session_id: Session UUID
+            step_code: Step code to execute
+            inputs: Optional input data for the step
+            run_workflow: If True, execute the actual workflow (default: True)
+            run_in_background: If True and run_workflow=True, run in background task
+        """
         return self.post(
             Endpoints.SESSION_STEP_EXECUTE,
-            data={"inputs": inputs or {}},
+            data={
+                "inputs": inputs or {},
+                "run_workflow": run_workflow,
+                "run_in_background": run_in_background,
+            },
             session_id=session_id,
             step_code=step_code,
         )

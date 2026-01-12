@@ -2,9 +2,9 @@
 
 import uuid
 from datetime import datetime
-from typing import Any
+from typing import Any, NoReturn
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -22,6 +22,54 @@ from src.lib.logging import get_logger
 logger = get_logger(__name__)
 
 router = APIRouter(prefix="/api/v2/sessions", tags=["sessions"])
+
+
+# Helper functions
+
+
+def log_and_raise_http_error(
+    status_code: int,
+    detail: str,
+    *,
+    event: str,
+    request_id: str = "unknown",
+    **context: Any,
+) -> NoReturn:
+    """
+    Log an error event and raise an HTTPException.
+
+    This helper ensures all HTTP errors are logged with context before being raised,
+    making debugging and monitoring much easier.
+
+    Args:
+        status_code: HTTP status code
+        detail: Human-readable error message
+        event: Event name for structured logging
+        request_id: Request ID for tracing
+        **context: Additional context fields for logging
+
+    Raises:
+        HTTPException: Always raises after logging
+    """
+    # Determine log level based on status code
+    if status_code >= 500:
+        log_level = logger.error
+    elif status_code == 404:
+        log_level = logger.warning
+    else:
+        log_level = logger.info
+
+    # Log with context
+    log_level(
+        event,
+        request_id=request_id,
+        status_code=status_code,
+        detail=detail,
+        **context,
+    )
+
+    # Raise exception
+    raise HTTPException(status_code=status_code, detail=detail)
 
 
 # Request/Response Models
@@ -195,6 +243,7 @@ class ArtifactListResponse(BaseModel):
 @router.post("", response_model=SessionResponse, status_code=201)
 async def create_session(
     request: SessionCreateRequest,
+    http_request: Request,
     db: AsyncSession = Depends(get_db),
 ) -> SessionResponse:
     """
@@ -202,24 +251,35 @@ async def create_session(
 
     Args:
         request: Session creation parameters
+        http_request: FastAPI request (for request_id)
 
     Returns:
         Created session
     """
+    request_id = getattr(http_request.state, "request_id", "unknown")
+
     # Validate session type
     valid_types = [t.value for t in SessionType]
     if request.session_type not in valid_types:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Invalid session_type. Must be one of: {', '.join(valid_types)}",
+        log_and_raise_http_error(
+            400,
+            f"Invalid session_type. Must be one of: {', '.join(valid_types)}",
+            event="invalid_session_type",
+            request_id=request_id,
+            provided_type=request.session_type,
+            valid_types=valid_types,
         )
 
     # Validate mode
     valid_modes = [m.value for m in SessionMode]
     if request.mode not in valid_modes:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Invalid mode. Must be one of: {', '.join(valid_modes)}",
+        log_and_raise_http_error(
+            400,
+            f"Invalid mode. Must be one of: {', '.join(valid_modes)}",
+            event="invalid_session_mode",
+            request_id=request_id,
+            provided_mode=request.mode,
+            valid_modes=valid_modes,
         )
 
     service = SessionService(db)

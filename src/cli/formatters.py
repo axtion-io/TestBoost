@@ -1,11 +1,14 @@
 """Rich formatters for CLI output."""
 
+import logging
 from datetime import datetime
 from typing import Any
 
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
+
+logger = logging.getLogger(__name__)
 
 
 def format_session_table(sessions: list[dict[str, Any]], console: Console) -> None:
@@ -37,8 +40,9 @@ def format_session_table(sessions: list[dict[str, Any]], console: Console) -> No
             try:
                 dt = datetime.fromisoformat(created.replace("Z", "+00:00"))
                 created = dt.strftime("%Y-%m-%d %H:%M")
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug(f"Failed to parse date '{created}': {e}")
+                # Keep original value if parsing fails
 
         # Truncate ID for display
         session_id = str(session.get("id", ""))[:8] + "..."
@@ -81,8 +85,9 @@ def format_steps_table(steps: list[dict[str, Any]], console: Console) -> None:
             try:
                 dt = datetime.fromisoformat(started.replace("Z", "+00:00"))
                 started = dt.strftime("%H:%M:%S")
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug(f"Failed to parse date '{started}': {e}")
+                # Keep original value if parsing fails
 
         table.add_row(
             str(step.get("sequence", 0)),
@@ -122,8 +127,9 @@ def format_artifacts_table(artifacts: list[dict[str, Any]], console: Console) ->
             try:
                 dt = datetime.fromisoformat(created.replace("Z", "+00:00"))
                 created = dt.strftime("%Y-%m-%d %H:%M")
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug(f"Failed to parse date '{created}': {e}")
+                # Keep original value if parsing fails
 
         table.add_row(
             artifact.get("name", ""),

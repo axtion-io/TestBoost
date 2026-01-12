@@ -85,6 +85,62 @@ groups:
           summary: "LLM rate limits being hit frequently"
           description: "{{ $value }} rate limit errors in the last hour"
 
+      # HTTP 5xx Error Rate (Server Errors)
+      - alert: HighHTTP5xxErrorRate
+        expr: |
+          (
+            sum(rate(testboost_http_requests_total{status=~"5.."}[5m]))
+            /
+            sum(rate(testboost_http_requests_total[5m]))
+          ) > 0.01
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "High HTTP 5xx error rate detected"
+          description: "HTTP 5xx error rate is {{ $value | humanizePercentage }} (threshold: 1%)"
+
+      # HTTP 4xx Error Rate (Client Errors - excluding 404s)
+      - alert: HighHTTP4xxErrorRate
+        expr: |
+          (
+            sum(rate(testboost_http_requests_total{status=~"4..",status!="404"}[5m]))
+            /
+            sum(rate(testboost_http_requests_total[5m]))
+          ) > 0.10
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High HTTP 4xx error rate detected"
+          description: "HTTP 4xx error rate (excluding 404s) is {{ $value | humanizePercentage }} (threshold: 10%)"
+
+      # Validation Errors (422) - API misuse detection
+      - alert: HighValidationErrorRate
+        expr: |
+          (
+            sum(rate(testboost_http_requests_total{status="422"}[5m]))
+            /
+            sum(rate(testboost_http_requests_total[5m]))
+          ) > 0.05
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High validation error rate - potential API misuse"
+          description: "HTTP 422 error rate is {{ $value | humanizePercentage }} (threshold: 5%)"
+
+      # Authentication Failures (401/403)
+      - alert: HighAuthFailureRate
+        expr: |
+          sum(rate(testboost_http_requests_total{status=~"401|403"}[5m])) > 1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Authentication/Authorization failures detected"
+          description: "{{ $value }} auth failures per second in the last 5 minutes"
+
   - name: infrastructure-alerts
     rules:
       # Disk Space Alert

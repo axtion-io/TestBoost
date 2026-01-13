@@ -6,14 +6,17 @@ from typing import Any, NoReturn
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from pydantic import BaseModel, Field
+from sqlalchemy import and_, desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.api.models.events import EventListResponse, EventResponse
 from src.api.models.pagination import (
     PaginationMeta,
     create_pagination_meta,
 )
 from src.core.session import SessionService
 from src.db import get_db
+from src.db.models.event import Event
 from src.db.models.session import SessionMode, SessionStatus, SessionType
 from src.db.models.step import StepStatus
 from src.lib.diff import is_binary_content
@@ -900,6 +903,138 @@ async def get_artifact_content(
         content=content,
         media_type=artifact.content_type,
     )
+
+
+# Events Endpoint
+
+
+@router.get("/{session_id}/events", response_model=EventListResponse)
+async def get_session_events(
+    session_id: uuid.UUID,
+    page: int = Query(1, ge=1, description="Page number (1-indexed)"),
+    per_page: int = Query(20, ge=1, le=100, description="Items per page"),
+    since: datetime | None = Query(
+        None,
+        description="Filter events after this timestamp (ISO 8601 format). Used for polling to get only new events.",
+        example="2026-01-13T14:30:00Z",
+    ),
+    event_type: str | None = Query(
+        None,
+        description="Filter by event type (e.g., 'workflow_error', 'step_completed'). Must match pattern: ^[a-z_]+$",
+        pattern=r"^[a-z_]+$",
+        max_length=100,
+        example="workflow_started",
+    ),
+    request: Request = None,
+    db: AsyncSession = Depends(get_db),
+) -> EventListResponse:
+    """
+    Get paginated events for a session with optional filtering and real-time polling support.
+
+    Returns events in descending chronological order (newest first) to optimize
+    real-time monitoring where users care most about recent events.
+
+    **Polling Pattern**:
+    1. Initial load: Omit `since` parameter to get recent events
+    2. Subsequent polls: Use timestamp of newest event from previous response
+    3. Poll every 2 seconds for real-time monitoring
+
+    **Filtering**:
+    - `since`: Get only events after a specific timestamp (for polling)
+    - `event_type`: Filter by event classification (e.g., "workflow_error" for errors only)
+
+    Args:
+        session_id: Session UUID
+        page: Page number (1-indexed), default 1
+        per_page: Items per page (1-100), default 20
+        since: Optional filter for events after this timestamp (for polling)
+        event_type: Optional filter by event type classification
+
+    Returns:
+        EventListResponse with paginated events and metadata
+
+    Raises:
+        HTTPException 404: Session not found
+        HTTPException 422: Invalid datetime format or event_type pattern
+    """
+    # Get request ID for logging
+    request_id = request.state.request_id if request and hasattr(request.state, "request_id") else "unknown"
+
+    # Log request start
+    logger.info(
+        "get_session_events_start",
+        request_id=request_id,
+        session_id=str(session_id),
+        page=page,
+        per_page=per_page,
+        since=str(since) if since else None,
+        event_type=event_type,
+    )
+
+    service = SessionService(db)
+
+    # T011: Validate session existence before querying events
+    session = await service.get_session(session_id)
+    if not session:
+        log_and_raise_http_error(
+            404,
+            f"Session not found: {session_id}",
+            event="session_not_found",
+            request_id=request_id,
+            session_id=str(session_id),
+        )
+
+    # T010: Build query with session_id filter
+    # T012: Order by timestamp descending (newest first)
+    # T025: Add timestamp filtering if since parameter provided
+    # T037: Add event_type filtering if event_type parameter provided
+    conditions = [Event.session_id == session_id]
+
+    if since:
+        # T025: Filter events after the specified timestamp
+        conditions.append(Event.timestamp > since)
+
+    if event_type:
+        # T037: Filter by event type classification
+        conditions.append(Event.event_type == event_type)
+
+    # T013: Count query for pagination metadata
+    count_query = select(func.count()).select_from(Event).where(and_(*conditions))
+    total_result = await db.scalar(count_query)
+    total = int(total_result) if total_result is not None else 0
+
+    # Calculate offset for pagination
+    offset = (page - 1) * per_page
+
+    # Main query with pagination
+    query = (
+        select(Event)
+        .where(and_(*conditions))
+        .order_by(desc(Event.timestamp))  # Newest first for real-time monitoring
+        .offset(offset)
+        .limit(per_page)
+    )
+
+    result = await db.execute(query)
+    events = list(result.scalars().all())
+
+    # T014: Build EventListResponse with items and pagination metadata
+    response = EventListResponse(
+        items=[EventResponse.model_validate(e) for e in events],
+        pagination=create_pagination_meta(page, per_page, total),
+    )
+
+    # T016: Log successful response
+    logger.info(
+        "get_session_events_success",
+        request_id=request_id,
+        session_id=str(session_id),
+        events_returned=len(events),
+        total_events=total,
+        page=page,
+    )
+
+    return response
 
 
 # Pause/Resume Request/Response Models

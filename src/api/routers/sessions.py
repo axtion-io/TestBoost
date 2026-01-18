@@ -298,7 +298,41 @@ async def create_session(
         "session_created_via_api",
         session_id=str(session.id),
         session_type=request.session_type,
+        mode=request.mode,
     )
+
+    # Auto-start workflow for autonomous mode
+    if request.mode == "autonomous":
+        from src.core.step_executor import StepExecutor
+
+        # Get first step (sequence=1)
+        steps = await service.get_steps(session.id)
+        first_step = next((s for s in steps if s.sequence == 1), None)
+
+        if first_step and first_step.status == "pending":
+            executor = StepExecutor(db)
+            try:
+                # Start first step in background
+                await executor.execute_step(
+                    session_id=session.id,
+                    step_code=first_step.code,
+                    run_in_background=True,
+                )
+                logger.info(
+                    "workflow_auto_started",
+                    session_id=str(session.id),
+                    first_step_code=first_step.code,
+                    mode=request.mode,
+                )
+            except Exception as e:
+                logger.error(
+                    "workflow_auto_start_failed",
+                    session_id=str(session.id),
+                    first_step_code=first_step.code,
+                    error=str(e),
+                )
+                # Don't fail the session creation, but log the error
+                # The user can manually start the workflow via the UI
 
     return SessionResponse.model_validate(session)
 
@@ -960,8 +994,8 @@ async def get_session_events(
     # Get request ID for logging
     request_id = request.state.request_id if request and hasattr(request.state, "request_id") else "unknown"
 
-    # Log request start
-    logger.info(
+    # Log request start (DEBUG level to reduce log noise)
+    logger.debug(
         "get_session_events_start",
         request_id=request_id,
         session_id=str(session_id),
@@ -1024,8 +1058,8 @@ async def get_session_events(
         pagination=create_pagination_meta(page, per_page, total),
     )
 
-    # T016: Log successful response
-    logger.info(
+    # T016: Log successful response (DEBUG level to reduce log noise)
+    logger.debug(
         "get_session_events_success",
         request_id=request_id,
         session_id=str(session_id),

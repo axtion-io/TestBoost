@@ -18,7 +18,7 @@ from starlette.responses import Response
 from src.api.middleware.auth import api_key_auth_middleware
 from src.api.middleware.error import ErrorHandlerMiddleware
 from src.api.middleware.logging import request_logging_middleware
-from src.api.routers import audit, health, metrics, sessions
+from src.api.routers import audit, health, logs, metrics, sessions
 from src.lib.config import get_settings
 from src.lib.logging import get_logger
 from src.lib.startup_checks import StartupCheckError, run_all_startup_checks
@@ -53,6 +53,16 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             raise RuntimeError(f"Application startup failed: {e}") from e
 
     yield
+
+    # Graceful shutdown: dispose database engine to close all connections properly
+    logger.info("application_shutdown_start")
+    try:
+        from src.db import engine
+        await engine.dispose()
+        logger.info("database_engine_disposed")
+    except Exception as e:
+        logger.error("database_engine_dispose_failed", error=str(e))
+
     logger.info("application_shutdown")
 
 
@@ -111,6 +121,7 @@ app.include_router(health.router)
 app.include_router(sessions.router)
 app.include_router(metrics.router)
 app.include_router(audit.router)
+app.include_router(logs.router, prefix="/api/v2")
 
 
 @app.exception_handler(Exception)

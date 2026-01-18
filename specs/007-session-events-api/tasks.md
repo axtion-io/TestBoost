@@ -172,8 +172,8 @@ This document provides actionable, dependency-ordered tasks for implementing the
 - [X] T062 Verify all error messages are descriptive and actionable
 - [X] T063 Review code for security issues (SQL injection prevention, input validation)
 - [X] T064 Run full test suite and fix any failing tests
-- [ ] T065 Update CLAUDE.md with any new patterns or conventions
-- [ ] T066 Create pull request with implementation summary
+- [X] T065 Update CLAUDE.md with any new patterns or conventions
+- [X] T066 Create pull request with implementation summary
 
 ---
 

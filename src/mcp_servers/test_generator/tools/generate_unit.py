@@ -422,7 +422,8 @@ def _get_test_file_path(project_dir: Path, source_path: Path) -> Path:
     if filename.endswith(".java"):
         parts[-1] = filename.replace(".java", "Test.java")
 
-    return project_dir / Path(*parts)
+    # Return relative path from project root (not absolute path)
+    return Path(*parts)
 
 
 def _generate_test_code(context: dict[str, Any]) -> str:
@@ -1160,60 +1161,74 @@ def _generate_invalid_data_from_description(
     }
 
 
+# Type mappings for test value generation
+_TYPE_VALUES: dict[str, str] = {
+    "string": '"test-value"',
+    "java.lang.string": '"test-value"',
+    "long": "1L",
+    "java.lang.long": "1L",
+    "double": "3.14",
+    "java.lang.double": "3.14",
+    "float": "1.5f",
+    "java.lang.float": "1.5f",
+    "boolean": "true",
+    "java.lang.boolean": "true",
+    "bigdecimal": 'new BigDecimal("100.00")',
+    "localdate": "LocalDate.now()",
+    "localdatetime": "LocalDateTime.now()",
+}
+
+
 def _generate_test_value(param_type: str, param_name: str) -> str:
     """Generate appropriate test values based on parameter type."""
     type_lower = param_type.lower()
+    name_lower = param_name.lower()
 
-    # Handle common types
+    # String values with context-aware defaults
     if type_lower in ("string", "java.lang.string"):
-        if "email" in param_name.lower():
+        if "email" in name_lower:
             return '"test@example.com"'
-        elif "name" in param_name.lower():
+        if "name" in name_lower:
             return '"Test Name"'
-        elif "id" in param_name.lower():
+        if "id" in name_lower:
             return '"test-id-123"'
-        else:
-            return '"test-value"'
-    elif type_lower in ("int", "integer", "java.lang.integer"):
-        if "id" in param_name.lower():
-            return "1"
-        elif "count" in param_name.lower() or "size" in param_name.lower():
-            return "10"
-        else:
-            return "42"
-    elif type_lower in ("long", "java.lang.long"):
-        return "1L"
-    elif type_lower in ("double", "java.lang.double"):
-        return "3.14"
-    elif type_lower in ("float", "java.lang.float"):
-        return "1.5f"
-    elif type_lower in ("boolean", "java.lang.boolean"):
-        return "true"
-    elif type_lower == "bigdecimal" or "decimal" in type_lower:
-        return 'new BigDecimal("100.00")'
-    elif type_lower == "localdate" or "date" in type_lower:
-        return "LocalDate.now()"
-    elif type_lower == "localdatetime":
-        return "LocalDateTime.now()"
-    elif "list" in type_lower:
-        return "List.of()"
-    elif "set" in type_lower:
-        return "Set.of()"
-    elif "map" in type_lower:
-        return "Map.of()"
-    elif "optional" in type_lower:
-        return "Optional.empty()"
-    else:
-        # For custom objects, check if it's a common DTO/Request pattern
-        simple_type = param_type.split("<")[0].strip()
+        return '"test-value"'
 
-        # FIX: Handle common record/DTO patterns that need all-args constructors
-        # These are typically records in Spring Boot projects
-        if simple_type.endswith("Request") or simple_type.endswith("DTO"):
-            # Generate with typical string fields for request objects
-            return f'new {simple_type}("firstName", "lastName", "address", "city", "1234567890")'
-        elif simple_type.endswith("Command") or simple_type.endswith("Event"):
-            return f'new {simple_type}("test-id", "test-data")'
-        else:
-            # Default: try no-args constructor
-            return f"new {simple_type}()"
+    # Integer values with context-aware defaults
+    if type_lower in ("int", "integer", "java.lang.integer"):
+        if "id" in name_lower:
+            return "1"
+        if "count" in name_lower or "size" in name_lower:
+            return "10"
+        return "42"
+
+    # Check static type mappings
+    if type_lower in _TYPE_VALUES:
+        return _TYPE_VALUES[type_lower]
+
+    # Date types with partial matching
+    if "decimal" in type_lower:
+        return 'new BigDecimal("100.00")'
+    if "date" in type_lower:
+        return "LocalDate.now()"
+
+    # Collection types
+    if "list" in type_lower:
+        return "List.of()"
+    if "set" in type_lower:
+        return "Set.of()"
+    if "map" in type_lower:
+        return "Map.of()"
+    if "optional" in type_lower:
+        return "Optional.empty()"
+
+    # Custom objects - check for DTO/Request patterns
+    simple_type = param_type.split("<")[0].strip()
+
+    if simple_type.endswith("Request") or simple_type.endswith("DTO"):
+        return f'new {simple_type}("firstName", "lastName", "address", "city", "1234567890")'
+    if simple_type.endswith("Command") or simple_type.endswith("Event"):
+        return f'new {simple_type}("test-id", "test-data")'
+
+    # Default: try no-args constructor
+    return f"new {simple_type}()"

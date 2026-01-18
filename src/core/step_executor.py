@@ -2,16 +2,23 @@
 
 Bridges the gap between API step management and actual workflow execution.
 Each step code maps to a specific workflow function that performs the real work.
+
+Auto-advance logic:
+- Analysis steps (auto_advance=True) automatically trigger the next step
+- Action steps (auto_advance=False) wait for user review before proceeding
 """
 
 import asyncio
+import time
 import uuid
 from datetime import datetime
 from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.core.session import SessionService
+from src.api.routers.metrics import record_workflow_duration
+from src.core.session import WORKFLOW_STEPS, SessionService
+from src.db import SessionLocal
 from src.db.models.step import StepStatus
 from src.lib.logging import get_logger
 
@@ -91,9 +98,10 @@ class StepExecutor:
         )
 
         if run_in_background:
-            # Create background task
+            # Create background task with a fresh DB session
+            # This avoids DB connection conflicts when the HTTP request completes
             asyncio.create_task(
-                self._execute_step_async(session_id, step_code, session.session_type, inputs)
+                self._execute_step_in_background(session_id, step_code, session.session_type, inputs)
             )
             return {
                 "status": "in_progress",
@@ -105,6 +113,41 @@ class StepExecutor:
             return await self._execute_step_async(
                 session_id, step_code, session.session_type, inputs
             )
+
+    async def _execute_step_in_background(
+        self,
+        session_id: uuid.UUID,
+        step_code: str,
+        session_type: str,
+        inputs: dict[str, Any] | None = None,
+    ) -> None:
+        """Execute a step in background with its own DB session.
+
+        This is needed when run_in_background=True to avoid DB connection
+        conflicts when the HTTP request completes and closes the original session.
+
+        Args:
+            session_id: Session UUID
+            step_code: Step code
+            session_type: Type of session
+            inputs: Optional input data
+        """
+        async with SessionLocal() as db_session:
+            try:
+                executor = StepExecutor(db_session)
+                await executor._execute_step_async(
+                    session_id, step_code, session_type, inputs
+                )
+                await db_session.commit()
+            except Exception as e:
+                # Rollback is safe here because this session is owned by this background task
+                await db_session.rollback()
+                logger.error(
+                    "background_step_execution_failed",
+                    session_id=str(session_id),
+                    step_code=step_code,
+                    error=str(e),
+                )
 
     async def _execute_step_async(
         self,
@@ -124,9 +167,15 @@ class StepExecutor:
         Returns:
             Execution result
         """
+        # Start timing for metrics
+        start_time = time.time()
+
         step = await self.session_service.get_step_by_code(session_id, step_code)
         if not step:
             raise StepExecutionError(f"Step not found: {step_code}", step_code)
+
+        # Extract step.id before try block to avoid lazy-load issues in exception handler
+        step_id = step.id
 
         try:
             # Get the workflow function for this step
@@ -139,7 +188,7 @@ class StepExecutor:
                     "timestamp": datetime.utcnow().isoformat(),
                 }
                 await self.session_service.update_step_status(
-                    step.id,
+                    step_id,
                     StepStatus.COMPLETED.value,
                     outputs=outputs,
                 )
@@ -148,6 +197,10 @@ class StepExecutor:
                     session_id=str(session_id),
                     step_code=step_code,
                 )
+
+                # Check for auto-advance
+                await self._maybe_auto_advance(session_id, session_type, step_code)
+
                 return {"status": "completed", "outputs": outputs}
 
             # Execute the workflow function
@@ -165,7 +218,7 @@ class StepExecutor:
                 "timestamp": datetime.utcnow().isoformat(),
             }
             await self.session_service.update_step_status(
-                step.id,
+                step_id,
                 StepStatus.COMPLETED.value,
                 outputs=outputs,
             )
@@ -176,15 +229,39 @@ class StepExecutor:
                 step_code=step_code,
             )
 
+            # Record workflow duration metric
+            duration = time.time() - start_time
+            record_workflow_duration(
+                workflow_type=f"{session_type}_{step_code}",
+                duration_seconds=duration,
+                status="success"
+            )
+
+            # Check for auto-advance to next step
+            await self._maybe_auto_advance(session_id, session_type, step_code)
+
             return {"status": "completed", "outputs": outputs}
 
         except Exception as e:
             # Mark step as failed
             error_msg = str(e)
+
+            # Note: No explicit rollback needed here - the session manager (get_db)
+            # will automatically rollback on exception. Calling rollback here
+            # can cause MissingGreenlet errors in background tasks.
+
             await self.session_service.update_step_status(
-                step.id,
+                step_id,  # Use step_id extracted before try block
                 StepStatus.FAILED.value,
                 error_message=error_msg,
+            )
+
+            # Record workflow duration metric (failed)
+            duration = time.time() - start_time
+            record_workflow_duration(
+                workflow_type=f"{session_type}_{step_code}",
+                duration_seconds=duration,
+                status="failed"
             )
 
             logger.error(
@@ -195,6 +272,145 @@ class StepExecutor:
             )
 
             raise StepExecutionError(error_msg, step_code) from e
+
+    async def _maybe_auto_advance(
+        self,
+        session_id: uuid.UUID,
+        session_type: str,
+        completed_step_code: str,
+    ) -> None:
+        """Check if the completed step should auto-advance to the next step.
+
+        If the step has auto_advance=True, automatically execute the next pending step.
+
+        Args:
+            session_id: Session UUID
+            session_type: Type of session
+            completed_step_code: Code of the step that just completed
+        """
+        # Get step definition to check auto_advance flag
+        step_def = self._get_step_definition(session_type, completed_step_code)
+
+        if not step_def or not step_def.get("auto_advance", False):
+            logger.debug(
+                "auto_advance_skipped",
+                session_id=str(session_id),
+                step_code=completed_step_code,
+                reason="auto_advance not enabled",
+            )
+            return
+
+        # Find the next step
+        next_step_code = self._get_next_step_code(session_type, completed_step_code)
+
+        if not next_step_code:
+            logger.debug(
+                "auto_advance_skipped",
+                session_id=str(session_id),
+                step_code=completed_step_code,
+                reason="no next step",
+            )
+            return
+
+        # Check if next step is pending
+        next_step = await self.session_service.get_step_by_code(session_id, next_step_code)
+
+        if not next_step or next_step.status != StepStatus.PENDING.value:
+            logger.debug(
+                "auto_advance_skipped",
+                session_id=str(session_id),
+                step_code=completed_step_code,
+                next_step_code=next_step_code,
+                reason="next step not pending",
+            )
+            return
+
+        logger.info(
+            "auto_advance_triggered",
+            session_id=str(session_id),
+            completed_step=completed_step_code,
+            next_step=next_step_code,
+        )
+
+        # Execute the next step in background with a new DB session
+        # This avoids DB connection conflicts with the current transaction
+        asyncio.create_task(
+            self._execute_auto_advance_step(session_id, next_step_code, session_type)
+        )
+
+    async def _execute_auto_advance_step(
+        self,
+        session_id: uuid.UUID,
+        step_code: str,
+        session_type: str,
+    ) -> None:
+        """Execute an auto-advance step with a fresh DB session.
+
+        This is needed because the parent step's DB session may still be
+        in the middle of committing when auto-advance triggers.
+
+        Args:
+            session_id: Session UUID
+            step_code: Step code to execute
+            session_type: Type of session
+        """
+        async with SessionLocal() as db_session:
+            try:
+                executor = StepExecutor(db_session)
+                await executor._execute_step_async(
+                    session_id, step_code, session_type
+                )
+                await db_session.commit()
+            except Exception as e:
+                # Rollback is safe here because this session is owned by this background task
+                await db_session.rollback()
+                logger.error(
+                    "auto_advance_execution_failed",
+                    session_id=str(session_id),
+                    step_code=step_code,
+                    error=str(e),
+                )
+
+    def _get_step_definition(
+        self, session_type: str, step_code: str
+    ) -> dict[str, Any] | None:
+        """Get the step definition from WORKFLOW_STEPS.
+
+        Args:
+            session_type: Type of session
+            step_code: Step code
+
+        Returns:
+            Step definition dict or None if not found
+        """
+        steps = WORKFLOW_STEPS.get(session_type, [])
+        for step_def in steps:
+            if step_def.get("code") == step_code:
+                return step_def
+        return None
+
+    def _get_next_step_code(
+        self, session_type: str, current_step_code: str
+    ) -> str | None:
+        """Get the code of the next step in the workflow.
+
+        Args:
+            session_type: Type of session
+            current_step_code: Current step code
+
+        Returns:
+            Next step code or None if this is the last step
+        """
+        steps = WORKFLOW_STEPS.get(session_type, [])
+
+        for i, step_def in enumerate(steps):
+            if step_def.get("code") == current_step_code:
+                # Check if there's a next step
+                if i + 1 < len(steps):
+                    return steps[i + 1].get("code")
+                return None
+
+        return None
 
     def _get_workflow_function(self, session_type: str, step_code: str):
         """Get the workflow function for a step.

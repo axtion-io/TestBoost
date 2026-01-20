@@ -75,6 +75,7 @@ async def client() -> AsyncGenerator:
         # Create mock database session
         mock_db = AsyncMock()
         mock_db.execute = AsyncMock(return_value=MagicMock())
+        mock_db.scalar = AsyncMock(return_value=0)  # For count queries
         mock_db.commit = AsyncMock()
         mock_db.rollback = AsyncMock()
         mock_db.close = AsyncMock()

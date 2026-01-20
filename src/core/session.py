@@ -18,33 +18,42 @@ logger = get_logger(__name__)
 
 
 # Workflow step definitions for each session type
-# Each step has: code, name, description
-WORKFLOW_STEPS: dict[str, list[dict[str, str]]] = {
+# Each step has: code, name, description, auto_advance
+# auto_advance: If True, automatically execute the next step when this one completes
+#   - Analysis steps (read-only, no modifications) -> auto_advance=True
+#   - Action steps (generate/modify files) -> auto_advance=False (user review needed)
+#   - Validation steps (final) -> auto_advance=False (no next step or needs review)
+WORKFLOW_STEPS: dict[str, list[dict[str, str | bool]]] = {
     "maven_maintenance": [
         {
             "code": "analyze_dependencies",
             "name": "Analyze Dependencies",
             "description": "Analyze project dependencies for outdated packages",
+            "auto_advance": True,  # Analysis only, no modifications
         },
         {
             "code": "identify_vulnerabilities",
             "name": "Identify Vulnerabilities",
             "description": "Scan for security vulnerabilities in dependencies",
+            "auto_advance": True,  # Analysis only, no modifications
         },
         {
             "code": "plan_updates",
             "name": "Plan Updates",
             "description": "Create update plan with prioritized changes",
+            "auto_advance": False,  # User should review the plan before applying
         },
         {
             "code": "apply_updates",
             "name": "Apply Updates",
             "description": "Apply dependency updates to project",
+            "auto_advance": False,  # Modifies files, user should review
         },
         {
             "code": "validate_changes",
             "name": "Validate Changes",
             "description": "Run tests to validate changes",
+            "auto_advance": False,  # Final step
         },
     ],
     "test_generation": [
@@ -52,21 +61,25 @@ WORKFLOW_STEPS: dict[str, list[dict[str, str]]] = {
             "code": "analyze_project",
             "name": "Analyze Project",
             "description": "Analyze project structure and existing tests",
+            "auto_advance": True,  # Analysis only, no modifications
         },
         {
             "code": "identify_coverage_gaps",
             "name": "Identify Coverage Gaps",
             "description": "Identify areas lacking test coverage",
+            "auto_advance": True,  # Analysis only, no modifications
         },
         {
             "code": "generate_tests",
             "name": "Generate Tests",
             "description": "Generate test cases for identified gaps",
+            "auto_advance": False,  # Generates files, user should review
         },
         {
             "code": "validate_tests",
             "name": "Validate Tests",
             "description": "Run and validate generated tests",
+            "auto_advance": False,  # Final step
         },
     ],
     "docker_deployment": [
@@ -74,21 +87,25 @@ WORKFLOW_STEPS: dict[str, list[dict[str, str]]] = {
             "code": "analyze_dockerfile",
             "name": "Analyze Dockerfile",
             "description": "Analyze existing Dockerfile and configuration",
+            "auto_advance": True,  # Analysis only, no modifications
         },
         {
             "code": "optimize_image",
             "name": "Optimize Image",
             "description": "Optimize Docker image size and layers",
+            "auto_advance": False,  # Modifies Dockerfile, user should review
         },
         {
             "code": "generate_compose",
             "name": "Generate Compose",
             "description": "Generate or update docker-compose configuration",
+            "auto_advance": False,  # Generates files, user should review
         },
         {
             "code": "validate_deployment",
             "name": "Validate Deployment",
             "description": "Validate deployment configuration",
+            "auto_advance": False,  # Final step
         },
     ],
 }

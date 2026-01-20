@@ -29,9 +29,9 @@ cd src; pytest; ruff check .
 Python 3.11+: Follow standard conventions
 
 ## Recent Changes
+- 007-session-events-api: Added Python 3.11+ + FastAPI 0.121, SQLAlchemy 2.x (async), Pydantic, structlog
 - 006-file-modifications-api: Added Python 3.11+ + FastAPI 0.121, SQLAlchemy (async), Pydantic, structlog
 - 004-test-plan-documentation: Added Python 3.11+ + pytest, pytest-asyncio, pytest-cov, pytest-xdist, httpx (for API testing), respx (for HTTP mocking)
-- 003-impact-analysis-testing: Added Python 3.11+ + LangGraph 1.0+, LangChain Core 1.1+, FastAPI 0.121, Typer (CLI)
 
 
 <!-- MANUAL ADDITIONS START -->

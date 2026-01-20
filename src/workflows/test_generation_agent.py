@@ -89,12 +89,9 @@ def _find_source_files(project_path: str) -> list[str]:
     source_files = []
 
     # Patterns to include (testable classes)
+    # Include all Java files, then filter with exclude patterns
     include_patterns = [
-        "**/web/**/*.java",  # Controllers, resources
-        "**/controller/**/*.java",
-        "**/service/**/*.java",
-        "**/application/**/*.java",
-        "**/api/**/*.java",
+        "**/*.java",  # All Java files
     ]
 
     # Patterns to exclude
@@ -106,7 +103,8 @@ def _find_source_files(project_path: str) -> list[str]:
         "**/config/**",  # Configuration
         "**/configuration/**",
         "**/mapper/**",  # Mappers (usually simple)
-        "**/*Application.java",  # Main classes
+        # Note: Main Application classes are excluded only if they're simple Spring Boot launchers
+        # "**/*Application.java",  # Too restrictive - some Application classes have business logic
         "**/*Config.java",
         "**/*Configuration.java",
         "**/*Request.java",  # Request/Response DTOs
@@ -1106,10 +1104,10 @@ async def _store_test_file_artifacts(
         if not file_path or not content:
             continue
 
-        # Generate diff (original_content is None for new files)
+        # Generate diff (original is None for new files)
         diff = generate_unified_diff(
-            original_content=None,
-            modified_content=content,
+            original=None,
+            modified=content,
             file_path=file_path,
         )
 
@@ -1130,7 +1128,7 @@ async def _store_test_file_artifacts(
             content_type="text/x-java",
             file_path=f"artifacts/{session_id}/tests/{Path(file_path).name}",
             size_bytes=len(content),
-            metadata=metadata,
+            artifact_metadata=metadata,
         )
 
     logger.info(
@@ -1425,7 +1423,8 @@ async def _run_maven_tests(
             continue
 
         # Build Maven command
-        mvn_cmd = ["mvn", "test", "-f", str(pom_path)]
+        # Use absolute paths with forward slashes for cross-platform compatibility
+        mvn_cmd = ["mvn", "test", "-f", pom_path.resolve().as_posix()]
 
         # Add specific test classes
         if test_classes:
@@ -1441,7 +1440,7 @@ async def _run_maven_tests(
         try:
             result = subprocess.run(
                 mvn_cmd,
-                cwd=str(cwd),
+                cwd=str(cwd.resolve()),
                 capture_output=True,
                 text=True,
                 timeout=TEST_TIMEOUT_SECONDS,

@@ -80,7 +80,14 @@ class MetricsCollector:
         # Format histograms (simplified - just expose sum and count)
         histogram_names = set()
         for key, values in sorted(self._histograms.items()):
-            name = key.split("{")[0] if "{" in key else key
+            # Parse name and labels: "metric_name{label1=\"val1\"}" -> ("metric_name", "{label1=\"val1\"}")
+            if "{" in key:
+                name, labels = key.split("{", 1)
+                labels = "{" + labels
+            else:
+                name = key
+                labels = ""
+
             if name not in histogram_names:
                 lines.append(f"# TYPE {name} histogram")
                 histogram_names.add(name)
@@ -88,9 +95,10 @@ class MetricsCollector:
             if values:
                 total = sum(values)
                 count = len(values)
-                base_key = key.replace("}", "_sum}") if "}" in key else f"{key}_sum"
-                count_key = key.replace("}", "_count}") if "}" in key else f"{key}_count"
-                lines.append(f"{base_key} {total}")
+                # Correct Prometheus format: metric_name_sum{labels} value
+                sum_key = f"{name}_sum{labels}"
+                count_key = f"{name}_count{labels}"
+                lines.append(f"{sum_key} {total}")
                 lines.append(f"{count_key} {count}")
 
         return "\n".join(lines) + "\n" if lines else ""

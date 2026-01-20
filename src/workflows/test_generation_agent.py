@@ -1075,6 +1075,71 @@ async def _store_tool_calls(
     logger.debug("tool_calls_stored", session_id=str(session_id), count=len(tool_calls))
 
 
+async def _store_test_file_artifacts(
+    session_id: UUID,
+    artifact_repo: ArtifactRepository,
+    validated_tests: list[dict[str, Any]],
+    project_path: str,
+) -> None:
+    """
+    Store file_modification artifacts for each generated test file.
+
+    This allows the frontend to discover and display generated test files
+    via the /artifacts API endpoint.
+
+    Args:
+        session_id: Session UUID
+        artifact_repo: Artifact repository
+        validated_tests: List of validated test files
+        project_path: Project root path
+    """
+    from src.lib.diff import generate_unified_diff
+
+    for test in validated_tests:
+        # Only store artifacts for tests that were written to disk
+        if not test.get("written_to_disk", False):
+            continue
+
+        file_path = test.get("actual_path") or test.get("path")
+        content = test.get("content", "")
+
+        if not file_path or not content:
+            continue
+
+        # Generate diff (original_content is None for new files)
+        diff = generate_unified_diff(
+            original_content=None,
+            modified_content=content,
+            file_path=file_path,
+        )
+
+        # Create artifact metadata
+        metadata = {
+            "file_path": file_path,
+            "operation": "create",
+            "original_content": None,
+            "modified_content": content,
+            "diff": diff,
+        }
+
+        # Create artifact
+        await artifact_repo.create(
+            session_id=session_id,
+            name=f"test_file_{Path(file_path).stem}",
+            artifact_type="file_modification",
+            content_type="text/x-java",
+            file_path=f"artifacts/{session_id}/tests/{Path(file_path).name}",
+            size_bytes=len(content),
+            metadata=metadata,
+        )
+
+    logger.info(
+        "test_file_artifacts_stored",
+        session_id=str(session_id),
+        test_count=sum(1 for t in validated_tests if t.get("written_to_disk", False)),
+    )
+
+
 async def _store_generation_metrics(
     session_id: UUID,
     artifact_repo: ArtifactRepository,

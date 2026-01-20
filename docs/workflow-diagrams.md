@@ -11,21 +11,22 @@
 stateDiagram-v2
     [*] --> Pending: Session Created
 
-    Pending --> Analysis: Start Session
+    Pending --> AnalyzeDependencies: Start Session
 
-    Analysis --> Planning: Analysis Complete
-    Analysis --> Failed: Analysis Failed
+    AnalyzeDependencies --> IdentifyVulnerabilities: Analysis Complete
+    AnalyzeDependencies --> Failed: Analysis Failed
 
-    Planning --> Executing: Plan Approved
-    Planning --> Cancelled: User Cancelled
+    IdentifyVulnerabilities --> PlanUpdates: Vulnerabilities Scanned
+    IdentifyVulnerabilities --> Failed: Scan Failed
 
-    Executing --> Validating: Changes Applied
-    Executing --> RollingBack: Execution Failed
+    PlanUpdates --> ApplyUpdates: Plan Approved
+    PlanUpdates --> Cancelled: User Cancelled
 
-    Validating --> Completed: Tests Pass
-    Validating --> RollingBack: Tests Fail
+    ApplyUpdates --> ValidateChanges: Changes Applied
+    ApplyUpdates --> Failed: Apply Failed
 
-    RollingBack --> Failed: Rollback Complete
+    ValidateChanges --> Completed: Tests Pass
+    ValidateChanges --> Failed: Tests Fail (after retries)
 
     Completed --> [*]
     Failed --> [*]
@@ -37,11 +38,11 @@ stateDiagram-v2
 | State | Description | Exit Criteria |
 |-------|-------------|---------------|
 | Pending | Session created, awaiting start | User triggers start |
-| Analysis | Analyzing project structure and dependencies | Analysis completes or fails |
-| Planning | Generating maintenance plan | User approves or rejects |
-| Executing | Applying changes (pom updates, code changes) | All changes applied or error |
-| Validating | Running tests to validate changes | Tests pass or fail |
-| RollingBack | Reverting changes on failure | Rollback completes |
+| AnalyzeDependencies | Analyzing project dependencies for outdated packages | Analysis completes or fails |
+| IdentifyVulnerabilities | Scanning for security vulnerabilities in dependencies | Scan completes |
+| PlanUpdates | Creating update plan with prioritized changes | User approves or rejects |
+| ApplyUpdates | Applying dependency updates to project | All changes applied or error |
+| ValidateChanges | Running tests to validate changes | Tests pass or fail |
 | Completed | Workflow finished successfully | - |
 | Failed | Workflow failed with error | - |
 | Cancelled | User cancelled workflow | - |
@@ -50,14 +51,30 @@ stateDiagram-v2
 
 | From | To | Condition |
 |------|-----|-----------|
-| Analysis | Planning | All dependencies analyzed, no blocking issues |
-| Analysis | Failed | Cannot parse pom.xml, invalid project structure |
-| Planning | Executing | User approves plan (interactive) or auto-approve (autonomous) |
-| Planning | Cancelled | User explicitly cancels |
-| Executing | Validating | All planned changes successfully applied |
-| Executing | RollingBack | Any change fails to apply |
-| Validating | Completed | `mvn test` passes |
-| Validating | RollingBack | Tests fail after max 3 retry attempts |
+| AnalyzeDependencies | IdentifyVulnerabilities | All dependencies analyzed, no blocking issues |
+| AnalyzeDependencies | Failed | Cannot parse pom.xml, invalid project structure |
+| IdentifyVulnerabilities | PlanUpdates | Vulnerability scan complete |
+| PlanUpdates | ApplyUpdates | User approves plan (interactive) or auto-approve (autonomous) |
+| PlanUpdates | Cancelled | User explicitly cancels |
+| ApplyUpdates | ValidateChanges | All planned changes successfully applied |
+| ApplyUpdates | Failed | Any change fails to apply |
+| ValidateChanges | Completed | `mvn test` passes |
+| ValidateChanges | Failed | Tests fail after max 3 retry attempts |
+
+### Rollback Handling
+
+> **Note**: Rollback is managed at the **modification level**, not as a session state.
+> Each file modification is tracked via `ModificationStatus` enum:
+>
+> | Status | Description |
+> |--------|-------------|
+> | `pending` | Modification planned but not applied |
+> | `applied` | Modification successfully applied |
+> | `validated` | Tests passed after modification |
+> | `rolled_back` | Modification reverted due to failure |
+> | `failed` | Modification could not be applied |
+>
+> This allows granular rollback of individual changes while keeping session state simple.
 
 ---
 
@@ -67,28 +84,20 @@ stateDiagram-v2
 stateDiagram-v2
     [*] --> Pending: Session Created
 
-    Pending --> ClassAnalysis: Start Generation
+    Pending --> AnalyzeProject: Start Generation
 
-    ClassAnalysis --> TestPlanning: Classes Analyzed
-    ClassAnalysis --> Failed: Analysis Failed
+    AnalyzeProject --> IdentifyCoverageGaps: Analysis Complete
+    AnalyzeProject --> Failed: Analysis Failed
 
-    TestPlanning --> UnitGeneration: Plan Created
+    IdentifyCoverageGaps --> GenerateTests: Gaps Identified
+    IdentifyCoverageGaps --> Completed: No Gaps Found
 
-    UnitGeneration --> IntegrationGeneration: Unit Tests Done
-    UnitGeneration --> Validation: Skip Integration
+    GenerateTests --> ValidateTests: Tests Generated
+    GenerateTests --> Failed: Generation Failed
 
-    IntegrationGeneration --> Validation: Integration Tests Done
-
-    Validation --> MutationAnalysis: Initial Validation Pass
-    Validation --> Fixing: Tests Fail
-
-    Fixing --> Validation: Fixes Applied
-    Fixing --> Failed: Max Retries Exceeded
-
-    MutationAnalysis --> Completed: Coverage Sufficient
-    MutationAnalysis --> KillerGeneration: Need More Coverage
-
-    KillerGeneration --> Validation: Killer Tests Generated
+    ValidateTests --> Completed: Tests Pass
+    ValidateTests --> GenerateTests: Auto-Correction (max 3 retries)
+    ValidateTests --> Failed: Max Retries Exceeded
 
     Completed --> [*]
     Failed --> [*]
@@ -99,22 +108,26 @@ stateDiagram-v2
 | State | Description | Exit Criteria |
 |-------|-------------|---------------|
 | Pending | Session created | Start triggered |
-| ClassAnalysis | Analyzing target class complexity | Analysis complete |
-| TestPlanning | Planning test strategy based on analysis | Plan generated |
-| UnitGeneration | Generating unit tests | Tests written |
-| IntegrationGeneration | Generating integration tests | Tests written |
-| Validation | Running generated tests | Tests pass/fail |
-| Fixing | Auto-correcting failed tests | Fixed or max retries |
-| MutationAnalysis | Running PIT mutation analysis | Coverage calculated |
-| KillerGeneration | Generating killer tests for surviving mutants | Tests generated |
+| AnalyzeProject | Analyzing project structure and existing tests | Analysis complete |
+| IdentifyCoverageGaps | Identifying areas lacking test coverage | Gaps identified or none found |
+| GenerateTests | Generating test cases (unit, integration, snapshot) | Tests written |
+| ValidateTests | Running and validating generated tests | Tests pass or auto-correct |
 | Completed | All tests generated and passing | - |
 | Failed | Generation failed | - |
 
-### Decision Points
+### Agent-Managed Complexity
 
-1. **Skip Integration Tests**: When class has no external dependencies
-2. **Need More Coverage**: Mutation score < 80% threshold
-3. **Max Retries Exceeded**: 3 consecutive fix attempts failed
+The LLM agent internally handles advanced features that are not exposed as session steps:
+
+| Feature | Description | Constants |
+|---------|-------------|-----------|
+| **Auto-Correction** | Fixes compilation errors in generated tests | MAX_CORRECTION_RETRIES = 3 |
+| **Test Iterations** | Reruns failing tests with fixes | MAX_TEST_ITERATIONS = 5 |
+| **Mutation Analysis** | Analyzes mutation score for coverage quality | Target: 80% |
+| **Killer Tests** | Generates tests to kill surviving mutants | Integrated in GenerateTests |
+
+> **Note**: The simplified 4-step workflow delegates complexity to the LLM agent,
+> keeping session state management clean while enabling sophisticated test generation.
 
 ---
 
@@ -124,21 +137,19 @@ stateDiagram-v2
 stateDiagram-v2
     [*] --> Pending: Session Created
 
-    Pending --> ImageBuild: Start Deployment
+    Pending --> AnalyzeDockerfile: Start Deployment
 
-    ImageBuild --> ContainerCreate: Image Built
-    ImageBuild --> Failed: Build Failed
+    AnalyzeDockerfile --> OptimizeImage: Analysis Complete
+    AnalyzeDockerfile --> Failed: Analysis Failed
 
-    ContainerCreate --> HealthCheck: Containers Started
-    ContainerCreate --> Cleanup: Start Failed
+    OptimizeImage --> GenerateCompose: Image Optimized
+    OptimizeImage --> Failed: Optimization Failed
 
-    HealthCheck --> Completed: All Healthy
-    HealthCheck --> Retry: Health Check Failed
+    GenerateCompose --> ValidateDeployment: Compose Generated
+    GenerateCompose --> Failed: Generation Failed
 
-    Retry --> HealthCheck: Retry Attempt
-    Retry --> Cleanup: Max Retries Exceeded
-
-    Cleanup --> Failed: Cleanup Complete
+    ValidateDeployment --> Completed: Validation Pass
+    ValidateDeployment --> Failed: Validation Failed
 
     Completed --> [*]
     Failed --> [*]
@@ -149,20 +160,15 @@ stateDiagram-v2
 | State | Description | Exit Criteria |
 |-------|-------------|---------------|
 | Pending | Session created | Start triggered |
-| ImageBuild | Building Docker images | Images built successfully |
-| ContainerCreate | Starting containers via docker-compose | Containers running |
-| HealthCheck | Checking container health endpoints | Health passes |
-| Retry | Waiting before retry | Timer expires |
-| Cleanup | Stopping and removing failed containers | Containers removed |
-| Completed | All containers healthy | - |
-| Failed | Deployment failed | - |
+| AnalyzeDockerfile | Analyzing existing Dockerfile and configuration | Analysis complete |
+| OptimizeImage | Optimizing Docker image size and layers | Optimization complete |
+| GenerateCompose | Generating or updating docker-compose configuration | Compose file ready |
+| ValidateDeployment | Validating deployment configuration | Validation passes |
+| Completed | Deployment configuration ready | - |
+| Failed | Deployment preparation failed | - |
 
-### Retry Policy
-
-- **Max retries**: 3 attempts
-- **Backoff**: Exponential (1s, 2s, 4s)
-- **Health check interval**: 5s
-- **Health check timeout**: 30s per container
+> **Note**: This workflow prepares Docker deployment configuration. Actual container deployment
+> and health checks are handled by the container runtime, not as session states.
 
 ---
 
@@ -170,31 +176,64 @@ stateDiagram-v2
 
 ### Rollback Strategy
 
-All workflows that modify files implement rollback:
+File modifications are tracked via the `ModificationStatus` enum, enabling granular rollback:
 
 ```mermaid
 flowchart LR
-    A[Backup Files] --> B[Apply Changes]
+    A[Track Original] --> B[Apply Change]
     B --> C{Validation}
-    C -->|Pass| D[Delete Backup]
-    C -->|Fail| E[Restore from Backup]
-    E --> F[Report Failure]
+    C -->|Pass| D[Status: validated]
+    C -->|Fail| E[Status: rolled_back]
+    E --> F[Restore Original]
+    F --> G[Report Failure]
 ```
+
+**ModificationStatus Lifecycle**:
+
+| Status | Trigger | Next States |
+|--------|---------|-------------|
+| `pending` | Change planned | `applied`, `failed` |
+| `applied` | Change written to file | `validated`, `rolled_back` |
+| `validated` | Tests pass | Terminal |
+| `rolled_back` | Tests fail or error | Terminal |
+| `failed` | Cannot apply change | Terminal |
 
 ### Auto-Correction Loop
 
-For test generation and maintenance:
+For test generation and maintenance workflows:
 
 ```mermaid
 flowchart LR
     A[Generate/Apply] --> B[Validate]
     B --> C{Pass?}
     C -->|Yes| D[Complete]
-    C -->|No| E{Retries < 3?}
+    C -->|No| E{Retries < MAX?}
     E -->|Yes| F[Analyze Error]
     F --> G[Apply Fix]
     G --> B
     E -->|No| H[Fail]
+```
+
+**Retry Constants** (defined in workflow agents):
+
+| Constant | Value | Used In | Description |
+|----------|-------|---------|-------------|
+| `MAX_CORRECTION_RETRIES` | 3 | Test Generation | Max attempts to fix compilation errors |
+| `MAX_TEST_ITERATIONS` | 5 | Test Generation | Max test/fix cycles |
+| `TEST_TIMEOUT_SECONDS` | 300 | Test Generation | Timeout per test run |
+| `max_attempts` | 3 | Maven Maintenance | Retry with exponential backoff |
+| `base_delay` | 2.0s | Maven Maintenance | Base delay for backoff |
+
+### Exponential Backoff
+
+Network operations use exponential backoff for resilience:
+
+```python
+# Pattern used in agents
+@retry_with_backoff(max_attempts=3, base_delay=2.0)
+async def call_external_service():
+    # Delays: 2s, 4s, 8s before failing
+    ...
 ```
 
 ---

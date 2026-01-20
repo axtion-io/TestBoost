@@ -87,8 +87,17 @@ async def client() -> AsyncGenerator:
         # Override the database dependency
         app.dependency_overrides[get_db] = mock_get_db
 
+        # Create mock engine for health endpoint database check
+        mock_engine = MagicMock()
+        mock_connection = AsyncMock()
+        mock_connection.execute = AsyncMock(return_value=MagicMock())
+        mock_connection.__aenter__ = AsyncMock(return_value=mock_connection)
+        mock_connection.__aexit__ = AsyncMock(return_value=None)
+        mock_engine.connect = MagicMock(return_value=mock_connection)
+
         # Patch settings to use test API key
-        with patch("src.api.middleware.auth.settings") as mock_settings:
+        with patch("src.api.middleware.auth.settings") as mock_settings, \
+             patch("src.db.get_async_engine", return_value=mock_engine):
             mock_settings.api_key = TEST_API_KEY
 
             transport = ASGITransport(app=app)

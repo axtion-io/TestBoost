@@ -9,13 +9,53 @@ from pathlib import Path
 from typing import Any
 
 import structlog
+from structlog.types import EventDict, WrappedLogger
 from structlog.types import Processor
+
+from src.lib.log_taxonomy import (
+    LogCategory,
+    categorize_event,
+    map_log_level_to_severity,
+)
 
 # Configure once flag
 _configured = False
 
 # Log directory
 LOG_DIR = Path(__file__).parent.parent.parent / "logs"
+
+
+def add_log_categorization(
+    logger: WrappedLogger, method_name: str, event_dict: EventDict
+) -> EventDict:
+    """Structlog processor that adds category and severity classification.
+
+    This processor enriches log events with:
+    - category: Semantic category based on event name (business, access, system, etc.)
+    - severity: Log4j-style severity level (critical, error, warn, info, debug, trace)
+
+    Args:
+        logger: The wrapped logger instance
+        method_name: The name of the method called (e.g., "info", "error")
+        event_dict: The event dictionary being logged
+
+    Returns:
+        Enriched event dictionary with category and severity fields
+    """
+    # Add severity based on log level
+    log_level = event_dict.get("level", "info")
+    if isinstance(log_level, str):
+        severity = map_log_level_to_severity(log_level)
+        event_dict["severity"] = severity.value
+
+    # Add category based on event name
+    event_name = event_dict.get("event")
+    if event_name:
+        category = categorize_event(event_name)
+        if category:
+            event_dict["category"] = category.value
+
+    return event_dict
 
 
 def _configure_structlog() -> None:
@@ -45,6 +85,23 @@ def _configure_structlog() -> None:
     console_handler.setFormatter(logging.Formatter("%(message)s"))
     root_logger.addHandler(console_handler)
 
+    # Add filter to suppress SQLAlchemy connection termination errors with closed event loops
+    # These occur when cleaning up stale connections from previous server instances
+    class SupressSQLAlchemyEventLoopErrors(logging.Filter):
+        """Filter out harmless SQLAlchemy connection cleanup errors."""
+
+        def filter(self, record: logging.LogRecord) -> bool:
+            # Suppress "Exception terminating/closing connection" with "Event loop is closed"
+            if "Exception terminating connection" in record.getMessage():
+                return False
+            if "Exception closing connection" in record.getMessage():
+                return False
+            if "RuntimeWarning: coroutine" in record.getMessage() and "_cancel" in record.getMessage():
+                return False
+            return True
+
+    sqlalchemy_filter = SupressSQLAlchemyEventLoopErrors()
+
     # File handler with rotation (JSON format for log analysis)
     log_file = LOG_DIR / f"testboost_{datetime.now().strftime('%Y%m%d')}.log"
     file_handler = RotatingFileHandler(
@@ -55,7 +112,11 @@ def _configure_structlog() -> None:
     )
     file_handler.setLevel(log_level)
     file_handler.setFormatter(logging.Formatter("%(message)s"))
+    file_handler.addFilter(sqlalchemy_filter)
     root_logger.addHandler(file_handler)
+
+    # Also add filter to console handler
+    console_handler.addFilter(sqlalchemy_filter)
 
     # Determine if we're in development or production
     # In development, use colored console output
@@ -69,6 +130,7 @@ def _configure_structlog() -> None:
         structlog.stdlib.add_logger_name,
         structlog.stdlib.PositionalArgumentsFormatter(),
         structlog.processors.TimeStamper(fmt="iso"),
+        add_log_categorization,  # Add category and severity classification
         structlog.processors.StackInfoRenderer(),
         structlog.processors.UnicodeDecoder(),
     ]

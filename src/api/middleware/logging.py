@@ -6,6 +6,7 @@ from collections.abc import Awaitable, Callable
 from fastapi import Request
 from starlette.responses import Response
 
+from src.api.routers.metrics import record_request
 from src.lib.logging import get_logger
 
 logger = get_logger(__name__)
@@ -43,4 +44,42 @@ async def request_logging_middleware(
         duration_ms=round(duration_ms, 2),
     )
 
+    # Record Prometheus metrics for HTTP requests
+    # Normalize path for metrics (avoid high cardinality from UUIDs)
+    normalized_path = _normalize_path_for_metrics(request.url.path)
+    record_request(
+        method=request.method,
+        path=normalized_path,
+        status_code=response.status_code,
+        duration_seconds=duration_ms / 1000,
+    )
+
     return response
+
+
+def _normalize_path_for_metrics(path: str) -> str:
+    """
+    Normalize path for Prometheus metrics to avoid high cardinality.
+
+    Replaces UUIDs and IDs with placeholders.
+
+    Args:
+        path: Original request path
+
+    Returns:
+        Normalized path suitable for metrics labels
+    """
+    import re
+
+    # Replace UUIDs with placeholder
+    path = re.sub(
+        r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
+        "{id}",
+        path,
+        flags=re.IGNORECASE,
+    )
+
+    # Replace numeric IDs with placeholder
+    path = re.sub(r"/\d+(?=/|$)", "/{id}", path)
+
+    return path

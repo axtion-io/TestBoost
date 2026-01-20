@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
@@ -87,14 +88,23 @@ class RequestIDMiddleware(BaseHTTPMiddleware):
         return response
 
 
-app.add_middleware(RequestIDMiddleware)
+# Middleware order (CRITICAL):
+# Both add_middleware and app.middleware("http") execute in REVERSE/LIFO order
+# (last added = first executed in the request chain)
+#
+# Desired execution order:
+# 1. RequestIDMiddleware - adds request_id FIRST
+# 2. ErrorHandlerMiddleware - can use request_id for error logs
+# 3. api_key_auth_middleware - auth with request_id
+# 4. request_logging_middleware - logs requests with valid request_id
+#
+# So we add them in REVERSE order:
 
-# Error handler middleware (catches all exceptions)
-app.add_middleware(ErrorHandlerMiddleware)
+app.middleware("http")(request_logging_middleware)  # Executes LAST (4th)
+app.middleware("http")(api_key_auth_middleware)      # Executes 3rd
 
-# Custom middleware
-app.middleware("http")(request_logging_middleware)
-app.middleware("http")(api_key_auth_middleware)
+app.add_middleware(ErrorHandlerMiddleware)           # Executes 2nd
+app.add_middleware(RequestIDMiddleware)              # Executes FIRST (1st)
 
 # Include routers
 app.include_router(health.router)
@@ -128,6 +138,47 @@ async def value_error_handler(request: Request, exc: ValueError) -> JSONResponse
     return JSONResponse(
         status_code=400,
         content={"detail": str(exc)},
+    )
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
+    """
+    Handle Pydantic validation errors with structured logging.
+
+    Logs validation failures to help identify:
+    - Which fields are failing validation
+    - What values were provided
+    - API usage patterns and common mistakes
+    """
+    request_id = getattr(request.state, "request_id", "unknown")
+
+    # Extract validation errors
+    errors = exc.errors()
+
+    # Log with context
+    logger.warning(
+        "validation_error",
+        request_id=request_id,
+        path=request.url.path,
+        method=request.method,
+        error_count=len(errors),
+        errors=[
+            {
+                "field": " -> ".join(str(loc) for loc in error["loc"]),
+                "message": error["msg"],
+                "type": error["type"],
+            }
+            for error in errors
+        ],
+    )
+
+    return JSONResponse(
+        status_code=422,
+        content={
+            "detail": errors,
+            "request_id": request_id,
+        },
     )
 
 

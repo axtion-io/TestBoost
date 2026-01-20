@@ -43,18 +43,19 @@ class TestMavenWorkflowUsesAgent:
                 {
                     "name": "analyze_dependencies",
                     "args": {"project_path": "/test/project"},
-                    "id": "call_1"
+                    "id": "call_1",
                 }
-            ]
+            ],
         )
         # DeepAgents returns dict with "messages" key containing list of messages
         mock_agent.ainvoke.return_value = {"messages": [mock_agent_response]}
 
-        with patch("src.workflows.maven_maintenance_agent.AgentLoader") as mock_loader_class, \
-             patch("src.workflows.maven_maintenance_agent.get_tools_for_servers") as mock_get_tools, \
-             patch("src.workflows.maven_maintenance_agent.create_react_agent") as mock_create_agent, \
-             patch("src.workflows.maven_maintenance_agent.get_llm") as mock_get_llm:
-
+        with (
+            patch("src.workflows.maven_maintenance_agent.AgentLoader") as mock_loader_class,
+            patch("src.workflows.maven_maintenance_agent.get_tools_for_servers") as mock_get_tools,
+            patch("src.workflows.maven_maintenance_agent.create_react_agent") as mock_create_agent,
+            patch("src.workflows.maven_maintenance_agent.get_llm") as mock_get_llm,
+        ):
             # Setup mocks
             mock_loader = MagicMock()
             mock_loader.load_agent.return_value = mock_config
@@ -67,8 +68,7 @@ class TestMavenWorkflowUsesAgent:
 
             # Execute workflow
             result = await run_maven_maintenance_with_agent(
-                project_path="/test/project",
-                session_id="test-session-123"
+                project_path="/test/project", session_id="test-session-123"
             )
 
             # Verify agent was created with correct parameters
@@ -89,11 +89,12 @@ class TestMavenWorkflowUsesAgent:
         """Test workflow loads agent config from maven_maintenance_agent.yaml."""
         from src.workflows.maven_maintenance_agent import run_maven_maintenance_with_agent
 
-        with patch("src.workflows.maven_maintenance_agent.AgentLoader") as mock_loader_class, \
-             patch("src.workflows.maven_maintenance_agent.get_tools_for_servers") as mock_get_tools, \
-             patch("src.workflows.maven_maintenance_agent.create_react_agent") as mock_create_agent, \
-             patch("src.workflows.maven_maintenance_agent.get_llm") as mock_get_llm:
-
+        with (
+            patch("src.workflows.maven_maintenance_agent.AgentLoader") as mock_loader_class,
+            patch("src.workflows.maven_maintenance_agent.get_tools_for_servers") as mock_get_tools,
+            patch("src.workflows.maven_maintenance_agent.create_react_agent") as mock_create_agent,
+            patch("src.workflows.maven_maintenance_agent.get_llm") as mock_get_llm,
+        ):
             mock_loader = MagicMock()
             mock_config = MagicMock()
             mock_config.name = "maven_maintenance_agent"
@@ -115,8 +116,7 @@ class TestMavenWorkflowUsesAgent:
             mock_get_llm.return_value = MagicMock()
 
             await run_maven_maintenance_with_agent(
-                project_path="/test/project",
-                session_id="test-session-123"
+                project_path="/test/project", session_id="test-session-123"
             )
 
             # Verify config was loaded
@@ -127,11 +127,12 @@ class TestMavenWorkflowUsesAgent:
         """Test workflow loads system prompt from config/prompts/maven/system_agent.md."""
         from src.workflows.maven_maintenance_agent import run_maven_maintenance_with_agent
 
-        with patch("src.workflows.maven_maintenance_agent.AgentLoader") as mock_loader_class, \
-             patch("src.workflows.maven_maintenance_agent.get_tools_for_servers") as mock_get_tools, \
-             patch("src.workflows.maven_maintenance_agent.create_react_agent") as mock_create_agent, \
-             patch("src.workflows.maven_maintenance_agent.get_llm") as mock_get_llm:
-
+        with (
+            patch("src.workflows.maven_maintenance_agent.AgentLoader") as mock_loader_class,
+            patch("src.workflows.maven_maintenance_agent.get_tools_for_servers") as mock_get_tools,
+            patch("src.workflows.maven_maintenance_agent.create_react_agent") as mock_create_agent,
+            patch("src.workflows.maven_maintenance_agent.get_llm") as mock_get_llm,
+        ):
             mock_loader = MagicMock()
             mock_config = MagicMock()
             mock_config.name = "maven_maintenance_agent"
@@ -153,8 +154,7 @@ class TestMavenWorkflowUsesAgent:
             mock_get_llm.return_value = MagicMock()
 
             await run_maven_maintenance_with_agent(
-                project_path="/test/project",
-                session_id="test-session-123"
+                project_path="/test/project", session_id="test-session-123"
             )
 
             # Verify prompt was loaded (actual implementation uses system_agent)
@@ -168,6 +168,7 @@ class TestMavenWorkflowStoresArtifacts:
     async def test_maven_workflow_stores_artifacts(self):
         """Test workflow returns agent reasoning, tool calls, and metrics in JSON response."""
         import json
+
         from src.workflows.maven_maintenance_agent import run_maven_maintenance_with_agent
 
         # Mock agent response with tool calls
@@ -177,16 +178,17 @@ class TestMavenWorkflowStoresArtifacts:
                 {
                     "name": "analyze_dependencies",
                     "args": {"project_path": "/test/project"},
-                    "id": "call_1"
+                    "id": "call_1",
                 }
-            ]
+            ],
         )
 
-        with patch("src.workflows.maven_maintenance_agent.AgentLoader") as mock_loader_class, \
-             patch("src.workflows.maven_maintenance_agent.get_tools_for_servers") as mock_get_tools, \
-             patch("src.workflows.maven_maintenance_agent.create_react_agent") as mock_create_agent, \
-             patch("src.workflows.maven_maintenance_agent.get_llm") as mock_get_llm:
-
+        with (
+            patch("src.workflows.maven_maintenance_agent.AgentLoader") as mock_loader_class,
+            patch("src.workflows.maven_maintenance_agent.get_tools_for_servers") as mock_get_tools,
+            patch("src.workflows.maven_maintenance_agent.create_react_agent") as mock_create_agent,
+            patch("src.workflows.maven_maintenance_agent.get_llm") as mock_get_llm,
+        ):
             # Setup mocks
             mock_loader = MagicMock()
             mock_config = MagicMock()
@@ -211,8 +213,7 @@ class TestMavenWorkflowStoresArtifacts:
             # Execute workflow
             session_id = "test-session-456"
             result = await run_maven_maintenance_with_agent(
-                project_path="/test/project",
-                session_id=session_id
+                project_path="/test/project", session_id=session_id
             )
 
             # Parse JSON result
@@ -227,12 +228,16 @@ class TestMavenWorkflowStoresArtifacts:
             # Verify tool calls in reasoning
             assert "tool_calls" in result_data["agent_reasoning"]
             assert len(result_data["agent_reasoning"]["tool_calls"]) == 1
-            assert result_data["agent_reasoning"]["tool_calls"][0]["tool_name"] == "analyze_dependencies"
+            assert (
+                result_data["agent_reasoning"]["tool_calls"][0]["tool_name"]
+                == "analyze_dependencies"
+            )
 
     @pytest.mark.asyncio
     async def test_maven_workflow_stores_multiple_tool_calls(self):
         """Test workflow returns multiple tool calls in JSON response."""
         import json
+
         from src.workflows.maven_maintenance_agent import run_maven_maintenance_with_agent
 
         # Mock agent response with multiple tool calls
@@ -242,21 +247,18 @@ class TestMavenWorkflowStoresArtifacts:
                 {
                     "name": "analyze_dependencies",
                     "args": {"project_path": "/test/project"},
-                    "id": "call_1"
+                    "id": "call_1",
                 },
-                {
-                    "name": "create_branch",
-                    "args": {"branch_name": "update-deps"},
-                    "id": "call_2"
-                }
-            ]
+                {"name": "create_branch", "args": {"branch_name": "update-deps"}, "id": "call_2"},
+            ],
         )
 
-        with patch("src.workflows.maven_maintenance_agent.AgentLoader") as mock_loader_class, \
-             patch("src.workflows.maven_maintenance_agent.get_tools_for_servers") as mock_get_tools, \
-             patch("src.workflows.maven_maintenance_agent.create_react_agent") as mock_create_agent, \
-             patch("src.workflows.maven_maintenance_agent.get_llm") as mock_get_llm:
-
+        with (
+            patch("src.workflows.maven_maintenance_agent.AgentLoader") as mock_loader_class,
+            patch("src.workflows.maven_maintenance_agent.get_tools_for_servers") as mock_get_tools,
+            patch("src.workflows.maven_maintenance_agent.create_react_agent") as mock_create_agent,
+            patch("src.workflows.maven_maintenance_agent.get_llm") as mock_get_llm,
+        ):
             mock_loader = MagicMock()
             mock_config = MagicMock()
             mock_config.name = "maven_maintenance_agent"
@@ -279,8 +281,7 @@ class TestMavenWorkflowStoresArtifacts:
 
             session_id = "test-session-789"
             result = await run_maven_maintenance_with_agent(
-                project_path="/test/project",
-                session_id=session_id
+                project_path="/test/project", session_id=session_id
             )
 
             # Parse JSON result
@@ -306,6 +307,7 @@ class TestMavenAgentToolCallRetry:
     async def test_maven_agent_tool_call_retry(self):
         """Test agent completes successfully with tool calls in response."""
         import json
+
         from src.workflows.maven_maintenance_agent import run_maven_maintenance_with_agent
 
         # Response with tool calls (DeepAgents executes via graph)
@@ -315,16 +317,17 @@ class TestMavenAgentToolCallRetry:
                 {
                     "name": "analyze_dependencies",
                     "args": {"project_path": "/test/project"},
-                    "id": "call_1"
+                    "id": "call_1",
                 }
-            ]
+            ],
         )
 
-        with patch("src.workflows.maven_maintenance_agent.AgentLoader") as mock_loader_class, \
-             patch("src.workflows.maven_maintenance_agent.get_tools_for_servers") as mock_get_tools, \
-             patch("src.workflows.maven_maintenance_agent.create_react_agent") as mock_create_agent, \
-             patch("src.workflows.maven_maintenance_agent.get_llm") as mock_get_llm:
-
+        with (
+            patch("src.workflows.maven_maintenance_agent.AgentLoader") as mock_loader_class,
+            patch("src.workflows.maven_maintenance_agent.get_tools_for_servers") as mock_get_tools,
+            patch("src.workflows.maven_maintenance_agent.create_react_agent") as mock_create_agent,
+            patch("src.workflows.maven_maintenance_agent.get_llm") as mock_get_llm,
+        ):
             mock_loader = MagicMock()
             mock_config = MagicMock()
             mock_config.name = "maven_maintenance_agent"
@@ -344,8 +347,7 @@ class TestMavenAgentToolCallRetry:
             mock_get_llm.return_value = MagicMock()
 
             result = await run_maven_maintenance_with_agent(
-                project_path="/test/project",
-                session_id="test-session-retry"
+                project_path="/test/project", session_id="test-session-retry"
             )
 
             # Agent should be invoked exactly once (no retry needed when tools present)
@@ -354,7 +356,10 @@ class TestMavenAgentToolCallRetry:
             # Verify result contains the analysis
             result_data = json.loads(result)
             assert result_data["success"] is True
-            assert "analyzing" in result_data["analysis"].lower() or "dependencies" in result_data["analysis"].lower()
+            assert (
+                "analyzing" in result_data["analysis"].lower()
+                or "dependencies" in result_data["analysis"].lower()
+            )
 
     @pytest.mark.asyncio
     async def test_maven_agent_fails_after_max_retries(self):
@@ -364,16 +369,18 @@ class TestMavenAgentToolCallRetry:
         completes successfully as long as DeepAgents returns a valid response.
         """
         import json
+
         from src.workflows.maven_maintenance_agent import run_maven_maintenance_with_agent
 
         # Response without tool calls - still valid for DeepAgents
         no_tools_response = AIMessage(content="Analysis complete: no updates needed")
 
-        with patch("src.workflows.maven_maintenance_agent.AgentLoader") as mock_loader_class, \
-             patch("src.workflows.maven_maintenance_agent.get_tools_for_servers") as mock_get_tools, \
-             patch("src.workflows.maven_maintenance_agent.create_react_agent") as mock_create_agent, \
-             patch("src.workflows.maven_maintenance_agent.get_llm") as mock_get_llm:
-
+        with (
+            patch("src.workflows.maven_maintenance_agent.AgentLoader") as mock_loader_class,
+            patch("src.workflows.maven_maintenance_agent.get_tools_for_servers") as mock_get_tools,
+            patch("src.workflows.maven_maintenance_agent.create_react_agent") as mock_create_agent,
+            patch("src.workflows.maven_maintenance_agent.get_llm") as mock_get_llm,
+        ):
             mock_loader = MagicMock()
             mock_config = MagicMock()
             mock_config.name = "maven_maintenance_agent"
@@ -394,8 +401,7 @@ class TestMavenAgentToolCallRetry:
 
             # Should succeed - DeepAgents handles tool execution internally
             result = await run_maven_maintenance_with_agent(
-                project_path="/test/project",
-                session_id="test-session-fail"
+                project_path="/test/project", session_id="test-session-fail"
             )
 
             result_data = json.loads(result)

@@ -6,6 +6,7 @@ Produces JSON output per FR-009.
 
 from dataclasses import dataclass, field
 from datetime import datetime
+from typing import Any
 
 from src.models.impact import Impact, RiskLevel, TestRequirement
 
@@ -35,7 +36,7 @@ class ImpactReport:
     processing_time_seconds: float = 0.0
 
     @property
-    def summary(self) -> dict:
+    def summary(self) -> dict[str, Any]:
         """Compute summary statistics."""
         by_test_type: dict[str, int] = {}
         for req in self.test_requirements:
@@ -54,7 +55,7 @@ class ImpactReport:
             "by_test_type": by_test_type,
         }
 
-    def to_dict(self) -> dict:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for JSON serialization (FR-009)."""
         return {
             "version": self.version,

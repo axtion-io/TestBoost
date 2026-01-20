@@ -64,23 +64,30 @@ class MetricsCollector:
         lines: list[str] = []
 
         # Format counters
-        for key, value in sorted(self._counters.items()):
-            name = key.split("{")[0] if "{" in key else key
+        for counter_key, counter_value in sorted(self._counters.items()):
+            name = counter_key.split("{")[0] if "{" in counter_key else counter_key
             if not any(line.startswith(f"# TYPE {name}") for line in lines):
                 lines.append(f"# TYPE {name} counter")
-            lines.append(f"{key} {value}")
+            lines.append(f"{counter_key} {counter_value}")
 
         # Format gauges
-        for key, value in sorted(self._gauges.items()):
-            name = key.split("{")[0] if "{" in key else key
+        for gauge_key, gauge_value in sorted(self._gauges.items()):
+            name = gauge_key.split("{")[0] if "{" in gauge_key else gauge_key
             if not any(line.startswith(f"# TYPE {name}") for line in lines):
                 lines.append(f"# TYPE {name} gauge")
-            lines.append(f"{key} {value}")
+            lines.append(f"{gauge_key} {gauge_value}")
 
         # Format histograms (simplified - just expose sum and count)
         histogram_names = set()
         for key, values in sorted(self._histograms.items()):
-            name = key.split("{")[0] if "{" in key else key
+            # Parse name and labels: "metric_name{label1=\"val1\"}" -> ("metric_name", "{label1=\"val1\"}")
+            if "{" in key:
+                name, labels = key.split("{", 1)
+                labels = "{" + labels
+            else:
+                name = key
+                labels = ""
+
             if name not in histogram_names:
                 lines.append(f"# TYPE {name} histogram")
                 histogram_names.add(name)
@@ -88,9 +95,10 @@ class MetricsCollector:
             if values:
                 total = sum(values)
                 count = len(values)
-                base_key = key.replace("}", "_sum}") if "}" in key else f"{key}_sum"
-                count_key = key.replace("}", "_count}") if "}" in key else f"{key}_count"
-                lines.append(f"{base_key} {total}")
+                # Correct Prometheus format: metric_name_sum{labels} value
+                sum_key = f"{name}_sum{labels}"
+                count_key = f"{name}_count{labels}"
+                lines.append(f"{sum_key} {total}")
                 lines.append(f"{count_key} {count}")
 
         return "\n".join(lines) + "\n" if lines else ""
@@ -100,36 +108,72 @@ class MetricsCollector:
 metrics = MetricsCollector()
 
 
-def record_workflow_duration(workflow_type: str, duration_seconds: float) -> None:
+def record_workflow_duration(workflow_type: str, duration_seconds: float, status: str = "success") -> None:
     """Record workflow execution duration."""
     metrics.observe_histogram(
-        "workflow_duration_seconds",
+        "testboost_workflow_duration_seconds",
         duration_seconds,
         labels={"workflow_type": workflow_type},
+    )
+    metrics.inc_counter(
+        "testboost_workflow_total",
+        labels={"workflow_type": workflow_type, "status": status},
     )
 
 
 def record_llm_call(provider: str, model: str, success: bool = True) -> None:
     """Record an LLM API call."""
     metrics.inc_counter(
-        "llm_calls_total",
+        "testboost_llm_calls_total",
         labels={"provider": provider, "model": model, "status": "success" if success else "error"},
+    )
+    if not success:
+        metrics.inc_counter(
+            "testboost_llm_errors_total",
+            labels={"provider": provider, "error_type": "api_error"},
+        )
+
+
+def record_llm_rate_limit(provider: str) -> None:
+    """Record an LLM rate limit error."""
+    metrics.inc_counter(
+        "testboost_llm_rate_limit_total",
+        labels={"provider": provider},
+    )
+    metrics.inc_counter(
+        "testboost_llm_errors_total",
+        labels={"provider": provider, "error_type": "rate_limit"},
+    )
+
+
+def record_llm_duration(provider: str, duration_seconds: float) -> None:
+    """Record LLM request duration."""
+    metrics.observe_histogram(
+        "testboost_llm_request_duration_seconds",
+        duration_seconds,
+        labels={"provider": provider},
     )
 
 
 def set_active_sessions(count: int) -> None:
     """Set the number of active sessions."""
-    metrics.set_gauge("active_sessions", float(count))
+    metrics.set_gauge("testboost_active_sessions", float(count))
+
+
+def set_db_connection_pool(active: int, max_size: int) -> None:
+    """Set database connection pool metrics."""
+    metrics.set_gauge("testboost_db_connection_pool_size", float(active))
+    metrics.set_gauge("testboost_db_connection_pool_max", float(max_size))
 
 
 def record_request(method: str, path: str, status_code: int, duration_seconds: float) -> None:
     """Record an HTTP request."""
     metrics.inc_counter(
-        "http_requests_total",
+        "testboost_http_requests_total",
         labels={"method": method, "path": path, "status": str(status_code)},
     )
     metrics.observe_histogram(
-        "http_request_duration_seconds",
+        "testboost_http_request_duration_seconds",
         duration_seconds,
         labels={"method": method, "path": path},
     )
@@ -145,8 +189,15 @@ async def get_metrics() -> str:
     Returns:
         Plain text metrics in Prometheus format
     """
-    # Add some default metrics
+    # Initialize default metrics for Grafana dashboard visibility
     metrics.set_gauge("app_info", 1.0, labels={"version": "0.1.0"})
+
+    # Initialize gauges with defaults if not set
+    if "testboost_active_sessions" not in str(metrics._gauges):
+        metrics.set_gauge("testboost_active_sessions", 0.0)
+    if "testboost_db_connection_pool_size" not in str(metrics._gauges):
+        metrics.set_gauge("testboost_db_connection_pool_size", 5.0)
+        metrics.set_gauge("testboost_db_connection_pool_max", 20.0)
 
     return metrics.format_prometheus()
 
@@ -172,6 +223,9 @@ __all__ = [
     "metrics",
     "record_workflow_duration",
     "record_llm_call",
+    "record_llm_rate_limit",
+    "record_llm_duration",
     "set_active_sessions",
+    "set_db_connection_pool",
     "record_request",
 ]

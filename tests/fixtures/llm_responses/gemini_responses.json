@@ -1,0 +1,24 @@
+{
+  "default_response": {
+    "content": "Mocked Gemini response for testing",
+    "tokens_used": 100
+  },
+  "analyze_class": {
+    "class_name": "com.example.UserService",
+    "methods": ["createUser", "getUser", "updateUser", "deleteUser"],
+    "complexity": 5,
+    "test_suggestions": ["testCreateUser_success", "testGetUser_notFound"]
+  },
+  "generate_test": {
+    "test_code": "import org.junit.jupiter.api.Test;\n\npublic class UserServiceTest {\n    @Test\n    void testCreateUser() {\n        // Test implementation\n    }\n}",
+    "imports": ["org.junit.jupiter.api.Test"],
+    "test_count": 1
+  },
+  "analyze_dependencies": {
+    "outdated": [
+      {"groupId": "org.springframework", "artifactId": "spring-core", "current": "5.0.0", "latest": "6.1.0"}
+    ],
+    "security_issues": [],
+    "recommendations": ["Update spring-core to 6.1.0"]
+  }
+}

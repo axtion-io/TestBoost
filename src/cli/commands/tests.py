@@ -53,7 +53,7 @@ def generate_tests(
         "--snapshot/--no-snapshot",
         help="Generate snapshot tests",
     ),
-    output_dir: str = typer.Option(
+    output_dir: str | None = typer.Option(
         None,
         "--output",
         "-o",
@@ -116,9 +116,19 @@ def generate_tests(
         _run_analysis(project_dir, verbose)
         return
 
-    # Run test generation workflow
-    asyncio.run(
-        _run_test_generation(
+    # Reset connection pool before running workflow
+    # This is necessary because startup checks use a different asyncio.run() call
+    # which creates a different event loop, leaving stale connections in the pool
+    import asyncio
+
+    from src.db import get_async_engine
+
+    async def _run_with_fresh_pool() -> None:
+        # Dispose old connections that may be tied to old event loop
+        engine = get_async_engine()
+        await engine.dispose()
+        # Now run the actual workflow
+        await _run_test_generation(
             project_dir,
             target,
             mutation_score,
@@ -127,7 +137,8 @@ def generate_tests(
             output_dir,
             verbose,
         )
-    )
+
+    asyncio.run(_run_with_fresh_pool())
 
 
 @app.command("analyze")
@@ -406,33 +417,35 @@ async def _run_test_generation(
         # Step 2: Run test generation with requirements
         task = progress.add_task("Running test generation workflow with agent...", total=None)
 
-        try:
-            # Create session in database
-            async with SessionLocal() as db_session:
-                session_repo = SessionRepository(db_session)
-                session = await session_repo.create(
-                    session_type="test_generation",
-                    status="in_progress",
-                    mode="autonomous",
-                    project_path=str(project_dir),
-                    config={"target_coverage": mutation_score},
-                )
-                session_id = session.id
+    # DB operations are outside the progress context to avoid greenlet/thread conflicts
+    # Rich's Progress uses a background thread that interferes with SQLAlchemy's greenlets
+    try:
+        # Create session in database
+        async with SessionLocal() as db_session:
+            session_repo = SessionRepository(db_session)
+            session = await session_repo.create(
+                session_type="test_generation",
+                status="in_progress",
+                mode="autonomous",
+                project_path=str(project_dir),
+                config={"target_coverage": mutation_score},
+            )
+            session_id = session.id
 
-                # Run agent-based workflow with test requirements from impact analysis
-                result = await run_test_generation_with_agent(
-                    session_id=session_id,
-                    project_path=str(project_dir),
-                    db_session=db_session,
-                    coverage_target=mutation_score,
-                    test_requirements=test_requirements,
-                )
+            console.print("[dim]Running test generation workflow...[/dim]")
 
-                # Update session status
-                await session_repo.update(session_id, status="completed")
-                await db_session.commit()
+            # Run agent-based workflow with test requirements from impact analysis
+            result = await run_test_generation_with_agent(
+                session_id=session_id,
+                project_path=str(project_dir),
+                db_session=db_session,
+                coverage_target=mutation_score,
+                test_requirements=test_requirements,
+            )
 
-            progress.remove_task(task)
+            # Update session status
+            await session_repo.update(session_id, status="completed")
+            await db_session.commit()
 
             # Display results
             if not result.get("success"):
@@ -499,10 +512,9 @@ async def _run_test_generation(
                 console.print("3. Fix remaining issues and re-run generation")
                 console.print("4. Check LangSmith traces for agent reasoning")
 
-        except Exception as e:
-            progress.remove_task(task)
-            console.print(f"\n[red]Error:[/red] {str(e)}")
-            raise typer.Exit(1) from None
+    except Exception as e:
+        console.print(f"\n[red]Error:[/red] {str(e)}")
+        raise typer.Exit(1) from None
 
 
 async def _run_mutation_testing(

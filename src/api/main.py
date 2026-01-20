@@ -1,6 +1,7 @@
 """FastAPI application with CORS, middleware, and exception handlers."""
 
 import json
+import os
 import uuid
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
@@ -8,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
@@ -16,7 +18,7 @@ from starlette.responses import Response
 from src.api.middleware.auth import api_key_auth_middleware
 from src.api.middleware.error import ErrorHandlerMiddleware
 from src.api.middleware.logging import request_logging_middleware
-from src.api.routers import health, metrics, sessions
+from src.api.routers import audit, health, logs, metrics, sessions
 from src.lib.config import get_settings
 from src.lib.logging import get_logger
 from src.lib.startup_checks import StartupCheckError, run_all_startup_checks
@@ -35,16 +37,32 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """
     logger.info("application_startup", version=app.version)
 
-    try:
-        # T008: Run all startup checks (currently LLM connectivity only)
-        await run_all_startup_checks()
-        logger.info("startup_checks_passed")
-    except StartupCheckError as e:
-        logger.error("startup_checks_failed", error=str(e))
-        # Application MUST fail if startup checks fail (FR-010)
-        raise RuntimeError(f"Application startup failed: {e}") from e
+    # Check if startup checks should be skipped (already done by CLI)
+    skip_checks = os.environ.get("TESTBOOST_SKIP_API_STARTUP_CHECKS", "").lower() in ("1", "true", "yes")
+
+    if skip_checks:
+        logger.info("startup_checks_skipped", reason="TESTBOOST_SKIP_API_STARTUP_CHECKS set")
+    else:
+        try:
+            # T008: Run all startup checks (currently LLM connectivity only)
+            await run_all_startup_checks()
+            logger.info("startup_checks_passed")
+        except StartupCheckError as e:
+            logger.error("startup_checks_failed", error=str(e))
+            # Application MUST fail if startup checks fail (FR-010)
+            raise RuntimeError(f"Application startup failed: {e}") from e
 
     yield
+
+    # Graceful shutdown: dispose database engine to close all connections properly
+    logger.info("application_shutdown_start")
+    try:
+        from src.db import engine
+        await engine.dispose()
+        logger.info("database_engine_disposed")
+    except Exception as e:
+        logger.error("database_engine_dispose_failed", error=str(e))
+
     logger.info("application_shutdown")
 
 
@@ -80,19 +98,30 @@ class RequestIDMiddleware(BaseHTTPMiddleware):
         return response
 
 
-app.add_middleware(RequestIDMiddleware)
+# Middleware order (CRITICAL):
+# Both add_middleware and app.middleware("http") execute in REVERSE/LIFO order
+# (last added = first executed in the request chain)
+#
+# Desired execution order:
+# 1. RequestIDMiddleware - adds request_id FIRST
+# 2. ErrorHandlerMiddleware - can use request_id for error logs
+# 3. api_key_auth_middleware - auth with request_id
+# 4. request_logging_middleware - logs requests with valid request_id
+#
+# So we add them in REVERSE order:
 
-# Error handler middleware (catches all exceptions)
-app.add_middleware(ErrorHandlerMiddleware)
+app.middleware("http")(request_logging_middleware)  # Executes LAST (4th)
+app.middleware("http")(api_key_auth_middleware)      # Executes 3rd
 
-# Custom middleware
-app.middleware("http")(request_logging_middleware)
-app.middleware("http")(api_key_auth_middleware)
+app.add_middleware(ErrorHandlerMiddleware)           # Executes 2nd
+app.add_middleware(RequestIDMiddleware)              # Executes FIRST (1st)
 
 # Include routers
 app.include_router(health.router)
 app.include_router(sessions.router)
 app.include_router(metrics.router)
+app.include_router(audit.router)
+app.include_router(logs.router, prefix="/api/v2")
 
 
 @app.exception_handler(Exception)
@@ -120,6 +149,47 @@ async def value_error_handler(request: Request, exc: ValueError) -> JSONResponse
     return JSONResponse(
         status_code=400,
         content={"detail": str(exc)},
+    )
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
+    """
+    Handle Pydantic validation errors with structured logging.
+
+    Logs validation failures to help identify:
+    - Which fields are failing validation
+    - What values were provided
+    - API usage patterns and common mistakes
+    """
+    request_id = getattr(request.state, "request_id", "unknown")
+
+    # Extract validation errors
+    errors = exc.errors()
+
+    # Log with context
+    logger.warning(
+        "validation_error",
+        request_id=request_id,
+        path=request.url.path,
+        method=request.method,
+        error_count=len(errors),
+        errors=[
+            {
+                "field": " -> ".join(str(loc) for loc in error["loc"]),
+                "message": error["msg"],
+                "type": error["type"],
+            }
+            for error in errors
+        ],
+    )
+
+    return JSONResponse(
+        status_code=422,
+        content={
+            "detail": errors,
+            "request_id": request_id,
+        },
     )
 
 

@@ -115,8 +115,7 @@ class TestNoHardcodedAPIKeys:
             except Exception:
                 pass
 
-        assert len(violations) == 0, \
-            f"Anthropic API keys found in: {violations}"
+        assert len(violations) == 0, f"Anthropic API keys found in: {violations}"
 
     def test_no_google_keys_in_source(self):
         """Test no Google API keys in source code."""
@@ -132,8 +131,7 @@ class TestNoHardcodedAPIKeys:
             except Exception:
                 pass
 
-        assert len(violations) == 0, \
-            f"Google API keys found in: {violations}"
+        assert len(violations) == 0, f"Google API keys found in: {violations}"
 
     def test_no_openai_keys_in_source(self):
         """Test no OpenAI API keys in source code."""
@@ -154,8 +152,7 @@ class TestNoHardcodedAPIKeys:
             except Exception:
                 pass
 
-        assert len(violations) == 0, \
-            f"OpenAI API keys found in: {violations}"
+        assert len(violations) == 0, f"OpenAI API keys found in: {violations}"
 
     def test_no_langsmith_keys_in_source(self):
         """Test no LangSmith API keys in source code."""
@@ -171,8 +168,7 @@ class TestNoHardcodedAPIKeys:
             except Exception:
                 pass
 
-        assert len(violations) == 0, \
-            f"LangSmith API keys found in: {violations}"
+        assert len(violations) == 0, f"LangSmith API keys found in: {violations}"
 
 
 class TestEnvFileNotCommitted:
@@ -184,8 +180,7 @@ class TestEnvFileNotCommitted:
         gitignore_path = Path(".gitignore")
         if gitignore_path.exists():
             gitignore_content = gitignore_path.read_text()
-            assert ".env" in gitignore_content, \
-                ".env should be in .gitignore"
+            assert ".env" in gitignore_content, ".env should be in .gitignore"
 
     def test_no_env_example_with_real_keys(self):
         """Test that .env.example doesn't contain real API keys."""
@@ -197,12 +192,15 @@ class TestEnvFileNotCommitted:
             for provider, pattern in API_KEY_PATTERNS.items():
                 matches = re.findall(pattern, content)
                 # Filter out placeholder patterns
-                real_keys = [m for m in matches if not any(
-                    placeholder in m.lower()
-                    for placeholder in ["your", "xxx", "placeholder", "example"]
-                )]
-                assert len(real_keys) == 0, \
-                    f"Real {provider} API key found in .env.example"
+                real_keys = [
+                    m
+                    for m in matches
+                    if not any(
+                        placeholder in m.lower()
+                        for placeholder in ["your", "xxx", "placeholder", "example"]
+                    )
+                ]
+                assert len(real_keys) == 0, f"Real {provider} API key found in .env.example"
 
 
 class TestSecurityBestPractices:
@@ -228,8 +226,9 @@ class TestSecurityBestPractices:
         from src.lib.config import Settings
 
         # Settings should inherit from BaseSettings
-        assert issubclass(Settings, BaseSettings), \
-            "Settings should use pydantic-settings for secure env loading"
+        assert issubclass(
+            Settings, BaseSettings
+        ), "Settings should use pydantic-settings for secure env loading"
 
     def test_no_print_statements_with_keys(self):
         """Test that no print statements could leak API keys."""
@@ -255,8 +254,7 @@ class TestSecurityBestPractices:
             except Exception:
                 pass
 
-        assert len(violations) == 0, \
-            f"Suspicious print statements found in: {violations}"
+        assert len(violations) == 0, f"Suspicious print statements found in: {violations}"
 
 
 class TestLoggingDoesNotLeakSecrets:
@@ -273,9 +271,9 @@ class TestLoggingDoesNotLeakSecrets:
     def test_no_api_key_in_log_calls(self):
         """Test that log calls don't directly include API key variables."""
         suspicious_patterns = [
-            r'logger\.\w+\(.*api_key\s*=',
-            r'logger\.\w+\(.*API_KEY',
-            r'log\.\w+\(.*api_key\s*=',
+            r"logger\.\w+\(.*api_key\s*=",
+            r"logger\.\w+\(.*API_KEY",
+            r"log\.\w+\(.*api_key\s*=",
         ]
 
         violations = []
@@ -293,5 +291,4 @@ class TestLoggingDoesNotLeakSecrets:
             except Exception:
                 pass
 
-        assert len(violations) == 0, \
-            f"Potential API key logging found in: {violations}"
+        assert len(violations) == 0, f"Potential API key logging found in: {violations}"

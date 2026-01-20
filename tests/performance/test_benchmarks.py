@@ -17,7 +17,7 @@ import pytest
 
 # Performance thresholds from spec
 INTERACTIVE_OPERATION_TIMEOUT = 5.0  # SC-001: < 5 seconds
-DOCKER_DEPLOYMENT_TIMEOUT = 300.0    # SC-002: < 5 minutes
+DOCKER_DEPLOYMENT_TIMEOUT = 300.0  # SC-002: < 5 minutes
 ANALYSIS_200_CLASSES_TIMEOUT = 30.0  # SC-003: < 30 seconds
 
 
@@ -59,9 +59,7 @@ class TestInteractiveOperationPerformance:
         settings = Settings()
         elapsed = time.perf_counter() - start_time
 
-        assert elapsed < 1.0, (
-            f"Config loading took {elapsed:.2f}s, expected < 1s"
-        )
+        assert elapsed < 1.0, f"Config loading took {elapsed:.2f}s, expected < 1s"
         assert settings is not None
 
 
@@ -78,12 +76,10 @@ class TestDockerDeploymentPerformance:
         from langchain_core.messages import AIMessage
 
         # Mock the run_docker_deployment_with_agent function
-        with patch("src.workflows.docker_deployment_agent.run_docker_deployment_with_agent") as mock_run:
-            mock_result = {
-                "messages": [
-                    AIMessage(content="Deployment completed successfully")
-                ]
-            }
+        with patch(
+            "src.workflows.docker_deployment_agent.run_docker_deployment_with_agent"
+        ) as mock_run:
+            mock_result = {"messages": [AIMessage(content="Deployment completed successfully")]}
             mock_run.return_value = mock_result
 
             start_time = time.perf_counter()
@@ -137,10 +133,10 @@ public class TestClass{i} {{
         total_lines = 0
         total_methods = 0
         for content in mock_classes:
-            total_lines += len(content.split('\n'))
+            total_lines += len(content.split("\n"))
             # Count actual method declarations (getter + setter = 2 per class)
-            total_methods += content.count('public String get')
-            total_methods += content.count('public void set')
+            total_methods += content.count("public String get")
+            total_methods += content.count("public void set")
 
         # Simulate some async work
         await asyncio.sleep(0.01)
@@ -175,13 +171,11 @@ class TestDatabasePerformance:
             start_time = time.perf_counter()
 
             # Simulate query execution
-            result = await mock_session.execute("SELECT 1")
+            await mock_session.execute("SELECT 1")
 
             elapsed = time.perf_counter() - start_time
 
-            assert elapsed < 1.0, (
-                f"Database query took {elapsed:.2f}s, expected < 1s"
-            )
+            assert elapsed < 1.0, f"Database query took {elapsed:.2f}s, expected < 1s"
 
 
 class TestWorkflowPerformance:
@@ -209,7 +203,5 @@ class TestWorkflowPerformance:
 
         elapsed = time.perf_counter() - start_time
 
-        assert elapsed < 0.1, (
-            f"State transitions took {elapsed:.4f}s, expected < 0.1s"
-        )
+        assert elapsed < 0.1, f"State transitions took {elapsed:.4f}s, expected < 0.1s"
         assert current_state == SessionStatus.COMPLETED

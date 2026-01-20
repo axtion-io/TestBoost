@@ -16,12 +16,11 @@ from src.lib.config import get_settings  # noqa: E402
 get_settings.cache_clear()
 
 # IMPORTANT: Must be imported early to patch DeepAgents before any other module uses it
-import src.lib.deepagents_compat  # noqa: F401, E402
-
 import asyncio  # noqa: E402
 
 import typer  # noqa: E402
 
+import src.lib.deepagents_compat  # noqa: F401, E402
 from src.cli.commands.audit import app as audit_app  # noqa: E402
 from src.cli.commands.config import app as config_app  # noqa: E402
 from src.cli.commands.deploy import app as deploy_app  # noqa: E402
@@ -263,10 +262,15 @@ def serve(
     ),
 ) -> None:
     """Start the TestBoost API server."""
+    import os
+
     import uvicorn
 
     logger.info("serve_command", host=host, port=port, reload=reload)
     typer.echo(f"Starting TestBoost API server on {host}:{port}")
+
+    # Skip API startup checks since CLI already ran them
+    os.environ["TESTBOOST_SKIP_API_STARTUP_CHECKS"] = "1"
 
     uvicorn.run(
         "src.api.main:app",

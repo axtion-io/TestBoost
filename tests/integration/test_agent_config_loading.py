@@ -26,11 +26,7 @@ class TestYAMLConfigLoading:
         loader = AgentLoader(config_dir="config/agents")
 
         # Load all 3 required agent configs
-        agent_names = [
-            "maven_maintenance_agent",
-            "test_gen_agent",
-            "deployment_agent"
-        ]
+        agent_names = ["maven_maintenance_agent", "test_gen_agent", "deployment_agent"]
 
         loaded_configs = {}
         for name in agent_names:
@@ -53,18 +49,18 @@ class TestYAMLConfigLoading:
 
             # Assert 'temperature' exists and is valid
             assert config.llm.temperature is not None, f"{name} missing 'temperature'"
-            assert 0.0 <= config.llm.temperature <= 2.0, (
-                f"{name} temperature {config.llm.temperature} out of range [0, 2]"
-            )
+            assert (
+                0.0 <= config.llm.temperature <= 2.0
+            ), f"{name} temperature {config.llm.temperature} out of range [0, 2]"
 
             # Assert 'max_tokens' exists (can be None for default)
             # max_tokens is optional but should be accessible
             _ = config.llm.max_tokens  # Just verify it's accessible
 
             # Assert provider is valid
-            assert config.llm.provider in valid_providers, (
-                f"{name} has invalid provider '{config.llm.provider}'"
-            )
+            assert (
+                config.llm.provider in valid_providers
+            ), f"{name} has invalid provider '{config.llm.provider}'"
 
 
 class TestYAMLChangesEffect:
@@ -110,14 +106,13 @@ class TestYAMLChangesEffect:
 
         # Assert new temperature is applied
         assert reloaded_config.llm.temperature == new_temperature, (
-            f"Expected temperature {new_temperature}, "
-            f"got {reloaded_config.llm.temperature}"
+            f"Expected temperature {new_temperature}, " f"got {reloaded_config.llm.temperature}"
         )
 
         # Assert original temperature was different
-        assert initial_temperature != new_temperature, (
-            "Test setup error: temperatures should differ"
-        )
+        assert (
+            initial_temperature != new_temperature
+        ), "Test setup error: temperatures should differ"
 
     def test_yaml_changes_detected_by_cache(self, tmp_path):
         """Test that file modification invalidates cache automatically."""
@@ -145,6 +140,7 @@ class TestYAMLChangesEffect:
 
         # Write with updated timestamp
         import time
+
         time.sleep(0.1)  # Ensure mtime changes
         with open(yaml_path, "w", encoding="utf-8") as f:
             yaml.dump(config_data, f)
@@ -152,9 +148,7 @@ class TestYAMLChangesEffect:
         # Second load - should detect file change and reload
         config2 = loader.load_agent(agent_name)
 
-        assert config2.llm.temperature == 1.5, (
-            "Cache should detect file modification and reload"
-        )
+        assert config2.llm.temperature == 1.5, "Cache should detect file modification and reload"
 
 
 class TestInvalidYAMLHandling:
@@ -204,9 +198,11 @@ error_handling:
         # Error should contain position/line information
         error_message = str(exc_info.value)
         # YAML errors typically contain line or position info
-        assert "line" in error_message.lower() or "position" in error_message.lower() or exc_info.value.problem_mark is not None, (
-            f"Error should contain line information: {error_message}"
-        )
+        assert (
+            "line" in error_message.lower()
+            or "position" in error_message.lower()
+            or exc_info.value.problem_mark is not None
+        ), f"Error should contain line information: {error_message}"
 
     def test_missing_required_field_raises_validation_error(self, tmp_path):
         """Test that missing required field raises ValidationError."""
@@ -239,6 +235,7 @@ error_handling:
 
         # Should raise Pydantic ValidationError
         from pydantic import ValidationError
+
         with pytest.raises(ValidationError) as exc_info:
             loader.load_agent("incomplete_agent")
 
@@ -266,9 +263,9 @@ class TestPromptTemplateLoading:
         prompt_content = loader.load_prompt("dependency_update", category="maven")
 
         # Assert prompt is non-empty and has substantial content
-        assert len(prompt_content) > 100, (
-            f"Prompt too short ({len(prompt_content)} chars), expected > 100"
-        )
+        assert (
+            len(prompt_content) > 100
+        ), f"Prompt too short ({len(prompt_content)} chars), expected > 100"
 
         # Assert prompt contains expected Maven-related keywords
         prompt_lower = prompt_content.lower()
@@ -300,6 +297,7 @@ class TestPromptTemplateLoading:
 
         # Modify prompt file
         import time
+
         time.sleep(0.1)  # Ensure mtime changes
         prompt_path.write_text("Updated prompt content with new Maven instructions.")
 
@@ -314,7 +312,10 @@ class TestPromptTemplateLoading:
         with pytest.raises(FileNotFoundError) as exc_info:
             loader.load_prompt("nonexistent_prompt", category="maven")
 
-        assert "nonexistent_prompt" in str(exc_info.value).lower() or "not found" in str(exc_info.value).lower()
+        assert (
+            "nonexistent_prompt" in str(exc_info.value).lower()
+            or "not found" in str(exc_info.value).lower()
+        )
 
 
 class TestAllAgentsValidation:
@@ -329,11 +330,7 @@ class TestAllAgentsValidation:
         assert len(results) >= 3, f"Expected at least 3 agents, found {len(results)}"
 
         # Check expected agents are present
-        expected_agents = [
-            "maven_maintenance_agent",
-            "test_gen_agent",
-            "deployment_agent"
-        ]
+        expected_agents = ["maven_maintenance_agent", "test_gen_agent", "deployment_agent"]
         for agent_name in expected_agents:
             assert agent_name in results, f"Missing validation for {agent_name}"
             is_valid, errors = results[agent_name]

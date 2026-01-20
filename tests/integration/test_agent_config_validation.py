@@ -75,7 +75,11 @@ class TestAgentConfigValidation:
             "name": "maven_maintenance_agent",
             "description": "Test agent",
             "identity": {"role": "Test", "persona": "Test"},
-            "llm": {"provider": "anthropic", "model": "claude-sonnet-4-5-20250929", "temperature": 0.3},
+            "llm": {
+                "provider": "anthropic",
+                "model": "claude-sonnet-4-5-20250929",
+                "temperature": 0.3,
+            },
             "tools": {"mcp_servers": ["maven-maintenance"]},
             "prompts": {"system": "config/prompts/maven/nonexistent_prompt.md"},  # Doesn't exist
             "workflow": {"graph_name": "test", "node_name": "test"},
@@ -99,7 +103,9 @@ class TestAgentConfigValidation:
 
             error_msg = str(exc_info.value)
             assert "maven_maintenance_agent" in error_msg
-            assert "missing prompt" in error_msg.lower() or "nonexistent_prompt" in error_msg.lower()
+            assert (
+                "missing prompt" in error_msg.lower() or "nonexistent_prompt" in error_msg.lower()
+            )
         finally:
             monkeypatch.chdir(original_cwd)
 
@@ -121,7 +127,11 @@ class TestAgentConfigValidation:
             "name": "maven_maintenance_agent",
             "description": "Test agent",
             "identity": {"role": "Test", "persona": "Test"},
-            "llm": {"provider": "anthropic", "model": "claude-sonnet-4-5-20250929", "temperature": 0.3},
+            "llm": {
+                "provider": "anthropic",
+                "model": "claude-sonnet-4-5-20250929",
+                "temperature": 0.3,
+            },
             "tools": {"mcp_servers": ["nonexistent-mcp-server"]},  # Not registered
             "prompts": {"system": "config/prompts/maven/system_agent.md"},
             "workflow": {"graph_name": "test", "node_name": "test"},
@@ -146,6 +156,8 @@ class TestAgentConfigValidation:
 
             error_msg = str(exc_info.value)
             assert "maven_maintenance_agent" in error_msg
-            assert "unregistered" in error_msg.lower() or "nonexistent-mcp-server" in error_msg.lower()
+            assert (
+                "unregistered" in error_msg.lower() or "nonexistent-mcp-server" in error_msg.lower()
+            )
         finally:
             monkeypatch.chdir(original_cwd)

@@ -118,11 +118,10 @@ class AgentAdapter:
                     error=str(e),
                 )
                 # Update state with error
-                return {
-                    **state,
-                    "error": str(e),
-                    "error_step": config.name,
-                }
+                updated_state = state.model_copy(deep=True)
+                updated_state.error = str(e)
+                updated_state.error_step = config.name
+                return updated_state
 
         return node
 
@@ -146,7 +145,11 @@ class AgentAdapter:
             """Execute tool calls from messages."""
             # ToolNode expects messages in state
             result = await tool_node.ainvoke(state)
-            return {**state, **result}
+            # Merge result into state copy
+            updated_state = state.model_copy(deep=True)
+            for key, value in result.items():
+                setattr(updated_state, key, value)
+            return updated_state
 
         return node
 
@@ -159,7 +162,7 @@ def _default_input_mapper(input_data: dict[str, Any]) -> str:
     # Format as key-value pairs
     parts: list[str] = []
     for key, value in input_data.items():
-        if isinstance(value, (dict, list)):
+        if isinstance(value, dict | list):
             import json
 
             value = json.dumps(value, indent=2)
@@ -181,11 +184,11 @@ def _default_output_mapper(response: str, state: WorkflowState) -> WorkflowState
         }
     )
 
-    return {
-        **state,
-        "output_data": output_data,
-        "results": results,
-    }
+    # Create updated state copy with new values
+    updated_state = state.model_copy(deep=True)
+    updated_state.output_data = output_data
+    updated_state.results = results
+    return updated_state
 
 
 __all__ = ["AgentAdapter"]

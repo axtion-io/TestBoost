@@ -27,8 +27,7 @@ venv/
 ENV/
 env/
 
-# Poetry
-poetry.lock
+# Poetry - lock file is committed for reproducible builds
 
 # Testing
 .coverage
@@ -67,6 +66,7 @@ logs/
 # OS
 .DS_Store
 Thumbs.db
+nul
 
 # Database
 *.db
@@ -93,3 +93,6 @@ docker/maven-cache/
 # Config backups
 config/agents/.backups/
 tests/fixtures/spring-petclinic/
+
+# Ad-hoc test utilities (temporary, do not commit)
+scripts/test-utils/

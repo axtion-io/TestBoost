@@ -1,0 +1,17 @@
+{
+  "default_response": {
+    "content": "Mocked OpenAI response for testing",
+    "tokens_used": 120
+  },
+  "analyze_class": {
+    "class_name": "com.example.PaymentService",
+    "methods": ["processPayment", "refundPayment", "getPaymentStatus"],
+    "complexity": 6,
+    "test_suggestions": ["testProcessPayment_success", "testRefundPayment_alreadyRefunded"]
+  },
+  "generate_test": {
+    "test_code": "import org.junit.jupiter.api.Test;\n\npublic class PaymentServiceTest {\n    @Test\n    void testProcessPayment() {\n        // Test implementation\n    }\n}",
+    "imports": ["org.junit.jupiter.api.Test"],
+    "test_count": 1
+  }
+}

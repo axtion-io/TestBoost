@@ -1,12 +1,11 @@
 """Integration tests for API pagination functionality."""
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock
 from uuid import uuid4
 
 import pytest
 
 from src.api.models.pagination import (
-    PaginatedResponse,
     PaginationMeta,
     PaginationParams,
     create_pagination_meta,
@@ -143,10 +142,9 @@ class TestSessionListPagination:
     @pytest.mark.asyncio
     async def test_session_list_pagination(self):
         """Test that session list returns pagination metadata."""
-        from src.api.models.pagination import PaginationMeta
 
         # Mock data
-        mock_sessions = [
+        [
             MagicMock(
                 id=uuid4(),
                 session_type="maven_maintenance",

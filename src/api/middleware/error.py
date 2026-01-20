@@ -215,22 +215,78 @@ class ErrorHandlerMiddleware(BaseHTTPMiddleware):
     Ensures consistent error response format across the API per FR-032.
     """
 
-    async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
-        """
-        Process request and handle any exceptions.
+    def _log_and_create_error_response(
+        self,
+        request: Request,
+        error: Exception,
+        message: str = "An unexpected error occurred",
+        error_code: str = "INTERNAL_ERROR",
+        include_traceback: bool = True,
+    ) -> Response:
+        """Log an unhandled error and create a standardized error response."""
+        request_id = getattr(request.state, "request_id", "unknown")
 
-        Args:
-            request: FastAPI request
-            call_next: Next middleware in chain
+        log_kwargs = {
+            "error": str(error),
+            "error_type": type(error).__name__,
+            "path": request.url.path,
+            "request_id": request_id,
+        }
+        if include_traceback:
+            log_kwargs["traceback"] = traceback.format_exc()
 
-        Returns:
-            Response or error response
+        logger.error("unhandled_error", **log_kwargs)
+
+        generic_error = TestBoostError(
+            message=message,
+            error_code=error_code,
+            context={"error_type": type(error).__name__},
+        )
+        return create_error_response(request, generic_error)
+
+    async def _handle_stale_connection(
+        self, request: Request, call_next: RequestResponseEndpoint
+    ) -> Response | None:
         """
+        Handle stale database connections by disposing the pool and retrying.
+
+        Returns the response if retry succeeds, None if retry fails.
+        """
+        request_id = getattr(request.state, "request_id", "unknown")
+        logger.debug(
+            "stale_connection_detected_retrying",
+            request_id=request_id,
+            path=request.url.path,
+        )
+
         try:
+            from src.db import get_async_engine
+
+            engine = get_async_engine()
+            await engine.dispose()
+
             response = await call_next(request)
+            logger.debug(
+                "stale_connection_retry_success",
+                request_id=request_id,
+                path=request.url.path,
+            )
             return response
+        except Exception as retry_error:
+            logger.error(
+                "stale_connection_retry_failed",
+                request_id=request_id,
+                path=request.url.path,
+                error=str(retry_error),
+                error_type=type(retry_error).__name__,
+            )
+            return None
+
+    async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
+        """Process request and handle any exceptions."""
+        try:
+            return await call_next(request)
         except TestBoostError as e:
-            # Log structured error
             logger.error(
                 "testboost_error",
                 error_code=e.error_code,
@@ -240,28 +296,18 @@ class ErrorHandlerMiddleware(BaseHTTPMiddleware):
                 request_id=getattr(request.state, "request_id", "unknown"),
             )
             return create_error_response(request, e)
+        except AttributeError as e:
+            # Handle stale database connections from previous server instance
+            if "'NoneType' object has no attribute 'send'" in str(e):
+                response = await self._handle_stale_connection(request, call_next)
+                if response is not None:
+                    return response
+                return self._log_and_create_error_response(
+                    request, e, "Database connection error", "DATABASE_ERROR", include_traceback=False
+                )
+            return self._log_and_create_error_response(request, e)
         except Exception as e:
-            # Wrap unexpected errors
-            request_id = getattr(request.state, "request_id", "unknown")
-
-            logger.error(
-                "unhandled_error",
-                error=str(e),
-                error_type=type(e).__name__,
-                path=request.url.path,
-                request_id=request_id,
-                traceback=traceback.format_exc(),
-            )
-
-            # Create generic error response
-            generic_error = TestBoostError(
-                message="An unexpected error occurred",
-                error_code="INTERNAL_ERROR",
-                context={
-                    "error_type": type(e).__name__,
-                },
-            )
-            return create_error_response(request, generic_error)
+            return self._log_and_create_error_response(request, e)
 
 
 __all__ = [

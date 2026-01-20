@@ -1,0 +1,17 @@
+{
+  "default_response": {
+    "content": "Mocked Claude response for testing",
+    "tokens_used": 150
+  },
+  "analyze_class": {
+    "class_name": "com.example.OrderService",
+    "methods": ["createOrder", "processOrder", "cancelOrder"],
+    "complexity": 7,
+    "test_suggestions": ["testCreateOrder_success", "testProcessOrder_invalidState"]
+  },
+  "generate_test": {
+    "test_code": "import org.junit.jupiter.api.Test;\n\npublic class OrderServiceTest {\n    @Test\n    void testCreateOrder() {\n        // Test implementation\n    }\n}",
+    "imports": ["org.junit.jupiter.api.Test"],
+    "test_count": 1
+  }
+}

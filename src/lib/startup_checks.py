@@ -61,7 +61,7 @@ def _is_retryable_error(exception: Exception) -> bool:
         True if error should be retried, False otherwise
     """
     # Check if it's a timeout error
-    if isinstance(exception, (TimeoutError, asyncio.TimeoutError, LLMTimeoutError)):
+    if isinstance(exception, TimeoutError | asyncio.TimeoutError | LLMTimeoutError):
         return True
 
     # Check if it's a connection error
@@ -335,38 +335,158 @@ def validate_agent_infrastructure() -> None:
     )
 
 
-async def run_all_startup_checks() -> None:
+class DatabaseConnectionError(StartupCheckError):
+    """Raised when database connection check fails."""
+
+    pass
+
+
+class MCPRegistryError(StartupCheckError):
+    """Raised when MCP tool registry validation fails."""
+
+    pass
+
+
+async def check_database_connection() -> None:
+    """
+    Check database connectivity at startup.
+
+    Verifies that the PostgreSQL database is reachable and responding.
+
+    Raises:
+        DatabaseConnectionError: If database is not accessible
+    """
+    from src.lib.database import check_connection_health
+
+    logger.info("database_connection_check_start")
+
+    try:
+        is_healthy = await check_connection_health()
+
+        if not is_healthy:
+            raise DatabaseConnectionError("Database health check returned unhealthy status")
+
+        logger.info("database_connection_ok")
+
+    except DatabaseConnectionError:
+        raise
+
+    except Exception as e:
+        logger.error("database_connection_failed", error=str(e))
+        raise DatabaseConnectionError(f"Database connection check failed: {e}") from e
+
+
+def validate_mcp_registry() -> None:
+    """
+    Validate MCP tool registry at startup.
+
+    Verifies that all required MCP servers are registered and can provide tools.
+
+    Raises:
+        MCPRegistryError: If any required MCP server is missing or invalid
+    """
+    from src.mcp_servers.registry import TOOL_REGISTRY, list_available_servers
+
+    logger.info("mcp_registry_check_start")
+
+    # Required MCP servers for core functionality
+    REQUIRED_SERVERS = [
+        "maven-maintenance",
+        "test-generator",
+        "docker-deployment",
+        "git-maintenance",
+    ]
+
+    available_servers = list_available_servers()
+    missing_servers = []
+    invalid_servers = []
+
+    for server_name in REQUIRED_SERVERS:
+        if server_name not in available_servers:
+            missing_servers.append(server_name)
+            continue
+
+        # Try to get tools to verify the server is functional
+        try:
+            getter = TOOL_REGISTRY.get(server_name)
+            if getter:
+                tools = getter()
+                if not tools:
+                    invalid_servers.append(f"{server_name} (no tools returned)")
+                else:
+                    logger.debug(
+                        "mcp_server_valid",
+                        server=server_name,
+                        tool_count=len(tools),
+                    )
+        except Exception as e:
+            invalid_servers.append(f"{server_name} (error: {e})")
+
+    if missing_servers or invalid_servers:
+        error_parts = []
+        if missing_servers:
+            error_parts.append(f"Missing servers: {', '.join(missing_servers)}")
+        if invalid_servers:
+            error_parts.append(f"Invalid servers: {', '.join(invalid_servers)}")
+
+        error_msg = "; ".join(error_parts)
+        logger.error("mcp_registry_check_failed", error=error_msg)
+        raise MCPRegistryError(f"MCP registry validation failed: {error_msg}")
+
+    logger.info(
+        "mcp_registry_check_complete",
+        registered_servers=available_servers,
+        count=len(available_servers),
+    )
+
+
+async def run_all_startup_checks(skip_db: bool = False) -> None:
     """
     Run all startup validation checks.
+
+    Args:
+        skip_db: Skip database connectivity check (useful for CLI commands)
 
     Raises:
         StartupCheckError: If any check fails
     """
     logger.info("startup_checks_begin")
+    checks_passed = 0
 
     try:
         # Check 1: LLM connectivity (US1)
         await check_llm_connection()
+        checks_passed += 1
 
         # Check 2: Agent configuration validation (US3)
         validate_agent_infrastructure()
+        checks_passed += 1
 
-        # Future checks will be added here:
-        # - Check 3: Database connectivity
-        # - Check 4: MCP tool registry validation
+        # Check 3: Database connectivity
+        if not skip_db:
+            await check_database_connection()
+            checks_passed += 1
 
-        logger.info("startup_checks_complete", checks_passed=2)
+        # Check 4: MCP tool registry validation
+        validate_mcp_registry()
+        checks_passed += 1
+
+        logger.info("startup_checks_complete", checks_passed=checks_passed)
 
     except Exception as e:
-        logger.error("startup_checks_failed", error=str(e))
+        logger.error("startup_checks_failed", error=str(e), checks_passed=checks_passed)
         raise StartupCheckError(f"Startup checks failed: {e}") from e
 
 
 __all__ = [
     "check_llm_connection",
+    "check_database_connection",
     "validate_agent_infrastructure",
+    "validate_mcp_registry",
     "run_all_startup_checks",
     "StartupCheckError",
     "LLMConnectionError",
     "AgentConfigError",
+    "DatabaseConnectionError",
+    "MCPRegistryError",
 ]

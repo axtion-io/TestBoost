@@ -8,8 +8,8 @@ from fastapi import Request
 from starlette.responses import Response
 
 from src.api.routers.metrics import record_request
-from src.lib.logging import get_logger
 from src.lib.log_taxonomy import EXCLUDED_PATHS
+from src.lib.logging import get_logger
 
 logger = get_logger(__name__)
 

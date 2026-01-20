@@ -4,8 +4,6 @@ Tests cover the generate_unified_diff() and is_binary_content() functions.
 Feature: 006-file-modifications-api
 """
 
-import pytest
-
 from src.lib.diff import generate_unified_diff, get_operation_type, is_binary_content
 
 

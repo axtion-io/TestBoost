@@ -10,7 +10,7 @@ from pathlib import Path
 import pytest
 
 from src.core.session import WORKFLOW_STEPS
-from src.db.models.session import SessionStatus, SessionType
+from src.db.models.session import SessionType
 
 
 class TestWorkflowDocumentationSync:
@@ -26,7 +26,7 @@ class TestWorkflowDocumentationSync:
 
     def test_workflow_types_documented(self, workflow_diagrams_content: str):
         """Verify all WORKFLOW_STEPS keys have corresponding documentation sections."""
-        for workflow_type in WORKFLOW_STEPS.keys():
+        for workflow_type in WORKFLOW_STEPS:
             # Convert snake_case to Title Case for section matching
             # maven_maintenance -> Maven Maintenance
             title = workflow_type.replace("_", " ").title()

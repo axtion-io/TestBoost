@@ -41,13 +41,25 @@ route:
 # Receivers define notification channels
 receivers:
   - name: 'default-receiver'
-    # Webhook to custom endpoint (optional)
-    # webhook_configs:
-    #   - url: 'http://localhost:8000/api/alerts'
-    #     send_resolved: true
+    # Webhook to TestBoost API for logging/tracking alerts
+    webhook_configs:
+      - url: 'http://host.docker.internal:8000/api/v1/alerts/webhook'
+        send_resolved: true
+        http_config:
+          headers:
+            X-API-Key: '${TESTBOOST_API_KEY}'
 
   - name: 'critical-receiver'
-    # Email configuration (uncomment and configure)
+    # Webhook for critical alerts
+    webhook_configs:
+      - url: 'http://host.docker.internal:8000/api/v1/alerts/webhook'
+        send_resolved: true
+        http_config:
+          headers:
+            X-API-Key: '${TESTBOOST_API_KEY}'
+            X-Alert-Priority: 'critical'
+
+    # Email configuration (uncomment and configure with your SMTP settings)
     # email_configs:
     #   - to: 'team@example.com'
     #     from: 'alertmanager@testboost.local'
@@ -57,23 +69,38 @@ receivers:
     #     require_tls: true
     #     send_resolved: true
 
-    # Slack configuration (uncomment and configure)
+    # Slack configuration (uncomment and add your webhook URL)
     # slack_configs:
     #   - api_url: 'https://hooks.slack.com/services/XXX/YYY/ZZZ'
     #     channel: '#testboost-alerts'
     #     send_resolved: true
-    #     title: '[{{ .Status | toUpper }}] {{ .CommonLabels.alertname }}'
+    #     title: '🚨 [{{ .Status | toUpper }}] {{ .CommonLabels.alertname }}'
     #     text: '{{ .CommonAnnotations.description }}'
+    #     color: '{{ if eq .Status "firing" }}danger{{ else }}good{{ end }}'
 
-    # PagerDuty configuration (uncomment and configure)
+    # PagerDuty configuration (uncomment and add your service key)
     # pagerduty_configs:
     #   - service_key: 'your-pagerduty-key'
     #     send_resolved: true
 
   - name: 'warning-receiver'
-    # Less urgent notifications
-    # webhook_configs:
-    #   - url: 'http://localhost:8000/api/alerts'
+    # Webhook for warning alerts
+    webhook_configs:
+      - url: 'http://host.docker.internal:8000/api/v1/alerts/webhook'
+        send_resolved: true
+        http_config:
+          headers:
+            X-API-Key: '${TESTBOOST_API_KEY}'
+            X-Alert-Priority: 'warning'
+
+    # Slack configuration for warnings (less intrusive channel)
+    # slack_configs:
+    #   - api_url: 'https://hooks.slack.com/services/XXX/YYY/ZZZ'
+    #     channel: '#testboost-warnings'
+    #     send_resolved: true
+    #     title: '⚠️ [{{ .Status | toUpper }}] {{ .CommonLabels.alertname }}'
+    #     text: '{{ .CommonAnnotations.description }}'
+    #     color: '{{ if eq .Status "firing" }}warning{{ else }}good{{ end }}'
 
 # Inhibition rules
 inhibit_rules:

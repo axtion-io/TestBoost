@@ -1,0 +1,450 @@
+openapi: 3.0.3
+info:
+  title: TestBoost Session Events API
+  description: |
+    API endpoint for retrieving session events with support for real-time polling,
+    filtering, and pagination. Enables frontend monitoring of session progress and
+    troubleshooting by exposing the event log.
+  version: 1.0.0
+  contact:
+    name: TestBoost API Support
+    email: support@testboost.example.com
+
+servers:
+  - url: http://localhost:8000/api/v2
+    description: Local development server
+  - url: https://api.testboost.example.com/api/v2
+    description: Production server
+
+paths:
+  /sessions/{session_id}/events:
+    get:
+      operationId: getSessionEvents
+      summary: Get session events
+      description: |
+        Retrieves paginated list of events for a session with optional filtering.
+
+        **Use Cases:**
+        - Initial load: Get 100 most recent events
+        - Real-time polling: Get events since last fetch (using `since` parameter)
+        - Troubleshooting: Filter by event type (e.g., errors only)
+
+        **Performance:**
+        - Response time: < 500ms at p95 for typical event volumes
+        - Supports up to 10,000 events per session efficiently
+        - Optimized for polling every 2 seconds
+
+        **Events are returned in descending chronological order (newest first)**
+        to optimize real-time monitoring where users care most about recent events.
+
+      tags:
+        - Sessions
+        - Events
+
+      parameters:
+        - $ref: '#/components/parameters/SessionId'
+        - $ref: '#/components/parameters/EventType'
+        - $ref: '#/components/parameters/SinceTimestamp'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PerPage'
+
+      responses:
+        '200':
+          description: Successfully retrieved events
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EventListResponse'
+              examples:
+                typical_response:
+                  $ref: '#/components/examples/TypicalEventListResponse'
+                empty_response:
+                  $ref: '#/components/examples/EmptyEventListResponse'
+                filtered_response:
+                  $ref: '#/components/examples/FilteredEventListResponse'
+
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+        '404':
+          $ref: '#/components/responses/SessionNotFound'
+
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+components:
+  parameters:
+    SessionId:
+      name: session_id
+      in: path
+      required: true
+      description: Unique identifier of the session
+      schema:
+        type: string
+        format: uuid
+      example: "123e4567-e89b-12d3-a456-426614174000"
+
+    EventType:
+      name: event_type
+      in: query
+      required: false
+      description: |
+        Filter events by type. If omitted, all event types are returned.
+
+        **Available event types:**
+        - session_created
+        - status_changed
+        - step_created
+        - step_status_changed
+        - artifact_created
+        - workflow_started
+        - workflow_resumed
+        - workflow_paused
+        - workflow_completed
+        - workflow_failed
+        - workflow_error
+      schema:
+        type: string
+        pattern: '^[a-z_]+$'
+        maxLength: 100
+      examples:
+        error_events:
+          value: "workflow_error"
+          summary: Filter for error events only
+        status_changes:
+          value: "status_changed"
+          summary: Filter for status change events
+
+    SinceTimestamp:
+      name: since
+      in: query
+      required: false
+      description: |
+        Filter events that occurred after this timestamp. Used for polling to get only new events.
+        Must be in ISO 8601 format with timezone.
+
+        **Polling pattern:**
+        1. Initial load: Omit `since` parameter to get recent events
+        2. Subsequent polls: Use timestamp of newest event from previous response
+        3. Poll every 2 seconds for real-time monitoring
+      schema:
+        type: string
+        format: date-time
+      examples:
+        utc_timestamp:
+          value: "2026-01-13T14:30:00Z"
+          summary: UTC timestamp
+        timezone_aware:
+          value: "2026-01-13T14:30:00+00:00"
+          summary: Timezone-aware timestamp
+
+    Page:
+      name: page
+      in: query
+      required: false
+      description: Page number (1-indexed). Defaults to 1.
+      schema:
+        type: integer
+        minimum: 1
+        default: 1
+      example: 1
+
+    PerPage:
+      name: per_page
+      in: query
+      required: false
+      description: |
+        Number of events per page. Defaults to 20, maximum 100.
+
+        **Recommendations:**
+        - Initial load: Use 50-100 to get sufficient history
+        - Polling: Use 20-50 to balance freshness vs. bandwidth
+        - Troubleshooting: Use 100 to see more context
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 20
+      example: 20
+
+  schemas:
+    EventListResponse:
+      type: object
+      required:
+        - items
+        - pagination
+      properties:
+        items:
+          type: array
+          description: List of events for the current page
+          items:
+            $ref: '#/components/schemas/EventResponse'
+        pagination:
+          $ref: '#/components/schemas/PaginationMeta'
+
+    EventResponse:
+      type: object
+      required:
+        - id
+        - session_id
+        - event_type
+        - event_data
+        - timestamp
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Unique event identifier
+          example: "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+
+        session_id:
+          type: string
+          format: uuid
+          description: Parent session identifier
+          example: "123e4567-e89b-12d3-a456-426614174000"
+
+        step_id:
+          type: string
+          format: uuid
+          nullable: true
+          description: Parent step identifier (if event relates to a specific step)
+          example: "456e7890-e89b-12d3-a456-426614174001"
+
+        event_type:
+          type: string
+          description: Event classification
+          pattern: '^[a-z_]+$'
+          maxLength: 100
+          example: "workflow_started"
+
+        event_data:
+          type: object
+          description: Structured event payload with context-specific information
+          additionalProperties: true
+          example:
+            workflow_type: "test_generation"
+            duration_seconds: 45.67
+            tests_generated: 12
+
+        message:
+          type: string
+          nullable: true
+          description: Human-readable event description for logging and display
+          example: "Test generation workflow completed successfully. Generated 12 tests in 45.67 seconds."
+
+        timestamp:
+          type: string
+          format: date-time
+          description: When the event occurred (ISO 8601 format, timezone-aware)
+          example: "2026-01-13T14:30:00.123456Z"
+
+    PaginationMeta:
+      type: object
+      required:
+        - page
+        - per_page
+        - total
+        - total_pages
+        - has_next
+        - has_prev
+      properties:
+        page:
+          type: integer
+          minimum: 1
+          description: Current page number (1-indexed)
+          example: 1
+
+        per_page:
+          type: integer
+          minimum: 1
+          maximum: 100
+          description: Number of items per page
+          example: 20
+
+        total:
+          type: integer
+          minimum: 0
+          description: Total number of matching events
+          example: 156
+
+        total_pages:
+          type: integer
+          minimum: 0
+          description: Total number of pages
+          example: 8
+
+        has_next:
+          type: boolean
+          description: Whether there is a next page
+          example: true
+
+        has_prev:
+          type: boolean
+          description: Whether there is a previous page
+          example: false
+
+    ErrorResponse:
+      type: object
+      required:
+        - detail
+      properties:
+        detail:
+          type: string
+          description: Human-readable error message
+          example: "Session not found: 123e4567-e89b-12d3-a456-426614174000"
+
+  responses:
+    BadRequest:
+      description: Invalid request parameters
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          examples:
+            invalid_datetime:
+              summary: Invalid since parameter format
+              value:
+                detail: "Invalid datetime format for 'since' parameter. Expected ISO 8601 format (e.g., 2026-01-13T14:30:00Z)"
+            invalid_pagination:
+              summary: Invalid pagination parameters
+              value:
+                detail: "per_page must be between 1 and 100"
+            invalid_event_type:
+              summary: Invalid event_type format
+              value:
+                detail: "event_type must match pattern: ^[a-z_]+$"
+
+    Unauthorized:
+      description: Authentication required or invalid API key
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            detail: "Invalid or missing X-API-Key header"
+
+    SessionNotFound:
+      description: Session with specified ID does not exist
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            detail: "Session not found: 123e4567-e89b-12d3-a456-426614174000"
+
+    InternalServerError:
+      description: Unexpected server error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            detail: "Internal server error occurred while processing request"
+
+  examples:
+    TypicalEventListResponse:
+      summary: Typical response with mixed event types
+      description: Shows workflow lifecycle events for a test generation session
+      value:
+        items:
+          - id: "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+            session_id: "123e4567-e89b-12d3-a456-426614174000"
+            step_id: null
+            event_type: "workflow_completed"
+            event_data:
+              workflow_type: "test_generation"
+              duration_seconds: 45.67
+              tests_generated: 12
+              success: true
+            message: "Test generation workflow completed successfully. Generated 12 tests in 45.67 seconds."
+            timestamp: "2026-01-13T14:30:45.123456Z"
+
+          - id: "b2c3d4e5-f6a7-8901-bcde-f12345678901"
+            session_id: "123e4567-e89b-12d3-a456-426614174000"
+            step_id: "456e7890-e89b-12d3-a456-426614174001"
+            event_type: "artifact_created"
+            event_data:
+              artifact_id: "789a0123-4567-89ab-cdef-0123456789ab"
+              artifact_type: "file_modification"
+              file_path: "src/test/java/HelloWorldTest.java"
+            message: "Created artifact: HelloWorldTest.java"
+            timestamp: "2026-01-13T14:30:15.456789Z"
+
+          - id: "c3d4e5f6-a7b8-9012-cdef-123456789012"
+            session_id: "123e4567-e89b-12d3-a456-426614174000"
+            step_id: "456e7890-e89b-12d3-a456-426614174001"
+            event_type: "step_status_changed"
+            event_data:
+              step_code: "generate_tests"
+              old_status: "in_progress"
+              new_status: "completed"
+            message: "Step generate_tests: in_progress → completed"
+            timestamp: "2026-01-13T14:30:14.789012Z"
+
+        pagination:
+          page: 1
+          per_page: 20
+          total: 45
+          total_pages: 3
+          has_next: true
+          has_prev: false
+
+    EmptyEventListResponse:
+      summary: Empty response when no events match filters
+      description: Returned when session has no events or filters exclude all events
+      value:
+        items: []
+        pagination:
+          page: 1
+          per_page: 20
+          total: 0
+          total_pages: 0
+          has_next: false
+          has_prev: false
+
+    FilteredEventListResponse:
+      summary: Response filtered by event type (errors only)
+      description: Shows only error events when event_type=workflow_error
+      value:
+        items:
+          - id: "d4e5f6a7-b8c9-0123-def0-123456789abc"
+            session_id: "123e4567-e89b-12d3-a456-426614174000"
+            step_id: null
+            event_type: "workflow_error"
+            event_data:
+              error: "LLM API rate limit exceeded"
+              error_type: "LLMRateLimitError"
+              recoverable: true
+              retry_after: 60
+            message: "LLM API rate limit exceeded. Retrying in 60 seconds."
+            timestamp: "2026-01-13T14:25:30.123456Z"
+
+        pagination:
+          page: 1
+          per_page: 20
+          total: 1
+          total_pages: 1
+          has_next: false
+          has_prev: false
+
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: |
+        API key authentication. Include your API key in the X-API-Key header.
+
+        Example: `X-API-Key: your-api-key-here`
+
+security:
+  - ApiKeyAuth: []
+
+tags:
+  - name: Sessions
+    description: Session management operations
+  - name: Events
+    description: Event retrieval and monitoring operations

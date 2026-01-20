@@ -17,6 +17,100 @@ from src.lib.logging import get_logger
 logger = get_logger(__name__)
 
 
+# Workflow step definitions for each session type
+# Each step has: code, name, description, auto_advance
+# auto_advance: If True, automatically execute the next step when this one completes
+#   - Analysis steps (read-only, no modifications) -> auto_advance=True
+#   - Action steps (generate/modify files) -> auto_advance=False (user review needed)
+#   - Validation steps (final) -> auto_advance=False (no next step or needs review)
+WORKFLOW_STEPS: dict[str, list[dict[str, str | bool]]] = {
+    "maven_maintenance": [
+        {
+            "code": "analyze_dependencies",
+            "name": "Analyze Dependencies",
+            "description": "Analyze project dependencies for outdated packages",
+            "auto_advance": True,  # Analysis only, no modifications
+        },
+        {
+            "code": "identify_vulnerabilities",
+            "name": "Identify Vulnerabilities",
+            "description": "Scan for security vulnerabilities in dependencies",
+            "auto_advance": True,  # Analysis only, no modifications
+        },
+        {
+            "code": "plan_updates",
+            "name": "Plan Updates",
+            "description": "Create update plan with prioritized changes",
+            "auto_advance": False,  # User should review the plan before applying
+        },
+        {
+            "code": "apply_updates",
+            "name": "Apply Updates",
+            "description": "Apply dependency updates to project",
+            "auto_advance": False,  # Modifies files, user should review
+        },
+        {
+            "code": "validate_changes",
+            "name": "Validate Changes",
+            "description": "Run tests to validate changes",
+            "auto_advance": False,  # Final step
+        },
+    ],
+    "test_generation": [
+        {
+            "code": "analyze_project",
+            "name": "Analyze Project",
+            "description": "Analyze project structure and existing tests",
+            "auto_advance": True,  # Analysis only, no modifications
+        },
+        {
+            "code": "identify_coverage_gaps",
+            "name": "Identify Coverage Gaps",
+            "description": "Identify areas lacking test coverage",
+            "auto_advance": True,  # Analysis only, no modifications
+        },
+        {
+            "code": "generate_tests",
+            "name": "Generate Tests",
+            "description": "Generate test cases for identified gaps",
+            "auto_advance": False,  # Generates files, user should review
+        },
+        {
+            "code": "validate_tests",
+            "name": "Validate Tests",
+            "description": "Run and validate generated tests",
+            "auto_advance": False,  # Final step
+        },
+    ],
+    "docker_deployment": [
+        {
+            "code": "analyze_dockerfile",
+            "name": "Analyze Dockerfile",
+            "description": "Analyze existing Dockerfile and configuration",
+            "auto_advance": True,  # Analysis only, no modifications
+        },
+        {
+            "code": "optimize_image",
+            "name": "Optimize Image",
+            "description": "Optimize Docker image size and layers",
+            "auto_advance": False,  # Modifies Dockerfile, user should review
+        },
+        {
+            "code": "generate_compose",
+            "name": "Generate Compose",
+            "description": "Generate or update docker-compose configuration",
+            "auto_advance": False,  # Generates files, user should review
+        },
+        {
+            "code": "validate_deployment",
+            "name": "Validate Deployment",
+            "description": "Validate deployment configuration",
+            "auto_advance": False,  # Final step
+        },
+    ],
+}
+
+
 # Project cache for tracking active sessions per project
 _project_cache: dict[str, uuid.UUID] = {}
 
@@ -153,7 +247,55 @@ class SessionService:
             timestamp=datetime.utcnow(),
         )
 
+        # Initialize workflow steps for this session type
+        await self._initialize_workflow_steps(session.id, session_type)
+
         return session
+
+    async def _initialize_workflow_steps(
+        self,
+        session_id: uuid.UUID,
+        session_type: str,
+    ) -> list[Step]:
+        """
+        Initialize workflow steps for a session based on its type.
+
+        Args:
+            session_id: Session UUID
+            session_type: Type of session (maven_maintenance, test_generation, docker_deployment)
+
+        Returns:
+            List of created steps
+        """
+        step_definitions = WORKFLOW_STEPS.get(session_type, [])
+
+        if not step_definitions:
+            logger.warning(
+                "no_workflow_steps_defined",
+                session_id=str(session_id),
+                session_type=session_type,
+            )
+            return []
+
+        created_steps: list[Step] = []
+        for sequence, step_def in enumerate(step_definitions, start=1):
+            step = await self.create_step(
+                session_id=session_id,
+                code=step_def["code"],
+                name=step_def["name"],
+                sequence=sequence,
+                inputs={"description": step_def.get("description", "")},
+            )
+            created_steps.append(step)
+
+        logger.info(
+            "workflow_steps_initialized",
+            session_id=str(session_id),
+            session_type=session_type,
+            step_count=len(created_steps),
+        )
+
+        return created_steps
 
     async def get_session(self, session_id: uuid.UUID) -> Session | None:
         """
@@ -632,6 +774,31 @@ class SessionService:
 
     # Artifact Management
 
+    async def get_artifact(
+        self,
+        session_id: uuid.UUID,
+        artifact_id: uuid.UUID,
+    ) -> Artifact | None:
+        """
+        Get a single artifact by session ID and artifact ID.
+
+        Args:
+            session_id: Session UUID
+            artifact_id: Artifact UUID
+
+        Returns:
+            Artifact or None if not found
+        """
+        result = await self.db_session.execute(
+            select(Artifact).where(
+                and_(
+                    Artifact.session_id == session_id,
+                    Artifact.id == artifact_id,
+                )
+            )
+        )
+        return result.scalar_one_or_none()
+
     async def get_artifacts(
         self,
         session_id: uuid.UUID,
@@ -669,6 +836,7 @@ class SessionService:
         file_path: str,
         size_bytes: int = 0,
         step_id: uuid.UUID | None = None,
+        metadata: dict[str, Any] | None = None,
     ) -> Artifact:
         """
         Create an artifact for a session.
@@ -681,6 +849,7 @@ class SessionService:
             file_path: Path to the artifact file
             size_bytes: File size in bytes
             step_id: Optional step UUID
+            metadata: Optional artifact metadata (for file_modification type)
 
         Returns:
             Created artifact
@@ -693,6 +862,7 @@ class SessionService:
             content_type=content_type,
             file_path=file_path,
             size_bytes=size_bytes,
+            artifact_metadata=metadata,
         )
 
         await self.emit_event(
@@ -709,9 +879,64 @@ class SessionService:
 
         return artifact
 
+    async def create_file_modification_artifact(
+        self,
+        session_id: uuid.UUID,
+        file_path: str,
+        operation: str,
+        original_content: str | None,
+        modified_content: str | None,
+        step_id: uuid.UUID | None = None,
+        content_type: str = "text/plain",
+    ) -> Artifact:
+        """
+        Create a file_modification artifact with diff.
+
+        Args:
+            session_id: Session UUID
+            file_path: Path to the modified file (relative to project root)
+            operation: Operation type: 'create', 'modify', or 'delete'
+            original_content: Original file content (None for create)
+            modified_content: Modified file content (None for delete)
+            step_id: Optional step UUID
+            content_type: MIME type of the file
+
+        Returns:
+            Created file_modification artifact
+        """
+        from src.lib.diff import generate_unified_diff
+
+        # Generate unified diff
+        diff = generate_unified_diff(original_content, modified_content, file_path)
+
+        # Build metadata
+        metadata = {
+            "file_path": file_path,
+            "operation": operation,
+            "original_content": original_content,
+            "modified_content": modified_content,
+            "diff": diff,
+        }
+
+        # Calculate size based on content
+        content = modified_content if operation != "delete" else original_content
+        size_bytes = len((content or "").encode("utf-8"))
+
+        return await self.create_artifact(
+            session_id=session_id,
+            step_id=step_id,
+            name=file_path,
+            artifact_type="file_modification",
+            content_type=content_type,
+            file_path=file_path,
+            size_bytes=size_bytes,
+            metadata=metadata,
+        )
+
 
 __all__ = [
     "SessionService",
+    "WORKFLOW_STEPS",
     "get_active_session_for_project",
     "set_active_session_for_project",
     "invalidate_project_cache",

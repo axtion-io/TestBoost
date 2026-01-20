@@ -51,9 +51,7 @@ class TestRateLimitErrorHandling:
         from src.lib.startup_checks import _ping_llm_with_retry
 
         mock_llm = AsyncMock()
-        mock_llm.ainvoke.side_effect = Exception(
-            "429 Too Many Requests - Rate limit exceeded"
-        )
+        mock_llm.ainvoke.side_effect = Exception("429 Too Many Requests - Rate limit exceeded")
 
         with pytest.raises(LLMConnectionError):
             await _ping_llm_with_retry(mock_llm, timeout=5, max_retries=3)
@@ -65,9 +63,7 @@ class TestRateLimitErrorHandling:
         """Test that LLMRateLimitError class is available."""
 
         error = LLMRateLimitError(
-            message="Rate limit exceeded",
-            provider="anthropic",
-            retry_after=60
+            message="Rate limit exceeded", provider="anthropic", retry_after=60
         )
 
         assert error.retry_after == 60
@@ -95,9 +91,9 @@ class TestMissingToolCallsRetry:
                 {
                     "name": "maven_analyze_dependencies",
                     "args": {"project_path": "/test"},
-                    "id": "call_1"
+                    "id": "call_1",
                 }
-            ]
+            ],
         )
 
         mock_agent = AsyncMock()
@@ -107,7 +103,7 @@ class TestMissingToolCallsRetry:
             agent=mock_agent,
             input_data={"messages": [{"role": "user", "content": "Analyze"}]},
             max_retries=3,
-            expected_tools=["maven_analyze_dependencies"]
+            expected_tools=["maven_analyze_dependencies"],
         )
 
         # Should have retried
@@ -139,7 +135,7 @@ class TestMissingToolCallsRetry:
                 agent=mock_agent,
                 input_data={"messages": [{"role": "user", "content": "Analyze"}]},
                 max_retries=3,
-                expected_tools=["maven_analyze_dependencies"]
+                expected_tools=["maven_analyze_dependencies"],
             )
 
         # Should have tried 3 times
@@ -228,9 +224,9 @@ class TestMalformedJSONValidation:
                     {
                         "name": "analyze",
                         "args": "not_a_dict",  # Should be dict - will fail
-                        "id": "call_1"
+                        "id": "call_1",
                     }
-                ]
+                ],
             )
 
     def test_tool_call_validation(self):
@@ -265,9 +261,7 @@ class TestAuthenticationErrors:
         from src.lib.startup_checks import LLMConnectionError, _ping_llm_with_retry
 
         mock_llm = AsyncMock()
-        mock_llm.ainvoke.side_effect = Exception(
-            "401 Unauthorized - Invalid API key"
-        )
+        mock_llm.ainvoke.side_effect = Exception("401 Unauthorized - Invalid API key")
 
         with pytest.raises(LLMConnectionError) as exc_info:
             await _ping_llm_with_retry(mock_llm, timeout=5, max_retries=3)
@@ -282,9 +276,7 @@ class TestAuthenticationErrors:
         from src.lib.startup_checks import LLMConnectionError, _ping_llm_with_retry
 
         mock_llm = AsyncMock()
-        mock_llm.ainvoke.side_effect = Exception(
-            "403 Forbidden - Access denied"
-        )
+        mock_llm.ainvoke.side_effect = Exception("403 Forbidden - Access denied")
 
         with pytest.raises(LLMConnectionError):
             await _ping_llm_with_retry(mock_llm, timeout=5, max_retries=3)

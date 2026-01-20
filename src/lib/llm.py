@@ -5,6 +5,7 @@ from typing import Any
 from langchain_core.language_models import BaseChatModel
 
 from src.lib.config import get_settings
+from src.lib.llm_callbacks import LLMMetricsCallback
 from src.lib.logging import get_logger
 
 logger = get_logger(__name__)
@@ -135,6 +136,13 @@ def get_llm(
         )
 
 
+def _add_metrics_callback(provider: str, model: str, kwargs: dict[str, Any]) -> list[Any]:
+    """Create metrics callback and add to callbacks list."""
+    callbacks = kwargs.pop("callbacks", [])
+    callbacks.append(LLMMetricsCallback(provider=provider, model=model))
+    return callbacks
+
+
 def _create_anthropic_llm(
     api_key: str,
     model: str,
@@ -147,6 +155,7 @@ def _create_anthropic_llm(
     from langchain_anthropic import ChatAnthropic
 
     logger.debug("creating_anthropic_llm", model=model)
+    callbacks = _add_metrics_callback("anthropic", model, kwargs)
 
     return ChatAnthropic(  # type: ignore[call-arg]
         api_key=api_key,
@@ -154,6 +163,7 @@ def _create_anthropic_llm(
         temperature=temperature,
         max_tokens=max_tokens or 8192,
         timeout=float(timeout),
+        callbacks=callbacks,
         **kwargs,
     )
 
@@ -169,11 +179,12 @@ def _create_google_llm(
     """Create Google Gemini LLM instance."""
     from langchain_google_genai import ChatGoogleGenerativeAI
 
-    logger.debug("creating_google_llm", model=model)
-
     # Map model names if needed
     if not model.startswith("gemini"):
         model = "gemini-2.0-flash"
+
+    logger.debug("creating_google_llm", model=model)
+    callbacks = _add_metrics_callback("google-genai", model, kwargs)
 
     return ChatGoogleGenerativeAI(
         google_api_key=api_key,
@@ -181,6 +192,7 @@ def _create_google_llm(
         temperature=temperature,
         max_output_tokens=max_tokens,
         timeout=timeout,
+        callbacks=callbacks,
         **kwargs,
     )
 
@@ -197,6 +209,7 @@ def _create_openai_llm(
     from langchain_openai import ChatOpenAI
 
     logger.debug("creating_openai_llm", model=model)
+    callbacks = _add_metrics_callback("openai", model, kwargs)
 
     return ChatOpenAI(  # type: ignore[call-arg]
         api_key=api_key,
@@ -204,6 +217,7 @@ def _create_openai_llm(
         temperature=temperature,
         max_tokens=max_tokens,
         timeout=float(timeout),
+        callbacks=callbacks,
         **kwargs,
     )
 

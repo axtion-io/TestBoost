@@ -2,7 +2,7 @@ name: CI - TestBoost Tests
 
 on:
   push:
-    branches: [ main, develop, '001-testboost-core', '002-deepagents-integration', '003-impact-analysis-testing' ]
+    branches: [ main, develop, '001-*', '002-*', '003-*', '004-*' ]
   pull_request:
   workflow_dispatch:
 
@@ -40,30 +40,30 @@ jobs:
 
     - name: Run Integration Tests (no LLM required)
       run: |
-        poetry run pytest tests/integration/test_llm_connectivity.py -v --tb=short -k "not test_llm_connection_success"
-        poetry run pytest tests/integration/test_agent_config_loading.py -v --tb=short
-        poetry run pytest tests/integration/test_agent_config_validation.py -v --tb=short
-        poetry run pytest tests/integration/test_provider_switching.py -v --tb=short
+        poetry run pytest tests/integration/test_llm_connectivity.py -v --tb=short --no-cov -k "not test_llm_connection_success"
+        poetry run pytest tests/integration/test_agent_config_loading.py -v --tb=short --no-cov
+        poetry run pytest tests/integration/test_agent_config_validation.py -v --tb=short --no-cov
+        poetry run pytest tests/integration/test_provider_switching.py -v --tb=short --no-cov
       continue-on-error: false
 
     - name: Run Regression Tests (T097a)
       run: |
-        poetry run pytest tests/regression/test_old_workflows.py -v --tb=short
+        poetry run pytest tests/regression/test_old_workflows.py -v --tb=short --no-cov
       continue-on-error: false
 
     - name: Run Security Audit Tests (T101a)
       run: |
-        poetry run pytest tests/security/test_api_key_audit.py -v --tb=short
+        poetry run pytest tests/security/test_api_key_audit.py -v --tb=short --no-cov
       continue-on-error: false
 
     - name: Run Documentation Tests (T103b-e)
       run: |
-        poetry run pytest tests/integration/test_documentation.py -v --tb=short
+        poetry run pytest tests/integration/test_documentation.py -v --tb=short --no-cov
       continue-on-error: false
 
     - name: Run Edge Case Tests (T105b-f)
       run: |
-        poetry run pytest tests/e2e/test_edge_cases.py -v --tb=short
+        poetry run pytest tests/e2e/test_edge_cases.py -v --tb=short --no-cov
       continue-on-error: false
 
   lint:

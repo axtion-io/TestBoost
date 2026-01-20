@@ -5,8 +5,7 @@ Default chunk size is 500 lines.
 """
 
 import re
-from dataclasses import dataclass
-from typing import Callable
+from collections.abc import Callable
 
 from src.models.impact import DiffChunk
 

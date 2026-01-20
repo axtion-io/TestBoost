@@ -12,8 +12,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from langgraph.prebuilt import create_react_agent
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
+from langgraph.prebuilt import create_react_agent
 
 from src.agents.loader import AgentLoader
 from src.lib.config import get_settings
@@ -30,17 +30,29 @@ settings = get_settings()
 
 class MavenAgentError(Exception):
     """Base exception for Maven agent workflow errors."""
-    pass
+
+    def __init__(self, message: str = "Maven agent workflow failed"):
+        super().__init__(message)
 
 
 class ToolCallError(MavenAgentError):
     """Raised when agent fails to call expected tools."""
-    pass
+
+    def __init__(self, message: str = "Agent failed to call expected tools", expected_tools: list[str] | None = None):
+        if expected_tools:
+            message = f"{message}. Expected tools: {', '.join(expected_tools)}"
+        super().__init__(message)
+        self.expected_tools = expected_tools
 
 
 class AgentTimeoutError(MavenAgentError):
     """Raised when agent invocation times out."""
-    pass
+
+    def __init__(self, message: str = "Agent invocation timed out", timeout_seconds: float | None = None):
+        if timeout_seconds:
+            message = f"{message} after {timeout_seconds}s"
+        super().__init__(message)
+        self.timeout_seconds = timeout_seconds
 
 
 async def _invoke_agent_with_retry(

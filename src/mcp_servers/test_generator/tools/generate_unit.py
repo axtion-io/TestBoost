@@ -3,12 +3,22 @@ Generate adaptive unit tests tool.
 
 Generates unit tests adapted to project conventions and class type,
 using LLM to create intelligent test cases.
+
+Two modes:
+- LLM mode (default): Uses LLM to generate intelligent, context-aware tests
+- Template mode: Uses templates for CI environments without LLM access
 """
 
 import json
 import re
 from pathlib import Path
 from typing import Any
+
+from src.lib.config import get_settings
+from src.lib.llm import get_llm
+from src.lib.logging import get_logger
+
+logger = get_logger(__name__)
 
 
 async def generate_adaptive_tests(
@@ -18,6 +28,7 @@ async def generate_adaptive_tests(
     conventions: dict[str, Any] | None = None,
     coverage_target: float = 80,
     test_requirements: list[dict[str, Any]] | None = None,
+    use_llm: bool = True,
 ) -> str:
     """
     Generate unit tests adapted to project conventions.
@@ -29,6 +40,8 @@ async def generate_adaptive_tests(
         conventions: Test conventions to follow
         coverage_target: Target code coverage percentage
         test_requirements: Optional list of specific test requirements from impact analysis
+        use_llm: If True (default), use LLM for intelligent test generation.
+                 If False, use template-based generation (for CI without LLM).
 
     Returns:
         JSON string with generated test code and metadata
@@ -71,10 +84,16 @@ async def generate_adaptive_tests(
         "test_requirements": test_requirements or [],
         "imports": class_info.get("imports", []),
         "is_record": class_info.get("is_record", False),
+        "source_code": source_code,
     }
 
-    # Generate test code based on class type and requirements
-    test_code = _generate_test_code(context)
+    # Generate test code - LLM mode or template mode
+    if use_llm:
+        logger.info("generating_tests_with_llm", class_name=class_info["class_name"])
+        test_code = await _generate_test_code_with_llm(context, source_code)
+    else:
+        logger.info("generating_tests_with_templates", class_name=class_info["class_name"])
+        test_code = _generate_test_code(context)
 
     results = {
         "success": True,
@@ -89,6 +108,108 @@ async def generate_adaptive_tests(
     }
 
     return json.dumps(results, indent=2)
+
+
+async def _generate_test_code_with_llm(context: dict[str, Any], source_code: str) -> str:
+    """
+    Generate test code using LLM for intelligent, context-aware tests.
+
+    Args:
+        context: Test generation context with class info, methods, dependencies
+        source_code: The original Java source code
+
+    Returns:
+        Generated test code as string
+    """
+    get_settings()
+    llm = get_llm()
+
+    class_name = context["class_name"]
+    package = context["package"]
+    class_type = context["class_type"]
+    methods = context["methods"]
+    dependencies = context["dependencies"]
+    test_requirements = context.get("test_requirements", [])
+
+    # Build the prompt for test generation
+    prompt = f"""You are an expert Java test engineer. Generate comprehensive JUnit 5 unit tests for the following Java class.
+
+## Source Code to Test:
+```java
+{source_code}
+```
+
+## Class Analysis:
+- Class Name: {class_name}
+- Package: {package}
+- Type: {class_type}
+- Dependencies to mock: {json.dumps(dependencies, indent=2)}
+- Public methods: {json.dumps([m["name"] for m in methods], indent=2)}
+
+## Test Requirements:
+{json.dumps(test_requirements, indent=2) if test_requirements else "Generate standard coverage tests for all public methods."}
+
+## Instructions:
+1. Generate a complete, compilable JUnit 5 test class
+2. Use Mockito for mocking dependencies (constructor injection pattern)
+3. Include @BeforeEach setup method
+4. For each public method, generate:
+   - Happy path test (valid inputs, expected output)
+   - Edge case tests (null handling, boundary values)
+   - Error scenario tests where applicable
+5. Use @DisplayName for readable test descriptions
+6. Use meaningful test data, not generic placeholders
+7. For reactive types (Mono/Flux), use StepVerifier
+8. Follow AAA pattern: Arrange, Act, Assert
+9. Include proper imports at the top
+
+## Output Format:
+Return ONLY the complete Java test class code, starting with `package` statement.
+Do not include any explanation or markdown - just the raw Java code.
+"""
+
+    try:
+        # Call LLM to generate tests
+        response = await llm.ainvoke(prompt)
+
+        # Extract the test code from response
+        raw_content = response.content if hasattr(response, 'content') else str(response)
+        # Ensure test_code is a string (LangChain content can be str or list)
+        test_code: str = str(raw_content) if not isinstance(raw_content, str) else raw_content
+
+        # Clean up any markdown code blocks if present
+        if "```java" in test_code:
+            test_code = test_code.split("```java")[1].split("```")[0].strip()
+        elif "```" in test_code:
+            test_code = test_code.split("```")[1].split("```")[0].strip()
+
+        # Validate that we got actual test code
+        if "@Test" not in test_code or "class" not in test_code:
+            logger.warning(
+                "llm_generated_invalid_test",
+                class_name=class_name,
+                response_preview=test_code[:200],
+            )
+            # Fall back to template generation
+            logger.info("falling_back_to_templates", reason="LLM output validation failed")
+            return _generate_test_code(context)
+
+        logger.info(
+            "llm_test_generation_success",
+            class_name=class_name,
+            test_count=test_code.count("@Test"),
+        )
+        return test_code
+
+    except Exception as e:
+        logger.error(
+            "llm_test_generation_failed",
+            class_name=class_name,
+            error=str(e),
+        )
+        # Fall back to template generation
+        logger.info("falling_back_to_templates", reason=str(e))
+        return _generate_test_code(context)
 
 
 def _analyze_class(source_code: str) -> dict[str, Any]:
@@ -301,7 +422,8 @@ def _get_test_file_path(project_dir: Path, source_path: Path) -> Path:
     if filename.endswith(".java"):
         parts[-1] = filename.replace(".java", "Test.java")
 
-    return project_dir / Path(*parts)
+    # Return relative path from project root (not absolute path)
+    return Path(*parts)
 
 
 def _generate_test_code(context: dict[str, Any]) -> str:
@@ -487,11 +609,12 @@ def _generate_requirement_test(
                 matched_method = m
                 break
 
-    # Check if this method returns reactive types
-    is_reactive_method = matched_method and (
-        "Mono" in matched_method.get("return_type", "") or
-        "Flux" in matched_method.get("return_type", "")
+    # Check if this method returns reactive types (for StepVerifier assertions)
+    is_reactive_method = matched_method is not None and (
+        "Mono" in (matched_method.get("return_type") or "") or
+        "Flux" in (matched_method.get("return_type") or "")
     )
+    reactive_return_type = (matched_method.get("return_type") or "") if is_reactive_method and matched_method else ""
 
     # Generate test based on scenario type
     tests.extend([
@@ -590,13 +713,26 @@ def _generate_requirement_test(
 
             if matched_method.get("is_void"):
                 tests.append(f"        {instance_name}.{method_call};")
+            elif is_reactive_method:
+                # Use StepVerifier for reactive types (Mono/Flux)
+                tests.append(f"        {reactive_return_type} result = {instance_name}.{method_call};")
             else:
                 tests.append(f"        var result = {instance_name}.{method_call};")
 
             tests.append("")
             tests.append("        // Assert")
             if not matched_method.get("is_void"):
-                if uses_assertj:
+                if is_reactive_method:
+                    # Use StepVerifier for reactive assertions
+                    if "Mono" in reactive_return_type:
+                        tests.append("        StepVerifier.create(result)")
+                        tests.append("            .expectNextCount(1)")
+                        tests.append("            .verifyComplete();")
+                    else:  # Flux
+                        tests.append("        StepVerifier.create(result)")
+                        tests.append("            .thenConsumeWhile(item -> true)")
+                        tests.append("            .verifyComplete();")
+                elif uses_assertj:
                     tests.append("        assertThat(result).isNotNull();")
                 else:
                     tests.append("        assertNotNull(result);")
@@ -792,7 +928,7 @@ def _generate_mock_stubs(
     This adds Mockito.when(...).thenReturn(...) stubs for methods that likely
     call repository/service dependencies.
     """
-    stubs = []
+    stubs: list[str] = []
     method_lower = method_name.lower()
 
     # Find repository and mapper dependency names
@@ -841,7 +977,7 @@ def _generate_mock_stubs(
         actual_entity = entity_type
         if entity_type == "void" or not entity_type or _is_primitive_type(entity_type):
             # Try to infer entity from repo type (e.g., OwnerRepository -> Owner)
-            repo_type = next((d.get("type", "") for d in dependencies if d.get("name") == repo_name), "")
+            repo_type = next((d.get("type", "") for d in (dependencies or []) if d.get("name") == repo_name), "")
             if "Repository" in repo_type:
                 actual_entity = repo_type.replace("Repository", "")
 
@@ -1025,60 +1161,74 @@ def _generate_invalid_data_from_description(
     }
 
 
+# Type mappings for test value generation
+_TYPE_VALUES: dict[str, str] = {
+    "string": '"test-value"',
+    "java.lang.string": '"test-value"',
+    "long": "1L",
+    "java.lang.long": "1L",
+    "double": "3.14",
+    "java.lang.double": "3.14",
+    "float": "1.5f",
+    "java.lang.float": "1.5f",
+    "boolean": "true",
+    "java.lang.boolean": "true",
+    "bigdecimal": 'new BigDecimal("100.00")',
+    "localdate": "LocalDate.now()",
+    "localdatetime": "LocalDateTime.now()",
+}
+
+
 def _generate_test_value(param_type: str, param_name: str) -> str:
     """Generate appropriate test values based on parameter type."""
     type_lower = param_type.lower()
+    name_lower = param_name.lower()
 
-    # Handle common types
+    # String values with context-aware defaults
     if type_lower in ("string", "java.lang.string"):
-        if "email" in param_name.lower():
+        if "email" in name_lower:
             return '"test@example.com"'
-        elif "name" in param_name.lower():
+        if "name" in name_lower:
             return '"Test Name"'
-        elif "id" in param_name.lower():
+        if "id" in name_lower:
             return '"test-id-123"'
-        else:
-            return '"test-value"'
-    elif type_lower in ("int", "integer", "java.lang.integer"):
-        if "id" in param_name.lower():
-            return "1"
-        elif "count" in param_name.lower() or "size" in param_name.lower():
-            return "10"
-        else:
-            return "42"
-    elif type_lower in ("long", "java.lang.long"):
-        return "1L"
-    elif type_lower in ("double", "java.lang.double"):
-        return "3.14"
-    elif type_lower in ("float", "java.lang.float"):
-        return "1.5f"
-    elif type_lower in ("boolean", "java.lang.boolean"):
-        return "true"
-    elif type_lower == "bigdecimal" or "decimal" in type_lower:
-        return 'new BigDecimal("100.00")'
-    elif type_lower == "localdate" or "date" in type_lower:
-        return "LocalDate.now()"
-    elif type_lower == "localdatetime":
-        return "LocalDateTime.now()"
-    elif "list" in type_lower:
-        return "List.of()"
-    elif "set" in type_lower:
-        return "Set.of()"
-    elif "map" in type_lower:
-        return "Map.of()"
-    elif "optional" in type_lower:
-        return "Optional.empty()"
-    else:
-        # For custom objects, check if it's a common DTO/Request pattern
-        simple_type = param_type.split("<")[0].strip()
+        return '"test-value"'
 
-        # FIX: Handle common record/DTO patterns that need all-args constructors
-        # These are typically records in Spring Boot projects
-        if simple_type.endswith("Request") or simple_type.endswith("DTO"):
-            # Generate with typical string fields for request objects
-            return f'new {simple_type}("firstName", "lastName", "address", "city", "1234567890")'
-        elif simple_type.endswith("Command") or simple_type.endswith("Event"):
-            return f'new {simple_type}("test-id", "test-data")'
-        else:
-            # Default: try no-args constructor
-            return f"new {simple_type}()"
+    # Integer values with context-aware defaults
+    if type_lower in ("int", "integer", "java.lang.integer"):
+        if "id" in name_lower:
+            return "1"
+        if "count" in name_lower or "size" in name_lower:
+            return "10"
+        return "42"
+
+    # Check static type mappings
+    if type_lower in _TYPE_VALUES:
+        return _TYPE_VALUES[type_lower]
+
+    # Date types with partial matching
+    if "decimal" in type_lower:
+        return 'new BigDecimal("100.00")'
+    if "date" in type_lower:
+        return "LocalDate.now()"
+
+    # Collection types
+    if "list" in type_lower:
+        return "List.of()"
+    if "set" in type_lower:
+        return "Set.of()"
+    if "map" in type_lower:
+        return "Map.of()"
+    if "optional" in type_lower:
+        return "Optional.empty()"
+
+    # Custom objects - check for DTO/Request patterns
+    simple_type = param_type.split("<")[0].strip()
+
+    if simple_type.endswith("Request") or simple_type.endswith("DTO"):
+        return f'new {simple_type}("firstName", "lastName", "address", "city", "1234567890")'
+    if simple_type.endswith("Command") or simple_type.endswith("Event"):
+        return f'new {simple_type}("test-id", "test-data")'
+
+    # Default: try no-args constructor
+    return f"new {simple_type}()"

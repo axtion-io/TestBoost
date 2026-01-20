@@ -16,6 +16,8 @@ settings = get_settings()
 # Paths that bypass authentication
 BYPASS_PATHS = {
     "/health",
+    "/metrics",
+    "/metrics/json",
     "/docs",
     "/redoc",
     "/openapi.json",

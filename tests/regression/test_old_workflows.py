@@ -195,10 +195,7 @@ class TestAPIInterfaceRegression:
 
         # Verify response can be constructed with expected fields
         response = MaintenanceResponse(
-            success=True,
-            session_id="test-session",
-            status="completed",
-            message="Analysis complete"
+            success=True, session_id="test-session", status="completed", message="Analysis complete"
         )
 
         assert response.session_id == "test-session"
@@ -210,9 +207,7 @@ class TestAPIInterfaceRegression:
         from src.api.routers.testboost import AnalyzeRequest
 
         request = AnalyzeRequest(
-            project_path="/test/project",
-            include_snapshots=True,
-            check_vulnerabilities=True
+            project_path="/test/project", include_snapshots=True, check_vulnerabilities=True
         )
 
         assert request.project_path == "/test/project"
@@ -223,10 +218,7 @@ class TestAPIInterfaceRegression:
         """Test that TestGenerateRequest model structure is backward compatible."""
         from src.api.routers.testboost import TestGenerateRequest
 
-        request = TestGenerateRequest(
-            project_path="/test/project",
-            target_mutation_score=85.0
-        )
+        request = TestGenerateRequest(project_path="/test/project", target_mutation_score=85.0)
 
         assert request.project_path == "/test/project"
         assert request.target_mutation_score == 85.0

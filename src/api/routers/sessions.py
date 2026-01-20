@@ -2,25 +2,77 @@
 
 import uuid
 from datetime import datetime
-from typing import Any
+from typing import Any, NoReturn
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from pydantic import BaseModel, Field
+from sqlalchemy import and_, desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.api.models.events import EventListResponse, EventResponse
 from src.api.models.pagination import (
     PaginationMeta,
     create_pagination_meta,
 )
 from src.core.session import SessionService
 from src.db import get_db
+from src.db.models.event import Event
 from src.db.models.session import SessionMode, SessionStatus, SessionType
 from src.db.models.step import StepStatus
+from src.lib.diff import is_binary_content
 from src.lib.logging import get_logger
 
 logger = get_logger(__name__)
 
 router = APIRouter(prefix="/api/v2/sessions", tags=["sessions"])
+
+
+# Helper functions
+
+
+def log_and_raise_http_error(
+    status_code: int,
+    detail: str,
+    *,
+    event: str,
+    request_id: str = "unknown",
+    **context: Any,
+) -> NoReturn:
+    """
+    Log an error event and raise an HTTPException.
+
+    This helper ensures all HTTP errors are logged with context before being raised,
+    making debugging and monitoring much easier.
+
+    Args:
+        status_code: HTTP status code
+        detail: Human-readable error message
+        event: Event name for structured logging
+        request_id: Request ID for tracing
+        **context: Additional context fields for logging
+
+    Raises:
+        HTTPException: Always raises after logging
+    """
+    # Determine log level based on status code
+    if status_code >= 500:
+        log_level = logger.error
+    elif status_code == 404:
+        log_level = logger.warning
+    else:
+        log_level = logger.info
+
+    # Log with context
+    log_level(
+        event,
+        request_id=request_id,
+        status_code=status_code,
+        detail=detail,
+        **context,
+    )
+
+    # Raise exception
+    raise HTTPException(status_code=status_code, detail=detail)
 
 
 # Request/Response Models
@@ -112,6 +164,31 @@ class StepExecuteRequest(BaseModel):
         default_factory=dict,
         description="Input data for step execution",
     )
+    run_workflow: bool = Field(
+        default=True,
+        description="If True, execute the actual workflow step. If False, just mark as in_progress.",
+    )
+    run_in_background: bool = Field(
+        default=True,
+        description="If True and run_workflow=True, run workflow in background task.",
+    )
+
+
+class StepUpdateRequest(BaseModel):
+    """Request model for updating a step."""
+
+    status: str = Field(
+        ...,
+        description="New status (completed, failed, skipped)",
+    )
+    outputs: dict[str, Any] | None = Field(
+        None,
+        description="Step output data (for completed status)",
+    )
+    error_message: str | None = Field(
+        None,
+        description="Error message (for failed status)",
+    )
 
 
 class StepExecuteResponse(BaseModel):
@@ -122,6 +199,16 @@ class StepExecuteResponse(BaseModel):
     name: str
     status: str
     message: str
+
+
+class FileModificationMetadata(BaseModel):
+    """Metadata for file_modification artifact type."""
+
+    file_path: str = Field(..., description="Path to the modified file (relative to project root)")
+    operation: str = Field(..., description="Operation type: create, modify, or delete")
+    original_content: str | None = Field(None, description="Original file content (null for create)")
+    modified_content: str | None = Field(None, description="Modified file content (null for delete)")
+    diff: str = Field(..., description="Unified diff format showing changes")
 
 
 class ArtifactResponse(BaseModel):
@@ -136,8 +223,14 @@ class ArtifactResponse(BaseModel):
     file_path: str
     size_bytes: int
     created_at: datetime
+    # Use validation_alias to map from artifact_metadata (SQLAlchemy) to metadata (API)
+    metadata: dict[str, Any] | None = Field(
+        None,
+        validation_alias="artifact_metadata",
+        description="Type-specific metadata (present for file_modification type)",
+    )
 
-    model_config = {"from_attributes": True}
+    model_config = {"from_attributes": True, "populate_by_name": True}
 
 
 class ArtifactListResponse(BaseModel):
@@ -153,6 +246,7 @@ class ArtifactListResponse(BaseModel):
 @router.post("", response_model=SessionResponse, status_code=201)
 async def create_session(
     request: SessionCreateRequest,
+    http_request: Request,
     db: AsyncSession = Depends(get_db),
 ) -> SessionResponse:
     """
@@ -160,24 +254,35 @@ async def create_session(
 
     Args:
         request: Session creation parameters
+        http_request: FastAPI request (for request_id)
 
     Returns:
         Created session
     """
+    request_id = getattr(http_request.state, "request_id", "unknown")
+
     # Validate session type
     valid_types = [t.value for t in SessionType]
     if request.session_type not in valid_types:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Invalid session_type. Must be one of: {', '.join(valid_types)}",
+        log_and_raise_http_error(
+            400,
+            f"Invalid session_type. Must be one of: {', '.join(valid_types)}",
+            event="invalid_session_type",
+            request_id=request_id,
+            provided_type=request.session_type,
+            valid_types=valid_types,
         )
 
     # Validate mode
     valid_modes = [m.value for m in SessionMode]
     if request.mode not in valid_modes:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Invalid mode. Must be one of: {', '.join(valid_modes)}",
+        log_and_raise_http_error(
+            400,
+            f"Invalid mode. Must be one of: {', '.join(valid_modes)}",
+            event="invalid_session_mode",
+            request_id=request_id,
+            provided_mode=request.mode,
+            valid_modes=valid_modes,
         )
 
     service = SessionService(db)
@@ -193,7 +298,41 @@ async def create_session(
         "session_created_via_api",
         session_id=str(session.id),
         session_type=request.session_type,
+        mode=request.mode,
     )
+
+    # Auto-start workflow for autonomous mode
+    if request.mode == "autonomous":
+        from src.core.step_executor import StepExecutor
+
+        # Get first step (sequence=1)
+        steps = await service.get_steps(session.id)
+        first_step = next((s for s in steps if s.sequence == 1), None)
+
+        if first_step and first_step.status == "pending":
+            executor = StepExecutor(db)
+            try:
+                # Start first step in background
+                await executor.execute_step(
+                    session_id=session.id,
+                    step_code=first_step.code,
+                    run_in_background=True,
+                )
+                logger.info(
+                    "workflow_auto_started",
+                    session_id=str(session.id),
+                    first_step_code=first_step.code,
+                    mode=request.mode,
+                )
+            except Exception as e:
+                logger.error(
+                    "workflow_auto_start_failed",
+                    session_id=str(session.id),
+                    first_step_code=first_step.code,
+                    error=str(e),
+                )
+                # Don't fail the session creation, but log the error
+                # The user can manually start the workflow via the UI
 
     return SessionResponse.model_validate(session)
 
@@ -455,7 +594,11 @@ async def execute_session_step(
     db: AsyncSession = Depends(get_db),
 ) -> StepExecuteResponse:
     """
-    Execute a step (mark as in progress).
+    Execute a step.
+
+    By default (run_workflow=False), just marks the step as in_progress.
+    With run_workflow=True, actually executes the workflow step and updates
+    status to completed/failed when done.
 
     Args:
         session_id: Session UUID
@@ -482,7 +625,7 @@ async def execute_session_step(
             detail=f"Cannot execute step: session status is {session.status}",
         )
 
-    # Get and execute step
+    # Get step
     step = await service.get_step_by_code(session_id, step_code)
 
     if not step:
@@ -502,28 +645,173 @@ async def execute_session_step(
     if request.inputs:
         await service.step_repo.update(step.id, inputs=request.inputs)
 
-    # Mark step as in progress
-    updated_step = await service.execute_step(session_id, step_code)
+    if request.run_workflow:
+        # Execute actual workflow step using StepExecutor
+        from src.core.step_executor import StepExecutionError, StepExecutor
+
+        executor = StepExecutor(db)
+
+        try:
+            await executor.execute_step(
+                session_id=session_id,
+                step_code=step_code,
+                inputs=request.inputs,
+                run_in_background=request.run_in_background,
+            )
+
+            # Refresh step to get updated status
+            updated_step = await service.get_step_by_code(session_id, step_code)
+
+            if not updated_step:
+                raise HTTPException(status_code=500, detail="Step disappeared during execution")
+
+            message = (
+                f"Step '{updated_step.name}' started in background"
+                if request.run_in_background
+                else f"Step '{updated_step.name}' completed"
+            )
+
+            logger.info(
+                "step_workflow_executed_via_api",
+                session_id=str(session_id),
+                step_code=step_code,
+                run_in_background=request.run_in_background,
+                status=updated_step.status,
+            )
+
+            return StepExecuteResponse(
+                id=updated_step.id,
+                code=updated_step.code,
+                name=updated_step.name,
+                status=updated_step.status,
+                message=message,
+            )
+
+        except StepExecutionError as e:
+            logger.error(
+                "step_workflow_execution_failed",
+                session_id=str(session_id),
+                step_code=step_code,
+                error=str(e),
+            )
+            raise HTTPException(
+                status_code=500,
+                detail=f"Step execution failed: {e}",
+            ) from e
+    else:
+        # Just mark step as in progress (legacy behavior)
+        updated_step = await service.execute_step(session_id, step_code)
+
+        if not updated_step:
+            raise HTTPException(
+                status_code=500,
+                detail="Failed to execute step",
+            )
+
+        logger.info(
+            "step_marked_in_progress_via_api",
+            session_id=str(session_id),
+            step_code=step_code,
+        )
+
+        return StepExecuteResponse(
+            id=updated_step.id,
+            code=updated_step.code,
+            name=updated_step.name,
+            status=updated_step.status,
+            message=f"Step '{updated_step.name}' is now in progress",
+        )
+
+
+@router.patch(
+    "/{session_id}/steps/{step_code}",
+    response_model=StepResponse,
+)
+async def update_session_step(
+    session_id: uuid.UUID,
+    step_code: str,
+    request: StepUpdateRequest,
+    db: AsyncSession = Depends(get_db),
+) -> StepResponse:
+    """
+    Update a step's status (complete, fail, or skip).
+
+    Args:
+        session_id: Session UUID
+        step_code: Step code identifier
+        request: Update parameters
+
+    Returns:
+        Updated step details
+    """
+    service = SessionService(db)
+
+    # Check session exists
+    session = await service.get_session(session_id)
+    if not session:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Session not found: {session_id}",
+        )
+
+    # Get step
+    step = await service.get_step_by_code(session_id, step_code)
+    if not step:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Step not found: {step_code}",
+        )
+
+    # Validate status
+    valid_statuses = [s.value for s in StepStatus]
+    if request.status not in valid_statuses:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid status. Must be one of: {', '.join(valid_statuses)}",
+        )
+
+    # Only allow certain status transitions
+    allowed_transitions = {
+        StepStatus.PENDING.value: [StepStatus.IN_PROGRESS.value, StepStatus.SKIPPED.value],
+        StepStatus.IN_PROGRESS.value: [StepStatus.COMPLETED.value, StepStatus.FAILED.value, StepStatus.SKIPPED.value],
+        StepStatus.FAILED.value: [StepStatus.IN_PROGRESS.value, StepStatus.SKIPPED.value],
+    }
+
+    current_status = step.status
+    if current_status in allowed_transitions:
+        if request.status not in allowed_transitions[current_status]:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Cannot transition from {current_status} to {request.status}",
+            )
+    elif current_status in [StepStatus.COMPLETED.value, StepStatus.SKIPPED.value]:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Cannot update step: step is already {current_status}",
+        )
+
+    # Update step status
+    updated_step = await service.update_step_status(
+        step_id=step.id,
+        status=request.status,
+        outputs=request.outputs,
+        error_message=request.error_message,
+    )
 
     if not updated_step:
         raise HTTPException(
             status_code=500,
-            detail="Failed to execute step",
+            detail="Failed to update step",
         )
 
     logger.info(
-        "step_executed_via_api",
+        "step_updated_via_api",
         session_id=str(session_id),
         step_code=step_code,
+        new_status=request.status,
     )
 
-    return StepExecuteResponse(
-        id=updated_step.id,
-        code=updated_step.code,
-        name=updated_step.name,
-        status=updated_step.status,
-        message=f"Step '{updated_step.name}' is now in progress",
-    )
+    return StepResponse.model_validate(updated_step)
 
 
 @router.get("/{session_id}/artifacts", response_model=ArtifactListResponse)
@@ -558,6 +846,229 @@ async def get_session_artifacts(
         items=[ArtifactResponse.model_validate(a) for a in artifacts],
         total=len(artifacts),
     )
+
+
+# Maximum content size for download (10MB per FR-015)
+MAX_CONTENT_SIZE_BYTES = 10 * 1024 * 1024
+
+
+@router.get("/{session_id}/artifacts/{artifact_id}/content")
+async def get_artifact_content(
+    session_id: uuid.UUID,
+    artifact_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+) -> Response:
+    """
+    Download raw artifact content.
+
+    For `file_modification` artifacts:
+    - Returns `modified_content` for create/modify operations
+    - Returns `original_content` for delete operations
+
+    Args:
+        session_id: Session UUID
+        artifact_id: Artifact UUID
+
+    Returns:
+        Raw content with appropriate Content-Type header
+
+    Raises:
+        HTTPException 400: Binary content not supported
+        HTTPException 404: Session or artifact not found
+        HTTPException 413: Content exceeds 10MB limit
+    """
+    service = SessionService(db)
+
+    # Log access for audit trail (FR-017)
+    logger.info(
+        "artifact_content_accessed",
+        session_id=str(session_id),
+        artifact_id=str(artifact_id),
+    )
+
+    # Check session exists first
+    session = await service.get_session(session_id)
+    if not session:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Session not found: {session_id}",
+        )
+
+    # Get artifact (FR-013: UUID validation handled by FastAPI path params)
+    artifact = await service.get_artifact(session_id, artifact_id)
+    if not artifact:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Artifact not found: {artifact_id}",
+        )
+
+    # Check size limit (FR-015)
+    if artifact.size_bytes > MAX_CONTENT_SIZE_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail="Artifact content exceeds the 10MB download limit",
+        )
+
+    # Determine content based on artifact type
+    content: str = ""
+
+    if artifact.artifact_type == "file_modification":
+        # For file_modification, get content from artifact_metadata
+        artifact_meta = artifact.artifact_metadata or {}
+        operation = artifact_meta.get("operation", "modify")
+
+        if operation == "delete":
+            content = artifact_meta.get("original_content", "")
+        else:
+            content = artifact_meta.get("modified_content", "")
+    else:
+        # For other artifacts, the content would be read from file_path
+        # For now, return empty content as file reading is out of scope
+        content = ""
+
+    # Check for binary content (FR-004)
+    if is_binary_content(content):
+        raise HTTPException(
+            status_code=400,
+            detail="Cannot download binary artifact as text. Use appropriate client for binary files.",
+        )
+
+    return Response(
+        content=content,
+        media_type=artifact.content_type,
+    )
+
+
+# Events Endpoint
+
+
+@router.get("/{session_id}/events", response_model=EventListResponse)
+async def get_session_events(
+    session_id: uuid.UUID,
+    page: int = Query(1, ge=1, description="Page number (1-indexed)"),
+    per_page: int = Query(20, ge=1, le=100, description="Items per page"),
+    since: datetime | None = Query(
+        None,
+        description="Filter events after this timestamp (ISO 8601 format). Used for polling to get only new events.",
+        example="2026-01-13T14:30:00Z",
+    ),
+    event_type: str | None = Query(
+        None,
+        description="Filter by event type (e.g., 'workflow_error', 'step_completed'). Must match pattern: ^[a-z_]+$",
+        pattern=r"^[a-z_]+$",
+        max_length=100,
+        example="workflow_started",
+    ),
+    request: Request = None,
+    db: AsyncSession = Depends(get_db),
+) -> EventListResponse:
+    """
+    Get paginated events for a session with optional filtering and real-time polling support.
+
+    Returns events in descending chronological order (newest first) to optimize
+    real-time monitoring where users care most about recent events.
+
+    **Polling Pattern**:
+    1. Initial load: Omit `since` parameter to get recent events
+    2. Subsequent polls: Use timestamp of newest event from previous response
+    3. Poll every 2 seconds for real-time monitoring
+
+    **Filtering**:
+    - `since`: Get only events after a specific timestamp (for polling)
+    - `event_type`: Filter by event classification (e.g., "workflow_error" for errors only)
+
+    Args:
+        session_id: Session UUID
+        page: Page number (1-indexed), default 1
+        per_page: Items per page (1-100), default 20
+        since: Optional filter for events after this timestamp (for polling)
+        event_type: Optional filter by event type classification
+
+    Returns:
+        EventListResponse with paginated events and metadata
+
+    Raises:
+        HTTPException 404: Session not found
+        HTTPException 422: Invalid datetime format or event_type pattern
+    """
+    # Get request ID for logging
+    request_id = request.state.request_id if request and hasattr(request.state, "request_id") else "unknown"
+
+    # Log request start (DEBUG level to reduce log noise)
+    logger.debug(
+        "get_session_events_start",
+        request_id=request_id,
+        session_id=str(session_id),
+        page=page,
+        per_page=per_page,
+        since=str(since) if since else None,
+        event_type=event_type,
+    )
+
+    service = SessionService(db)
+
+    # T011: Validate session existence before querying events
+    session = await service.get_session(session_id)
+    if not session:
+        log_and_raise_http_error(
+            404,
+            f"Session not found: {session_id}",
+            event="session_not_found",
+            request_id=request_id,
+            session_id=str(session_id),
+        )
+
+    # T010: Build query with session_id filter
+    # T012: Order by timestamp descending (newest first)
+    # T025: Add timestamp filtering if since parameter provided
+    # T037: Add event_type filtering if event_type parameter provided
+    conditions = [Event.session_id == session_id]
+
+    if since:
+        # T025: Filter events after the specified timestamp
+        conditions.append(Event.timestamp > since)
+
+    if event_type:
+        # T037: Filter by event type classification
+        conditions.append(Event.event_type == event_type)
+
+    # T013: Count query for pagination metadata
+    count_query = select(func.count()).select_from(Event).where(and_(*conditions))
+    total_result = await db.scalar(count_query)
+    total = int(total_result) if total_result is not None else 0
+
+    # Calculate offset for pagination
+    offset = (page - 1) * per_page
+
+    # Main query with pagination
+    query = (
+        select(Event)
+        .where(and_(*conditions))
+        .order_by(desc(Event.timestamp))  # Newest first for real-time monitoring
+        .offset(offset)
+        .limit(per_page)
+    )
+
+    result = await db.execute(query)
+    events = list(result.scalars().all())
+
+    # T014: Build EventListResponse with items and pagination metadata
+    response = EventListResponse(
+        items=[EventResponse.model_validate(e) for e in events],
+        pagination=create_pagination_meta(page, per_page, total),
+    )
+
+    # T016: Log successful response (DEBUG level to reduce log noise)
+    logger.debug(
+        "get_session_events_success",
+        request_id=request_id,
+        session_id=str(session_id),
+        events_returned=len(events),
+        total_events=total,
+        page=page,
+    )
+
+    return response
 
 
 # Pause/Resume Request/Response Models

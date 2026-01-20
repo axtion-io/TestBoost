@@ -1,0 +1,326 @@
+openapi: 3.0.3
+info:
+  title: TestBoost File Modifications API
+  description: |
+    API endpoints for downloading artifact content and tracking file modifications
+    made by TestBoost workflows.
+  version: 1.0.0
+  contact:
+    name: TestBoost Team
+
+servers:
+  - url: http://localhost:8000
+    description: Local development server
+
+security:
+  - ApiKeyAuth: []
+
+paths:
+  /api/v2/sessions/{session_id}/artifacts/{artifact_id}/content:
+    get:
+      summary: Download artifact content
+      description: |
+        Returns the raw content of an artifact file.
+
+        For `file_modification` artifacts:
+        - Returns `modified_content` for create/modify operations
+        - Returns `original_content` for delete operations
+
+        **Authentication**: Requires X-API-Key header (same as other session endpoints).
+
+        **Logging**: All requests are logged with session_id, artifact_id, user, and timestamp
+        for audit trail purposes (FR-017).
+      operationId: getArtifactContent
+      tags:
+        - Artifacts
+      parameters:
+        - name: session_id
+          in: path
+          required: true
+          description: UUID of the session
+          schema:
+            type: string
+            format: uuid
+          example: "550e8400-e29b-41d4-a716-446655440000"
+        - name: artifact_id
+          in: path
+          required: true
+          description: UUID of the artifact
+          schema:
+            type: string
+            format: uuid
+          example: "660e8400-e29b-41d4-a716-446655440001"
+      responses:
+        '200':
+          description: Raw artifact content
+          headers:
+            Content-Type:
+              description: MIME type of the content
+              schema:
+                type: string
+              example: "text/x-java"
+          content:
+            text/plain:
+              schema:
+                type: string
+              example: |
+                package com.example;
+
+                public class HelloWorld {
+                    public static void main(String[] args) {
+                        System.out.println("Hello, World!");
+                    }
+                }
+            application/xml:
+              schema:
+                type: string
+              example: |
+                <?xml version="1.0" encoding="UTF-8"?>
+                <project>
+                  <modelVersion>4.0.0</modelVersion>
+                </project>
+            application/json:
+              schema:
+                type: string
+        '400':
+          description: Bad Request - Binary content or invalid parameters
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                binary_content:
+                  summary: Binary content not downloadable
+                  value:
+                    error: "BINARY_CONTENT_NOT_SUPPORTED"
+                    message: "Cannot download binary artifact as text. Use appropriate client for binary files."
+                    request_id: "req-123456"
+                invalid_uuid:
+                  summary: Invalid UUID format
+                  value:
+                    error: "VALIDATION_ERROR"
+                    message: "Invalid UUID format for artifact_id"
+                    request_id: "req-123456"
+        '401':
+          description: Unauthorized - Missing or invalid API key
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: "UNAUTHORIZED"
+                message: "Missing or invalid API key"
+                request_id: "req-123456"
+        '404':
+          description: Not Found - Session or artifact does not exist
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                session_not_found:
+                  summary: Session not found
+                  value:
+                    error: "NOT_FOUND"
+                    message: "Session with id '550e8400-e29b-41d4-a716-446655440000' not found"
+                    request_id: "req-123456"
+                artifact_not_found:
+                  summary: Artifact not found
+                  value:
+                    error: "NOT_FOUND"
+                    message: "Artifact with id '660e8400-e29b-41d4-a716-446655440001' not found"
+                    request_id: "req-123456"
+        '413':
+          description: Payload Too Large - Content exceeds 10MB limit
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: "PAYLOAD_TOO_LARGE"
+                message: "Artifact content exceeds the 10MB download limit"
+                request_id: "req-123456"
+
+  /api/v2/sessions/{session_id}/artifacts:
+    get:
+      summary: List session artifacts
+      description: |
+        Returns all artifacts for a session. Use the `type` query parameter
+        to filter by artifact type (e.g., `file_modification`).
+      operationId: listArtifacts
+      tags:
+        - Artifacts
+      parameters:
+        - name: session_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: type
+          in: query
+          required: false
+          description: Filter by artifact type
+          schema:
+            type: string
+            enum:
+              - analysis_report
+              - dependency_tree
+              - build_output
+              - test_report
+              - generated_test
+              - file_modification
+          example: "file_modification"
+      responses:
+        '200':
+          description: List of artifacts
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ArtifactResponse'
+        '404':
+          description: Session not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: API key for authentication
+
+  schemas:
+    ArtifactResponse:
+      type: object
+      required:
+        - id
+        - session_id
+        - name
+        - artifact_type
+        - content_type
+        - file_path
+        - size_bytes
+        - created_at
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Artifact unique identifier
+        session_id:
+          type: string
+          format: uuid
+          description: Parent session identifier
+        step_id:
+          type: string
+          format: uuid
+          nullable: true
+          description: Associated step identifier (if any)
+        name:
+          type: string
+          description: Artifact name
+          example: "pom.xml"
+        artifact_type:
+          type: string
+          description: Type of artifact
+          enum:
+            - analysis_report
+            - dependency_tree
+            - build_output
+            - test_report
+            - generated_test
+            - file_modification
+          example: "file_modification"
+        content_type:
+          type: string
+          description: MIME type of the content
+          example: "application/xml"
+        file_path:
+          type: string
+          description: Path to the file (relative to project root)
+          example: "pom.xml"
+        size_bytes:
+          type: integer
+          description: Size of the content in bytes
+          example: 4096
+        created_at:
+          type: string
+          format: date-time
+          description: Creation timestamp
+        metadata:
+          $ref: '#/components/schemas/FileModificationMetadata'
+          nullable: true
+          description: Type-specific metadata (present for file_modification type)
+
+    FileModificationMetadata:
+      type: object
+      description: Metadata for file_modification artifact type
+      required:
+        - file_path
+        - operation
+        - diff
+      properties:
+        file_path:
+          type: string
+          description: Path to the modified file (relative to project root)
+          example: "pom.xml"
+        operation:
+          type: string
+          description: Type of operation performed
+          enum:
+            - create
+            - modify
+            - delete
+          example: "modify"
+        original_content:
+          type: string
+          nullable: true
+          description: Original file content (null for create operations)
+          example: "<project>...</project>"
+        modified_content:
+          type: string
+          nullable: true
+          description: Modified file content (null for delete operations)
+          example: "<project>...</project>"
+        diff:
+          type: string
+          description: Unified diff format showing changes
+          example: |
+            --- a/pom.xml
+            +++ b/pom.xml
+            @@ -10,7 +10,7 @@
+            -  <version>1.0.0</version>
+            +  <version>1.1.0</version>
+
+    ErrorResponse:
+      type: object
+      required:
+        - error
+        - message
+        - request_id
+      properties:
+        error:
+          type: string
+          description: Error code
+          example: "NOT_FOUND"
+        message:
+          type: string
+          description: Human-readable error message
+          example: "Session not found"
+        request_id:
+          type: string
+          description: Request identifier for debugging
+          example: "req-123456"
+        details:
+          type: object
+          description: Additional error details
+          additionalProperties: true
+
+tags:
+  - name: Artifacts
+    description: Operations for managing and downloading session artifacts

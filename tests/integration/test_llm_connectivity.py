@@ -47,10 +47,7 @@ class TestLLMConnectionSuccess:
             await check_llm_connection(model="anthropic/claude-sonnet-4-5")
 
             # Verify get_llm called with custom model
-            mock_get_llm.assert_called_once_with(
-                model="anthropic/claude-sonnet-4-5",
-                timeout=5
-            )
+            mock_get_llm.assert_called_once_with(model="anthropic/claude-sonnet-4-5", timeout=5)
 
 
 class TestLLMConnectionFailure:
@@ -87,7 +84,9 @@ class TestLLMConnectionFailure:
         with patch("src.lib.startup_checks.get_llm") as mock_get_llm:
             mock_llm = AsyncMock()
             # Simulate rate limit error (429)
-            rate_limit_error = Exception("429 Too Many Requests: Rate limit exceeded. Retry after 60 seconds")
+            rate_limit_error = Exception(
+                "429 Too Many Requests: Rate limit exceeded. Retry after 60 seconds"
+            )
             mock_llm.ainvoke.side_effect = rate_limit_error
             mock_get_llm.return_value = mock_llm
 
@@ -146,6 +145,7 @@ class TestLLMConnectionTimeout:
 
             # First two calls timeout, third succeeds
             call_count = 0
+
             async def intermittent_timeout(*args, **kwargs):
                 nonlocal call_count
                 call_count += 1
@@ -174,6 +174,7 @@ class TestLLMConnectionRetry:
 
             # First two calls fail with network error, third succeeds
             call_count = 0
+
             async def intermittent_network_error(*args, **kwargs):
                 nonlocal call_count
                 call_count += 1
@@ -211,6 +212,7 @@ class TestLLMConnectionRetry:
 
             # Auth error should not retry
             call_count = 0
+
             async def auth_error(*args, **kwargs):
                 nonlocal call_count
                 call_count += 1

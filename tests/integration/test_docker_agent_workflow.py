@@ -1,6 +1,5 @@
 """Integration tests for Docker deployment agent workflow (US5)."""
 
-from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -48,25 +47,29 @@ class TestDockerWorkflowUsesAgent:
                         {
                             "name": "docker_create_dockerfile",
                             "args": {"project_path": str(project_dir), "java_version": "17"},
-                            "id": "call_1"
+                            "id": "call_1",
                         },
                         {
                             "name": "docker_create_compose",
-                            "args": {"project_path": str(project_dir), "dependencies": ["postgres"]},
-                            "id": "call_2"
-                        }
-                    ]
+                            "args": {
+                                "project_path": str(project_dir),
+                                "dependencies": ["postgres"],
+                            },
+                            "id": "call_2",
+                        },
+                    ],
                 )
             ]
         }
         mock_agent.ainvoke.return_value = mock_agent_response
 
-        with patch("src.workflows.docker_deployment_agent.AgentLoader") as mock_loader_class, \
-             patch("src.workflows.docker_deployment_agent.get_tools_for_servers") as mock_get_tools, \
-             patch("src.workflows.docker_deployment_agent.create_react_agent") as mock_create_agent, \
-             patch("src.workflows.docker_deployment_agent.get_llm") as mock_get_llm, \
-             patch("src.workflows.docker_deployment_agent.get_checkpointer") as mock_checkpointer:
-
+        with (
+            patch("src.workflows.docker_deployment_agent.AgentLoader") as mock_loader_class,
+            patch("src.workflows.docker_deployment_agent.get_tools_for_servers") as mock_get_tools,
+            patch("src.workflows.docker_deployment_agent.create_react_agent") as mock_create_agent,
+            patch("src.workflows.docker_deployment_agent.get_llm") as mock_get_llm,
+            patch("src.workflows.docker_deployment_agent.get_checkpointer") as mock_checkpointer,
+        ):
             # Setup mocks
             mock_loader = MagicMock()
             mock_loader.load_agent.return_value = mock_config
@@ -80,8 +83,7 @@ class TestDockerWorkflowUsesAgent:
 
             # Execute workflow
             result = await run_docker_deployment_with_agent(
-                project_path=str(project_dir),
-                session_id="test-session-docker-123"
+                project_path=str(project_dir), session_id="test-session-docker-123"
             )
 
             # Verify agent was created with correct parameters
@@ -114,12 +116,13 @@ class TestDockerWorkflowUsesAgent:
         project_dir = tmp_path / "test_project"
         project_dir.mkdir()
 
-        with patch("src.workflows.docker_deployment_agent.AgentLoader") as mock_loader_class, \
-             patch("src.workflows.docker_deployment_agent.get_tools_for_servers") as mock_get_tools, \
-             patch("src.workflows.docker_deployment_agent.create_react_agent") as mock_create_agent, \
-             patch("src.workflows.docker_deployment_agent.get_llm") as mock_get_llm, \
-             patch("src.workflows.docker_deployment_agent.get_checkpointer") as mock_checkpointer:
-
+        with (
+            patch("src.workflows.docker_deployment_agent.AgentLoader") as mock_loader_class,
+            patch("src.workflows.docker_deployment_agent.get_tools_for_servers") as mock_get_tools,
+            patch("src.workflows.docker_deployment_agent.create_react_agent") as mock_create_agent,
+            patch("src.workflows.docker_deployment_agent.get_llm") as mock_get_llm,
+            patch("src.workflows.docker_deployment_agent.get_checkpointer") as mock_checkpointer,
+        ):
             mock_loader = MagicMock()
             mock_config = MagicMock()
             mock_config.tools.mcp_servers = ["docker-deployment", "container-runtime"]
@@ -139,8 +142,7 @@ class TestDockerWorkflowUsesAgent:
             mock_checkpointer.return_value = MagicMock()
 
             await run_docker_deployment_with_agent(
-                project_path=str(project_dir),
-                session_id="test-session-456"
+                project_path=str(project_dir), session_id="test-session-456"
             )
 
             # Verify config was loaded
@@ -155,12 +157,13 @@ class TestDockerWorkflowUsesAgent:
         project_dir = tmp_path / "test_project"
         project_dir.mkdir()
 
-        with patch("src.workflows.docker_deployment_agent.AgentLoader") as mock_loader_class, \
-             patch("src.workflows.docker_deployment_agent.get_tools_for_servers") as mock_get_tools, \
-             patch("src.workflows.docker_deployment_agent.create_react_agent") as mock_create_agent, \
-             patch("src.workflows.docker_deployment_agent.get_llm") as mock_get_llm, \
-             patch("src.workflows.docker_deployment_agent.get_checkpointer") as mock_checkpointer:
-
+        with (
+            patch("src.workflows.docker_deployment_agent.AgentLoader") as mock_loader_class,
+            patch("src.workflows.docker_deployment_agent.get_tools_for_servers") as mock_get_tools,
+            patch("src.workflows.docker_deployment_agent.create_react_agent") as mock_create_agent,
+            patch("src.workflows.docker_deployment_agent.get_llm") as mock_get_llm,
+            patch("src.workflows.docker_deployment_agent.get_checkpointer") as mock_checkpointer,
+        ):
             mock_loader = MagicMock()
             mock_config = MagicMock()
             mock_config.tools.mcp_servers = ["docker-deployment"]
@@ -180,12 +183,13 @@ class TestDockerWorkflowUsesAgent:
             mock_checkpointer.return_value = MagicMock()
 
             await run_docker_deployment_with_agent(
-                project_path=str(project_dir),
-                session_id="test-session-789"
+                project_path=str(project_dir), session_id="test-session-789"
             )
 
             # Verify prompt was loaded
-            mock_loader.load_prompt.assert_called_once_with("docker_guidelines", category="deployment")
+            mock_loader.load_prompt.assert_called_once_with(
+                "docker_guidelines", category="deployment"
+            )
 
 
 class TestDockerWorkflowStoresArtifacts:
@@ -209,19 +213,20 @@ class TestDockerWorkflowStoresArtifacts:
                         {
                             "name": "docker_create_dockerfile",
                             "args": {"project_path": str(project_dir), "java_version": "17"},
-                            "id": "call_1"
+                            "id": "call_1",
                         }
-                    ]
+                    ],
                 )
             ]
         }
 
-        with patch("src.workflows.docker_deployment_agent.AgentLoader") as mock_loader_class, \
-             patch("src.workflows.docker_deployment_agent.get_tools_for_servers") as mock_get_tools, \
-             patch("src.workflows.docker_deployment_agent.create_react_agent") as mock_create_agent, \
-             patch("src.workflows.docker_deployment_agent.get_llm") as mock_get_llm, \
-             patch("src.workflows.docker_deployment_agent.get_checkpointer") as mock_checkpointer:
-
+        with (
+            patch("src.workflows.docker_deployment_agent.AgentLoader") as mock_loader_class,
+            patch("src.workflows.docker_deployment_agent.get_tools_for_servers") as mock_get_tools,
+            patch("src.workflows.docker_deployment_agent.create_react_agent") as mock_create_agent,
+            patch("src.workflows.docker_deployment_agent.get_llm") as mock_get_llm,
+            patch("src.workflows.docker_deployment_agent.get_checkpointer") as mock_checkpointer,
+        ):
             mock_loader = MagicMock()
             mock_config = MagicMock()
             mock_config.tools.mcp_servers = ["docker-deployment"]
@@ -243,13 +248,15 @@ class TestDockerWorkflowStoresArtifacts:
             # Execute workflow
             session_id = "test-session-artifacts"
             result = await run_docker_deployment_with_agent(
-                project_path=str(project_dir),
-                session_id=session_id
+                project_path=str(project_dir), session_id=session_id
             )
 
             # Verify workflow completes successfully and returns agent response
             assert result["success"] is True
-            assert "java" in result["agent_response"].lower() or "docker" in result["agent_response"].lower()
+            assert (
+                "java" in result["agent_response"].lower()
+                or "docker" in result["agent_response"].lower()
+            )
 
 
 class TestDockerAgentHealthCheckMonitoring:
@@ -273,28 +280,29 @@ class TestDockerAgentHealthCheckMonitoring:
                         {
                             "name": "docker_deploy_compose",
                             "args": {"compose_path": str(project_dir / "docker-compose.yml")},
-                            "id": "call_1"
+                            "id": "call_1",
                         },
                         {
                             "name": "docker_health_check",
                             "args": {
                                 "compose_path": str(project_dir / "docker-compose.yml"),
                                 "timeout": 120,
-                                "check_interval": 5
+                                "check_interval": 5,
                             },
-                            "id": "call_2"
-                        }
-                    ]
+                            "id": "call_2",
+                        },
+                    ],
                 )
             ]
         }
 
-        with patch("src.workflows.docker_deployment_agent.AgentLoader") as mock_loader_class, \
-             patch("src.workflows.docker_deployment_agent.get_tools_for_servers") as mock_get_tools, \
-             patch("src.workflows.docker_deployment_agent.create_react_agent") as mock_create_agent, \
-             patch("src.workflows.docker_deployment_agent.get_llm") as mock_get_llm, \
-             patch("src.workflows.docker_deployment_agent.get_checkpointer") as mock_checkpointer:
-
+        with (
+            patch("src.workflows.docker_deployment_agent.AgentLoader") as mock_loader_class,
+            patch("src.workflows.docker_deployment_agent.get_tools_for_servers") as mock_get_tools,
+            patch("src.workflows.docker_deployment_agent.create_react_agent") as mock_create_agent,
+            patch("src.workflows.docker_deployment_agent.get_llm") as mock_get_llm,
+            patch("src.workflows.docker_deployment_agent.get_checkpointer") as mock_checkpointer,
+        ):
             mock_loader = MagicMock()
             mock_config = MagicMock()
             mock_config.tools.mcp_servers = ["docker-deployment", "container-runtime"]
@@ -316,7 +324,7 @@ class TestDockerAgentHealthCheckMonitoring:
             result = await run_docker_deployment_with_agent(
                 project_path=str(project_dir),
                 health_endpoints=[{"url": "http://localhost:8080/actuator/health"}],
-                session_id="test-session-health"
+                session_id="test-session-health",
             )
 
             # Verify health check monitoring in response

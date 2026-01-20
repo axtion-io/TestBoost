@@ -53,13 +53,187 @@ TEST_TIMEOUT_SECONDS = 300  # 5 minutes timeout for Maven test run
 class TestGenerationError(Exception):
     """Base exception for test generation errors."""
 
-    pass
+    def __init__(self, message: str = "Test generation failed", source_file: str | None = None):
+        if source_file:
+            message = f"{message} for {source_file}"
+        super().__init__(message)
+        self.source_file = source_file
 
 
 class CompilationError(TestGenerationError):
     """Raised when generated tests fail to compile."""
 
-    pass
+    def __init__(self, message: str = "Generated tests failed to compile", test_file: str | None = None, errors: list[str] | None = None):
+        if test_file:
+            message = f"{message}: {test_file}"
+        if errors:
+            message = f"{message}. Errors: {'; '.join(errors[:3])}"
+        super().__init__(message)
+        self.test_file = test_file
+        self.errors = errors or []
+
+
+def _find_source_files(project_path: str) -> list[str]:
+    """
+    Find Java source files to generate tests for.
+
+    Filters out test files, DTOs, entities, configuration, and other non-testable classes.
+
+    Args:
+        project_path: Path to the Java project root
+
+    Returns:
+        List of relative paths to source files
+    """
+    project_dir = Path(project_path)
+    source_files = []
+
+    # Patterns to include (testable classes)
+    # Include all Java files, then filter with exclude patterns
+    include_patterns = [
+        "**/*.java",  # All Java files
+    ]
+
+    # Patterns to exclude
+    exclude_patterns = [
+        "**/test/**",  # Test files
+        "**/model/**",  # Entities, DTOs
+        "**/entity/**",
+        "**/dto/**",
+        "**/config/**",  # Configuration
+        "**/configuration/**",
+        "**/mapper/**",  # Mappers (usually simple)
+        # Note: Main Application classes are excluded only if they're simple Spring Boot launchers
+        # "**/*Application.java",  # Too restrictive - some Application classes have business logic
+        "**/*Config.java",
+        "**/*Configuration.java",
+        "**/*Request.java",  # Request/Response DTOs
+        "**/*Response.java",
+        "**/*DTO.java",
+        "**/*Exception.java",  # Exceptions
+    ]
+
+    # Find all Java files in src/main/java
+    main_java_dirs = list(project_dir.glob("**/src/main/java"))
+
+    for main_java_dir in main_java_dirs:
+        for pattern in include_patterns:
+            for source_file in main_java_dir.glob(pattern):
+                # Check if file should be excluded
+                relative_path = str(source_file.relative_to(project_dir))
+                should_exclude = False
+
+                for exclude in exclude_patterns:
+                    # Simple pattern matching
+                    exclude_name = exclude.replace("**/*", "").replace("**", "")
+                    if exclude_name in relative_path or source_file.name.endswith(exclude_name.replace("*", "")):
+                        should_exclude = True
+                        break
+
+                if not should_exclude and relative_path not in source_files:
+                    source_files.append(relative_path)
+
+    logger.info("source_files_found", count=len(source_files), project_path=project_path)
+    return source_files
+
+
+async def _generate_tests_directly(
+    project_path: str,
+    source_files: list[str],
+    test_requirements: list[TestRequirement] | None = None,
+    use_llm: bool = True,
+) -> list[dict[str, Any]]:
+    """
+    Generate tests by calling the generator tool for each source file.
+
+    Args:
+        project_path: Path to the Java project
+        source_files: List of source files to generate tests for
+        test_requirements: Optional test requirements from impact analysis
+        use_llm: If True (default), use LLM for intelligent test generation.
+                 If False, use template-based generation (for CI without LLM).
+
+    Returns:
+        List of generated test info dicts
+    """
+    generated_tests = []
+
+    # Convert test requirements to dict format
+    requirements_by_file: dict[str, list[dict[str, Any]]] = {}
+    if test_requirements:
+        for req in test_requirements:
+            # Match requirement to source file by class name
+            for source_file in source_files:
+                if req.target_class and req.target_class in source_file:
+                    if source_file not in requirements_by_file:
+                        requirements_by_file[source_file] = []
+                    requirements_by_file[source_file].append({
+                        "suggested_test_name": req.suggested_test_name,
+                        "description": req.description,
+                        "scenario_type": req.scenario_type.value if req.scenario_type else "nominal",
+                        "target_method": req.target_method,
+                    })
+
+    for source_file in source_files:
+        logger.info("generating_tests_for_file", source_file=source_file)
+
+        try:
+            # Get requirements for this file if any
+            file_requirements = requirements_by_file.get(source_file)
+
+            # Call generator with LLM mode (production) or template mode (CI)
+            result_json = await generate_adaptive_tests(
+                project_path=project_path,
+                source_file=source_file,
+                test_requirements=file_requirements,
+                use_llm=use_llm,
+            )
+
+            result = json.loads(result_json)
+
+            if result.get("success"):
+                test_code = result.get("test_code", "")
+                test_file = result.get("test_file", "")
+
+                if test_code and "@Test" in test_code:
+                    test_info = {
+                        "path": test_file,
+                        "content": test_code,
+                        "class_name": result.get("context", {}).get("class_name", ""),
+                        "package": result.get("context", {}).get("package", ""),
+                        "source_file": source_file,
+                        "test_count": result.get("test_count", 0),
+                    }
+                    generated_tests.append(test_info)
+                    logger.info(
+                        "test_generated",
+                        source_file=source_file,
+                        test_file=test_file,
+                        test_count=result.get("test_count", 0),
+                    )
+                else:
+                    logger.warning("no_tests_generated", source_file=source_file)
+            else:
+                logger.warning(
+                    "test_generation_failed",
+                    source_file=source_file,
+                    error=result.get("error"),
+                )
+
+        except Exception as e:
+            logger.error(
+                "test_generation_error",
+                source_file=source_file,
+                error=str(e),
+            )
+
+    logger.info(
+        "direct_generation_complete",
+        total_source_files=len(source_files),
+        tests_generated=len(generated_tests),
+    )
+
+    return generated_tests
 
 
 def _find_source_files(project_path: str) -> list[str]:
@@ -233,9 +407,14 @@ async def run_test_generation_with_agent(
     source_files: list[str] | None = None,
     coverage_target: float = 80.0,
     test_requirements: list[TestRequirement] | None = None,
+    use_llm: bool = True,
 ) -> dict[str, Any]:
     """
-    Run test generation workflow using DeepAgents LLM agent.
+    Run test generation workflow.
+
+    Two modes:
+    - LLM mode (use_llm=True, default): Uses LLM for intelligent test generation
+    - Template mode (use_llm=False): Uses templates for CI without LLM access
 
     Implements:
     - T054-T055: Agent creation with create_deep_agent()
@@ -251,20 +430,25 @@ async def run_test_generation_with_agent(
         db_session: SQLAlchemy async session for artifact storage
         source_files: Optional list of specific source files to test
         coverage_target: Target code coverage percentage
+        test_requirements: Optional test requirements from impact analysis
+        use_llm: If True (default), use LLM for intelligent test generation.
+                 If False, use template-based generation (for CI without LLM).
 
     Returns:
         dict with workflow results including generated tests and metrics
 
     Raises:
         TestGenerationError: If generation fails after retries
-        LLMError: If LLM connection issues persist
+        LLMError: If LLM connection issues persist (only in LLM mode)
     """
     start_time = time.time()
+    generation_mode = "llm" if use_llm else "template"
     logger.info(
         "test_gen_workflow_start",
         session_id=str(session_id),
         project_path=project_path,
         coverage_target=coverage_target,
+        generation_mode=generation_mode,
     )
 
     # Initialize repositories
@@ -332,11 +516,12 @@ async def run_test_generation_with_agent(
             has_requirements=bool(test_requirements),
         )
 
-        # Step 2: Generate tests directly for each source file
+        # Step 2: Generate tests for each source file (LLM or template mode)
         generated_tests = await _generate_tests_directly(
             project_path=project_path,
             source_files=source_files,
             test_requirements=test_requirements,
+            use_llm=use_llm,
         )
 
         if not generated_tests:
@@ -365,7 +550,7 @@ async def run_test_generation_with_agent(
         )
 
         # Write validated tests to disk (also sets written_to_disk flag on each test)
-        written_tests = _write_tests_to_disk(project_path, validated_tests)
+        _write_tests_to_disk(project_path, validated_tests)
 
         # Run test feedback loop - execute tests and fix until passing
         feedback_result = await _run_test_feedback_loop(
@@ -385,7 +570,7 @@ async def run_test_generation_with_agent(
             "coverage_target": coverage_target,
             "tests_passing": feedback_result.get("success", False),
             "feedback_iterations": feedback_result.get("iterations", 0),
-            "generation_mode": "direct",  # New: indicates direct generation was used
+            "generation_mode": "llm" if use_llm else "template",
             "source_files_processed": len(source_files),
         }
 
@@ -749,9 +934,10 @@ def _extract_generated_tests(response: dict[str, Any] | AIMessage) -> list[dict[
                                     test_info["path"] = data["test_file"]
                                 tests.append(test_info)
                     except json.JSONDecodeError:
-                        pass
-            except Exception:
-                pass
+                        # Expected for partial JSON matches, skip silently
+                        continue
+            except Exception as e:
+                logger.debug("test_extraction_error", error=str(e), content_length=len(content))
 
     logger.debug("extracted_tests", count=len(tests))
     return tests
@@ -909,7 +1095,7 @@ def _detect_maven_modules(project_dir: Path) -> list[Path]:
     Returns:
         List of module directory paths (empty if not multi-module)
     """
-    modules = []
+    modules: list[Path] = []
     parent_pom = project_dir / "pom.xml"
 
     if not parent_pom.exists():
@@ -1049,6 +1235,71 @@ async def _store_tool_calls(
         )
 
     logger.debug("tool_calls_stored", session_id=str(session_id), count=len(tool_calls))
+
+
+async def _store_test_file_artifacts(
+    session_id: UUID,
+    artifact_repo: ArtifactRepository,
+    validated_tests: list[dict[str, Any]],
+    project_path: str,
+) -> None:
+    """
+    Store file_modification artifacts for each generated test file.
+
+    This allows the frontend to discover and display generated test files
+    via the /artifacts API endpoint.
+
+    Args:
+        session_id: Session UUID
+        artifact_repo: Artifact repository
+        validated_tests: List of validated test files
+        project_path: Project root path
+    """
+    from src.lib.diff import generate_unified_diff
+
+    for test in validated_tests:
+        # Only store artifacts for tests that were written to disk
+        if not test.get("written_to_disk", False):
+            continue
+
+        file_path = test.get("actual_path") or test.get("path")
+        content = test.get("content", "")
+
+        if not file_path or not content:
+            continue
+
+        # Generate diff (original is None for new files)
+        diff = generate_unified_diff(
+            original=None,
+            modified=content,
+            file_path=file_path,
+        )
+
+        # Create artifact metadata
+        metadata = {
+            "file_path": file_path,
+            "operation": "create",
+            "original_content": None,
+            "modified_content": content,
+            "diff": diff,
+        }
+
+        # Create artifact
+        await artifact_repo.create(
+            session_id=session_id,
+            name=f"test_file_{Path(file_path).stem}",
+            artifact_type="file_modification",
+            content_type="text/x-java",
+            file_path=f"artifacts/{session_id}/tests/{Path(file_path).name}",
+            size_bytes=len(content),
+            artifact_metadata=metadata,
+        )
+
+    logger.info(
+        "test_file_artifacts_stored",
+        session_id=str(session_id),
+        test_count=sum(1 for t in validated_tests if t.get("written_to_disk", False)),
+    )
 
 
 async def _store_generation_metrics(
@@ -1336,7 +1587,8 @@ async def _run_maven_tests(
             continue
 
         # Build Maven command
-        mvn_cmd = ["mvn", "test", "-f", str(pom_path)]
+        # Use absolute paths with forward slashes for cross-platform compatibility
+        mvn_cmd = ["mvn", "test", "-f", pom_path.resolve().as_posix()]
 
         # Add specific test classes
         if test_classes:
@@ -1352,7 +1604,7 @@ async def _run_maven_tests(
         try:
             result = subprocess.run(
                 mvn_cmd,
-                cwd=str(cwd),
+                cwd=str(cwd.resolve()),
                 capture_output=True,
                 text=True,
                 timeout=TEST_TIMEOUT_SECONDS,

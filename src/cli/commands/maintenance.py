@@ -383,5 +383,370 @@ def list_updates(
             console.print(table)
 
 
+# ============================================================================
+# CLI vs API Parity Commands (T063-T071)
+# ============================================================================
+
+
+@app.command("sessions")
+def list_sessions(
+    status: str = typer.Option(
+        None,
+        "--status",
+        "-s",
+        help="Filter by status (pending, in_progress, completed, failed, paused)",
+    ),
+    session_type: str = typer.Option(
+        None,
+        "--type",
+        "-t",
+        help="Filter by session type (maven_maintenance, test_generation, docker_deployment)",
+    ),
+    limit: int = typer.Option(
+        20,
+        "--limit",
+        "-l",
+        help="Maximum number of sessions to display",
+    ),
+    output_format: str = typer.Option(
+        "rich",
+        "--format",
+        "-f",
+        help="Output format (rich, json)",
+    ),
+) -> None:
+    """
+    List all workflow sessions.
+
+    Shows sessions with optional filtering by status and type.
+    Use session IDs with other commands like 'steps', 'pause', 'resume'.
+    """
+    from src.cli.formatters import format_session_table
+    from src.cli.utils.api_client import APIClient, APIError
+
+    logger.info(
+        "maintenance_sessions_command",
+        status=status,
+        session_type=session_type,
+        limit=limit,
+    )
+
+    try:
+        client = APIClient()
+        result = client.list_sessions(
+            status=status,
+            session_type=session_type,
+            limit=limit,
+        )
+
+        sessions = result.get("items", [])
+
+        if output_format == "json":
+            console.print_json(json.dumps(result))
+        else:
+            format_session_table(sessions, console)
+
+            # Show pagination info
+            pagination = result.get("pagination", {})
+            total = pagination.get("total", len(sessions))
+            if total > limit:
+                console.print(f"\n[dim]Showing {len(sessions)} of {total} sessions. Use --limit to see more.[/dim]")
+
+    except APIError as e:
+        console.print(f"[red]Error:[/red] {e.message}")
+        raise typer.Exit(1) from None
+    except Exception as e:
+        console.print(f"[red]Error:[/red] Could not connect to API. Is the server running?\n{e}")
+        raise typer.Exit(1) from None
+
+
+@app.command("steps")
+def list_steps(
+    session_id: str = typer.Argument(
+        ...,
+        help="Session ID to list steps for",
+    ),
+    output_format: str = typer.Option(
+        "rich",
+        "--format",
+        "-f",
+        help="Output format (rich, json)",
+    ),
+) -> None:
+    """
+    List all steps for a session.
+
+    Shows step status, sequence order, and execution times.
+    Use step codes with 'maintenance step' to execute specific steps.
+    """
+    from src.cli.formatters import format_steps_table
+    from src.cli.utils.api_client import APIClient, APIError
+
+    logger.info("maintenance_steps_command", session_id=session_id)
+
+    try:
+        client = APIClient()
+        result = client.get_steps(session_id)
+
+        steps = result.get("items", [])
+
+        if output_format == "json":
+            console.print_json(json.dumps(result))
+        else:
+            format_steps_table(steps, console)
+
+    except APIError as e:
+        console.print(f"[red]Error:[/red] {e.message}")
+        raise typer.Exit(1) from None
+    except Exception as e:
+        console.print(f"[red]Error:[/red] Could not connect to API. Is the server running?\n{e}")
+        raise typer.Exit(1) from None
+
+
+@app.command("step")
+def execute_step(
+    session_id: str = typer.Argument(
+        ...,
+        help="Session ID",
+    ),
+    step_code: str = typer.Argument(
+        ...,
+        help="Step code to execute (use 'steps' command to list available codes)",
+    ),
+    output_format: str = typer.Option(
+        "rich",
+        "--format",
+        "-f",
+        help="Output format (rich, json)",
+    ),
+) -> None:
+    """
+    Execute a specific step in a session.
+
+    Use 'maintenance steps <session_id>' to see available step codes.
+    Steps must be executed in order; pending steps can be executed.
+    """
+    from src.cli.formatters import format_step_result
+    from src.cli.utils.api_client import APIClient, APIError
+
+    logger.info(
+        "maintenance_step_command",
+        session_id=session_id,
+        step_code=step_code,
+    )
+
+    try:
+        client = APIClient()
+        result = client.execute_step(session_id, step_code)
+
+        if output_format == "json":
+            console.print_json(json.dumps(result))
+        else:
+            format_step_result(result, console)
+
+    except APIError as e:
+        console.print(f"[red]Error:[/red] {e.message}")
+        raise typer.Exit(1) from None
+    except Exception as e:
+        console.print(f"[red]Error:[/red] Could not connect to API. Is the server running?\n{e}")
+        raise typer.Exit(1) from None
+
+
+@app.command("pause")
+def pause_session(
+    session_id: str = typer.Argument(
+        ...,
+        help="Session ID to pause",
+    ),
+    reason: str = typer.Option(
+        None,
+        "--reason",
+        "-r",
+        help="Reason for pausing the session",
+    ),
+) -> None:
+    """
+    Pause a running session.
+
+    Paused sessions can be resumed later with 'maintenance resume'.
+    A checkpoint ID is returned for reference.
+    """
+    from src.cli.formatters import format_pause_result
+    from src.cli.utils.api_client import APIClient, APIError
+
+    logger.info(
+        "maintenance_pause_command",
+        session_id=session_id,
+        reason=reason,
+    )
+
+    try:
+        client = APIClient()
+        result = client.pause_session(session_id, reason)
+
+        format_pause_result(result, console)
+
+    except APIError as e:
+        console.print(f"[red]Error:[/red] {e.message}")
+        raise typer.Exit(1) from None
+    except Exception as e:
+        console.print(f"[red]Error:[/red] Could not connect to API. Is the server running?\n{e}")
+        raise typer.Exit(1) from None
+
+
+@app.command("resume")
+def resume_session(
+    session_id: str = typer.Argument(
+        ...,
+        help="Session ID to resume",
+    ),
+    checkpoint: str = typer.Option(
+        None,
+        "--checkpoint",
+        "-c",
+        help="Checkpoint ID to resume from (optional, uses latest by default)",
+    ),
+) -> None:
+    """
+    Resume a paused session.
+
+    Resumes execution from the specified checkpoint or the latest state.
+    """
+    from src.cli.formatters import format_resume_result
+    from src.cli.utils.api_client import APIClient, APIError
+
+    logger.info(
+        "maintenance_resume_command",
+        session_id=session_id,
+        checkpoint=checkpoint,
+    )
+
+    try:
+        client = APIClient()
+        result = client.resume_session(session_id, checkpoint)
+
+        format_resume_result(result, console)
+
+    except APIError as e:
+        console.print(f"[red]Error:[/red] {e.message}")
+        raise typer.Exit(1) from None
+    except Exception as e:
+        console.print(f"[red]Error:[/red] Could not connect to API. Is the server running?\n{e}")
+        raise typer.Exit(1) from None
+
+
+@app.command("artifacts")
+def get_artifacts(
+    session_id: str = typer.Argument(
+        ...,
+        help="Session ID to get artifacts for",
+    ),
+    artifact_type: str = typer.Option(
+        None,
+        "--type",
+        "-t",
+        help="Filter by artifact type (agent_reasoning, llm_tool_call, llm_response, llm_metrics)",
+    ),
+    output: str = typer.Option(
+        None,
+        "--output",
+        "-o",
+        help="Save artifacts to JSON file instead of displaying",
+    ),
+    output_format: str = typer.Option(
+        "rich",
+        "--format",
+        "-f",
+        help="Output format (rich, json)",
+    ),
+) -> None:
+    """
+    Get artifacts for a session.
+
+    Artifacts include LLM responses, agent reasoning traces, and metrics.
+    Use --output to save artifacts to a file for later analysis.
+    """
+    from src.cli.formatters import format_artifacts_table
+    from src.cli.utils.api_client import APIClient, APIError
+
+    logger.info(
+        "maintenance_artifacts_command",
+        session_id=session_id,
+        artifact_type=artifact_type,
+    )
+
+    try:
+        client = APIClient()
+        result = client.get_artifacts(session_id, artifact_type)
+
+        artifacts = result.get("items", [])
+
+        if output:
+            # Save to file
+            output_path = Path(output)
+            output_path.write_text(json.dumps(result, indent=2))
+            console.print(f"[green]Artifacts saved to:[/green] {output_path}")
+        elif output_format == "json":
+            console.print_json(json.dumps(result))
+        else:
+            format_artifacts_table(artifacts, console)
+
+    except APIError as e:
+        console.print(f"[red]Error:[/red] {e.message}")
+        raise typer.Exit(1) from None
+    except Exception as e:
+        console.print(f"[red]Error:[/red] Could not connect to API. Is the server running?\n{e}")
+        raise typer.Exit(1) from None
+
+
+@app.command("cancel")
+def cancel_session(
+    session_id: str = typer.Argument(
+        ...,
+        help="Session ID to cancel",
+    ),
+    force: bool = typer.Option(
+        False,
+        "--force",
+        "-f",
+        help="Skip confirmation prompt",
+    ),
+) -> None:
+    """
+    Cancel a running or paused session.
+
+    This will abort the workflow and mark the session as cancelled.
+    Use --force to skip the confirmation prompt.
+    """
+    from src.cli.formatters import format_cancel_result
+    from src.cli.utils.api_client import APIClient, APIError
+
+    logger.info(
+        "maintenance_cancel_command",
+        session_id=session_id,
+        force=force,
+    )
+
+    # Confirm unless --force
+    if not force:
+        confirm = typer.confirm(f"Cancel session {session_id}? This cannot be undone.")
+        if not confirm:
+            console.print("[yellow]Cancelled.[/yellow]")
+            raise typer.Exit(0)
+
+    try:
+        client = APIClient()
+        client.cancel_maintenance(session_id)
+
+        format_cancel_result(session_id, console)
+
+    except APIError as e:
+        console.print(f"[red]Error:[/red] {e.message}")
+        raise typer.Exit(1) from None
+    except Exception as e:
+        console.print(f"[red]Error:[/red] Could not connect to API. Is the server running?\n{e}")
+        raise typer.Exit(1) from None
+
+
 if __name__ == "__main__":
     app()

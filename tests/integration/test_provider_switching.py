@@ -7,7 +7,6 @@ and startup behavior.
 """
 
 import os
-from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -180,7 +179,14 @@ class TestProviderSwitchingArtifactCompatibility:
         }
 
         # Required fields should be present in both
-        required_fields = {"input_tokens", "output_tokens", "total_tokens", "duration_ms", "provider", "model"}
+        required_fields = {
+            "input_tokens",
+            "output_tokens",
+            "total_tokens",
+            "duration_ms",
+            "provider",
+            "model",
+        }
         assert required_fields.issubset(gemini_content.keys())
         assert required_fields.issubset(claude_content.keys())
 

@@ -9,6 +9,7 @@ from collections.abc import Callable
 
 from src.models.impact import DiffChunk
 
+
 # Pattern to match file headers in unified diff
 FILE_HEADER_PATTERN = re.compile(r"^diff --git a/(.+) b/(.+)$", re.MULTILINE)
 

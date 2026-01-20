@@ -236,6 +236,170 @@ async def _generate_tests_directly(
     return generated_tests
 
 
+def _find_source_files(project_path: str) -> list[str]:
+    """
+    Find Java source files to generate tests for.
+
+    Filters out test files, DTOs, entities, configuration, and other non-testable classes.
+
+    Args:
+        project_path: Path to the Java project root
+
+    Returns:
+        List of relative paths to source files
+    """
+    project_dir = Path(project_path)
+    source_files = []
+
+    # Patterns to include (testable classes)
+    include_patterns = [
+        "**/web/**/*.java",  # Controllers, resources
+        "**/controller/**/*.java",
+        "**/service/**/*.java",
+        "**/application/**/*.java",
+        "**/api/**/*.java",
+    ]
+
+    # Patterns to exclude
+    exclude_patterns = [
+        "**/test/**",  # Test files
+        "**/model/**",  # Entities, DTOs
+        "**/entity/**",
+        "**/dto/**",
+        "**/config/**",  # Configuration
+        "**/configuration/**",
+        "**/mapper/**",  # Mappers (usually simple)
+        "**/*Application.java",  # Main classes
+        "**/*Config.java",
+        "**/*Configuration.java",
+        "**/*Request.java",  # Request/Response DTOs
+        "**/*Response.java",
+        "**/*DTO.java",
+        "**/*Exception.java",  # Exceptions
+    ]
+
+    # Find all Java files in src/main/java
+    main_java_dirs = list(project_dir.glob("**/src/main/java"))
+
+    for main_java_dir in main_java_dirs:
+        for pattern in include_patterns:
+            for source_file in main_java_dir.glob(pattern):
+                # Check if file should be excluded
+                relative_path = str(source_file.relative_to(project_dir))
+                should_exclude = False
+
+                for exclude in exclude_patterns:
+                    # Simple pattern matching
+                    exclude_name = exclude.replace("**/*", "").replace("**", "")
+                    if exclude_name in relative_path or source_file.name.endswith(exclude_name.replace("*", "")):
+                        should_exclude = True
+                        break
+
+                if not should_exclude and relative_path not in source_files:
+                    source_files.append(relative_path)
+
+    logger.info("source_files_found", count=len(source_files), project_path=project_path)
+    return source_files
+
+
+async def _generate_tests_directly(
+    project_path: str,
+    source_files: list[str],
+    test_requirements: list[TestRequirement] | None = None,
+) -> list[dict[str, Any]]:
+    """
+    Generate tests directly by calling the generator tool for each source file.
+
+    This bypasses the LLM agent and calls the generator directly, which produces
+    more reliable results than asking the LLM to use tools.
+
+    Args:
+        project_path: Path to the Java project
+        source_files: List of source files to generate tests for
+        test_requirements: Optional test requirements from impact analysis
+
+    Returns:
+        List of generated test info dicts
+    """
+    generated_tests = []
+
+    # Convert test requirements to dict format
+    requirements_by_file: dict[str, list[dict[str, Any]]] = {}
+    if test_requirements:
+        for req in test_requirements:
+            # Match requirement to source file by class name
+            for source_file in source_files:
+                if req.target_class and req.target_class in source_file:
+                    if source_file not in requirements_by_file:
+                        requirements_by_file[source_file] = []
+                    requirements_by_file[source_file].append({
+                        "suggested_test_name": req.suggested_test_name,
+                        "description": req.description,
+                        "scenario_type": req.scenario_type.value if req.scenario_type else "nominal",
+                        "target_method": req.target_method,
+                    })
+
+    for source_file in source_files:
+        logger.info("generating_tests_for_file", source_file=source_file)
+
+        try:
+            # Get requirements for this file if any
+            file_requirements = requirements_by_file.get(source_file, None)
+
+            # Call generator directly
+            result_json = await generate_adaptive_tests(
+                project_path=project_path,
+                source_file=source_file,
+                test_requirements=file_requirements,
+            )
+
+            result = json.loads(result_json)
+
+            if result.get("success"):
+                test_code = result.get("test_code", "")
+                test_file = result.get("test_file", "")
+
+                if test_code and "@Test" in test_code:
+                    test_info = {
+                        "path": test_file,
+                        "content": test_code,
+                        "class_name": result.get("context", {}).get("class_name", ""),
+                        "package": result.get("context", {}).get("package", ""),
+                        "source_file": source_file,
+                        "test_count": result.get("test_count", 0),
+                    }
+                    generated_tests.append(test_info)
+                    logger.info(
+                        "test_generated",
+                        source_file=source_file,
+                        test_file=test_file,
+                        test_count=result.get("test_count", 0),
+                    )
+                else:
+                    logger.warning("no_tests_generated", source_file=source_file)
+            else:
+                logger.warning(
+                    "test_generation_failed",
+                    source_file=source_file,
+                    error=result.get("error"),
+                )
+
+        except Exception as e:
+            logger.error(
+                "test_generation_error",
+                source_file=source_file,
+                error=str(e),
+            )
+
+    logger.info(
+        "direct_generation_complete",
+        total_source_files=len(source_files),
+        tests_generated=len(generated_tests),
+    )
+
+    return generated_tests
+
+
 async def run_test_generation_with_agent(
     session_id: UUID,
     project_path: str,

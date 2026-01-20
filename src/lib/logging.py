@@ -9,11 +9,9 @@ from pathlib import Path
 from typing import Any
 
 import structlog
-from structlog.types import EventDict, WrappedLogger
-from structlog.types import Processor
+from structlog.types import EventDict, Processor, WrappedLogger
 
 from src.lib.log_taxonomy import (
-    LogCategory,
     categorize_event,
     map_log_level_to_severity,
 )
@@ -96,9 +94,10 @@ def _configure_structlog() -> None:
                 return False
             if "Exception closing connection" in record.getMessage():
                 return False
-            if "RuntimeWarning: coroutine" in record.getMessage() and "_cancel" in record.getMessage():
-                return False
-            return True
+            return not (
+                "RuntimeWarning: coroutine" in record.getMessage()
+                and "_cancel" in record.getMessage()
+            )
 
     sqlalchemy_filter = SupressSQLAlchemyEventLoopErrors()
 

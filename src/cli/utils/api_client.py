@@ -197,7 +197,7 @@ class APIClient:
         run_workflow: bool = True, run_in_background: bool = True
     ) -> dict[str, Any]:
         """Execute a specific step.
-        
+
         Args:
             session_id: Session UUID
             step_code: Step code to execute

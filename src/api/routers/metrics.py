@@ -87,7 +87,7 @@ class MetricsCollector:
             else:
                 name = key
                 labels = ""
-            
+
             if name not in histogram_names:
                 lines.append(f"# TYPE {name} histogram")
                 histogram_names.add(name)

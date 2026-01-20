@@ -2,14 +2,13 @@
 
 import json
 import re
-from datetime import datetime, timezone
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 
-from src.lib.log_taxonomy import LogCategory, LogSeverity
 from src.lib.logging import LOG_DIR, get_logger
 
 router = APIRouter(prefix="/logs", tags=["Logs"])
@@ -74,8 +73,8 @@ def _get_log_file_path(date: str | None) -> Path:
         # Validate date is parseable
         try:
             datetime.strptime(date, "%Y%m%d")
-        except ValueError:
-            raise HTTPException(status_code=400, detail=f"Invalid date: {date}")
+        except ValueError as err:
+            raise HTTPException(status_code=400, detail=f"Invalid date: {date}") from err
 
     log_file = LOG_DIR / f"testboost_{date}.log"
 
@@ -188,7 +187,7 @@ def _convert_to_log_entry(log_dict: dict[str, Any]) -> LogEntry:
     try:
         timestamp = datetime.fromisoformat(timestamp_str.replace("Z", "+00:00"))
     except (ValueError, AttributeError):
-        timestamp = datetime.now(timezone.utc)
+        timestamp = datetime.now(datetime.UTC)
 
     level = log_dict.get("level", "info")
     event = log_dict.get("event", "unknown")
@@ -269,7 +268,7 @@ async def get_logs(
     matching_logs: list[LogEntry] = []
 
     with log_file.open("r", encoding="utf-8") as f:
-        for line_num, line in enumerate(f, start=1):
+        for _line_num, line in enumerate(f, start=1):
             log_dict = _parse_log_line(line)
             if not log_dict:
                 continue

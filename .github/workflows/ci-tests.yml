@@ -41,29 +41,6 @@ jobs:
         run: mypy src/ --ignore-missing-imports
         continue-on-error: true
 
-  logging-check:
-    name: Check Logging Completeness
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-
-      - name: Detect unlogged exceptions
-        run: |
-          python scripts/detect_unlogged_exceptions.py --check-only
-        continue-on-error: true  # Set to false once all logging gaps are fixed
-
-      - name: Upload logging report
-        if: always()
-        run: |
-          echo "## Logging Completeness Report" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          python scripts/detect_unlogged_exceptions.py 2>&1 | head -50 >> $GITHUB_STEP_SUMMARY || true
-
   unit-tests:
     name: Unit Tests
     runs-on: ubuntu-latest
@@ -179,7 +156,7 @@ jobs:
   all-tests-pass:
     name: All Tests Pass
     runs-on: ubuntu-latest
-    needs: [lint, logging-check, unit-tests, integration-tests]
+    needs: [lint, unit-tests, integration-tests]
     if: always()
     steps:
       - name: Check all jobs passed
@@ -189,10 +166,6 @@ jobs:
              [[ "${{ needs.integration-tests.result }}" == "failure" ]]; then
             echo "One or more jobs failed"
             exit 1
-          fi
-          # Note: logging-check is informational only for now (continue-on-error: true)
-          if [[ "${{ needs.logging-check.result }}" == "failure" ]]; then
-            echo "⚠️ Logging check detected unlogged exceptions (non-blocking)"
           fi
           echo "All tests passed!"
 

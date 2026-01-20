@@ -9,8 +9,6 @@ Auto-generated from all feature plans. Last updated: 2025-11-23
 - PostgreSQL 15 (existing, port 5433) (003-impact-analysis-testing)
 - Python 3.11+ + pytest, pytest-asyncio, pytest-cov, pytest-xdist, httpx (for API testing), respx (for HTTP mocking) (004-test-plan-documentation)
 - PostgreSQL 15 (port 5433) - existing schema, no changes needed (004-test-plan-documentation)
-- Python 3.11+ + FastAPI 0.121, SQLAlchemy (async), Pydantic, structlog (006-file-modifications-api)
-- PostgreSQL 15 (port 5433) - existing artifacts table with new metadata field (006-file-modifications-api)
 
 - Python 3.11+ (001-testboost-core)
 

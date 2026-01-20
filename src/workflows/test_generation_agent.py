@@ -344,7 +344,7 @@ async def _generate_tests_directly(
 
         try:
             # Get requirements for this file if any
-            file_requirements = requirements_by_file.get(source_file, None)
+            file_requirements = requirements_by_file.get(source_file)
 
             # Call generator directly
             result_json = await generate_adaptive_tests(

@@ -11,8 +11,6 @@ Auto-generated from all feature plans. Last updated: 2025-11-23
 - PostgreSQL 15 (port 5433) - existing schema, no changes needed (004-test-plan-documentation)
 - Python 3.11+ + FastAPI 0.121, SQLAlchemy (async), Pydantic, structlog (006-file-modifications-api)
 - PostgreSQL 15 (port 5433) - existing artifacts table with new metadata field (006-file-modifications-api)
-- Python 3.11+ + FastAPI 0.121, SQLAlchemy 2.x (async), Pydantic, structlog (007-session-events-api)
-- PostgreSQL 15 on port 5433 - existing `events` table with indexes on session_id, timestamp, event_type (007-session-events-api)
 
 - Python 3.11+ (001-testboost-core)
 

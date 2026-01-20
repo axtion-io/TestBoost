@@ -84,6 +84,16 @@ async def request_logging_middleware(
         duration_seconds=duration_ms / 1000,
     )
 
+    # Record Prometheus metrics for HTTP requests
+    # Normalize path for metrics (avoid high cardinality from UUIDs)
+    normalized_path = _normalize_path_for_metrics(request.url.path)
+    record_request(
+        method=request.method,
+        path=normalized_path,
+        status_code=response.status_code,
+        duration_seconds=duration_ms / 1000,
+    )
+
     return response
 
 

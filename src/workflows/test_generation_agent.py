@@ -10,7 +10,6 @@ Implements User Story 4 (US4) from 002-deepagents-integration:
 Tasks implemented: T054-T064
 """
 
-import asyncio
 import json
 import re
 import subprocess
@@ -21,15 +20,10 @@ from uuid import UUID
 
 from langchain_core.messages import AIMessage, HumanMessage
 from langgraph.prebuilt import create_react_agent
-from tenacity import (
-    retry,
-    retry_if_exception_type,
-    stop_after_attempt,
-    wait_exponential,
-)
 
 from src.agents.loader import AgentLoader
 from src.db.repository import ArtifactRepository, SessionRepository
+from src.lib.agent_retry import invoke_agent_with_retry
 from src.lib.config import get_settings
 from src.lib.llm import LLMError, get_llm
 from src.lib.logging import get_logger
@@ -42,8 +36,6 @@ settings = get_settings()
 
 # Retry configuration for auto-correction (A2 edge case)
 MAX_CORRECTION_RETRIES = 3
-MIN_WAIT = 1
-MAX_WAIT = 5
 
 # Feedback loop configuration - run tests and fix until passing
 MAX_TEST_ITERATIONS = 5  # Maximum attempts to fix failing tests
@@ -452,82 +444,42 @@ async def run_test_generation_with_agent(
         raise TestGenerationError(f"Test generation failed: {e}") from e
 
 
-@retry(
-    stop=stop_after_attempt(MAX_CORRECTION_RETRIES),
-    wait=wait_exponential(multiplier=1, min=MIN_WAIT, max=MAX_WAIT),
-    retry=retry_if_exception_type((ConnectionError, asyncio.TimeoutError)),
-)
-async def _invoke_agent_with_retry(
+async def _invoke_agent_and_store_tools(
     agent: Any,
     input_data: dict[str, Any],
     session_id: UUID,
     artifact_repo: ArtifactRepository,
 ) -> dict[str, Any] | AIMessage:
     """
-    Invoke agent with retry logic for transient failures (T059, A4 edge case).
+    Invoke agent and store tool calls as artifacts.
 
-    Retries on:
-    - Network errors
-    - Timeout errors
-
-    Does NOT retry on:
-    - Authentication errors
-    - Rate limit errors (A1 edge case - fails immediately)
+    Uses shared retry logic from agent_retry module.
 
     Args:
-        agent: DeepAgents agent instance
+        agent: LangGraph agent instance
         input_data: Input messages and context
         session_id: Session UUID for artifact storage
         artifact_repo: Repository for storing tool calls
 
     Returns:
         Agent response (dict for LangGraph final state or AIMessage for single LLM call)
-
-    Raises:
-        LLMError: If invocation fails after retries
     """
-    try:
-        logger.debug("agent_invoke_start", session_id=str(session_id))
-        # Set higher recursion limit to allow agent to complete complex tasks
-        config = {"recursion_limit": 100}
-        response = await agent.ainvoke(input_data, config)
+    logger.debug("agent_invoke_start", session_id=str(session_id))
 
-        # Handle both dict (LangGraph state) and AIMessage responses
-        if isinstance(response, dict):
-            # LangGraph returns final state as dict with 'messages' key
-            messages = response.get("messages", [])
-            if messages:
-                last_message = messages[-1]
-                if hasattr(last_message, "tool_calls") and last_message.tool_calls:
-                    await _store_tool_calls(session_id, artifact_repo, last_message.tool_calls)
-        elif hasattr(response, "tool_calls") and response.tool_calls:
-            # Direct AIMessage response
-            await _store_tool_calls(session_id, artifact_repo, response.tool_calls)
+    # Use shared retry utility
+    messages = input_data.get("messages", [])
+    response = await invoke_agent_with_retry(
+        agent=agent,
+        input_data=messages,
+        max_retries=MAX_CORRECTION_RETRIES,
+    )
 
-        logger.debug("agent_invoke_success", session_id=str(session_id))
-        return response  # type: ignore[no-any-return]
+    # Store tool calls from response
+    if hasattr(response, "tool_calls") and response.tool_calls:
+        await _store_tool_calls(session_id, artifact_repo, response.tool_calls)
 
-    except ConnectionError as e:
-        logger.warning("agent_invoke_connection_error", error=str(e))
-        raise  # Will retry
-    except TimeoutError as e:
-        logger.warning("agent_invoke_timeout", error=str(e))
-        raise  # Will retry
-    except Exception as e:
-        # Check for rate limit (A1 edge case - do NOT retry)
-        error_msg = str(e)
-        if "429" in error_msg or "rate limit" in error_msg.lower():
-            logger.error("agent_rate_limited", error=error_msg)
-            raise LLMError(f"LLM rate limit exceeded: {error_msg}") from e
-
-        # Check for auth errors (do NOT retry)
-        if "401" in error_msg or "403" in error_msg or "unauthorized" in error_msg.lower():
-            logger.error("agent_auth_failed", error=error_msg)
-            raise LLMError(f"LLM authentication failed: {error_msg}") from e
-
-        # Re-raise as generic error
-        logger.error("agent_invoke_failed", error=error_msg, error_type=type(e).__name__)
-        raise LLMError(f"Agent invocation failed: {e}") from e
+    logger.debug("agent_invoke_success", session_id=str(session_id))
+    return response
 
 
 async def _validate_and_correct_tests(
@@ -664,7 +616,7 @@ Current content:
 
 Please fix these compilation errors while maintaining test logic and coverage."""
 
-        correction_response = await _invoke_agent_with_retry(
+        correction_response = await _invoke_agent_and_store_tools(
             agent=agent,
             input_data={"messages": [HumanMessage(content=correction_prompt)]},
             session_id=session_id,
@@ -1317,7 +1269,7 @@ async def _run_test_feedback_loop(
         # Step 3: Ask agent to fix failures
         fix_prompt = _build_fix_prompt(failures, current_tests, project_path)
 
-        fix_response = await _invoke_agent_with_retry(
+        fix_response = await _invoke_agent_and_store_tools(
             agent=agent,
             input_data={"messages": [HumanMessage(content=fix_prompt)]},
             session_id=session_id,
@@ -1536,13 +1488,18 @@ def _parse_test_failures(maven_output: str) -> list[dict[str, Any]]:
     )
 
     for match in compile_error_pattern.finditer(maven_output):
-        failures.append({
+        error_msg = match.group(4)
+        failure = {
             "type": "compilation",
             "file": match.group(1),
             "line": int(match.group(2)),
             "column": int(match.group(3)),
-            "error": match.group(4),
-        })
+            "error": error_msg,
+        }
+
+        # Categorize JPA-specific errors with fix suggestions
+        failure["jpa_error"] = _categorize_jpa_error(error_msg)
+        failures.append(failure)
 
     # Look for assertion failures with stack traces
     assertion_pattern = re.compile(
@@ -1561,6 +1518,66 @@ def _parse_test_failures(maven_output: str) -> list[dict[str, Any]]:
             })
 
     return failures
+
+
+def _categorize_jpa_error(error_msg: str) -> dict[str, Any] | None:
+    """Categorize JPA-specific compilation errors and provide fix suggestions.
+
+    This helps the feedback loop to intelligently fix common JPA test errors.
+    """
+    error_lower = error_msg.lower()
+
+    # Pattern 1: setId() on @GeneratedValue field
+    if "cannot find symbol" in error_lower and "setid" in error_lower:
+        return {
+            "category": "generated_value_setid",
+            "description": "Attempting to call setId() on a JPA entity with @GeneratedValue",
+            "fix": "Use ReflectionTestUtils.setField(entity, \"id\", value) instead of entity.setId(value)",
+            "import_needed": "org.springframework.test.util.ReflectionTestUtils",
+        }
+
+    # Pattern 2: Type mismatch Long vs Integer
+    if "incompatible types" in error_lower and ("long" in error_lower or "integer" in error_lower):
+        return {
+            "category": "id_type_mismatch",
+            "description": "Type mismatch between Long and Integer for ID field",
+            "fix": "Use 1L for Long IDs, use 1 for Integer IDs. Check the entity's getId() return type.",
+        }
+
+    # Pattern 3: Optional misuse - calling method on Optional directly
+    if "cannot find symbol" in error_lower and "optional" in error_lower:
+        return {
+            "category": "optional_misuse",
+            "description": "Calling entity method directly on Optional<Entity> instead of extracted value",
+            "fix": "Use optional.get().getProperty() or assertThat(optional).isPresent() then extract",
+        }
+
+    # Pattern 4: Date type mismatch
+    if ("incompatible types" in error_lower or "cannot find symbol" in error_lower) and \
+       ("date" in error_lower or "localdate" in error_lower):
+        return {
+            "category": "date_type_mismatch",
+            "description": "Using wrong date type (java.util.Date vs java.time.LocalDate)",
+            "fix": "Check entity field type: use new Date() for java.util.Date, LocalDate.of() for LocalDate",
+        }
+
+    # Pattern 5: Duplicate class
+    if "duplicate class" in error_lower:
+        return {
+            "category": "duplicate_class",
+            "description": "Two test classes with the same name exist",
+            "fix": "Delete one of the duplicate test files",
+        }
+
+    # Pattern 6: Ambiguous method reference (assertEquals with Long)
+    if "ambiguous" in error_lower and "assertequals" in error_lower:
+        return {
+            "category": "ambiguous_assertion",
+            "description": "Ambiguous assertEquals call with boxed types",
+            "fix": "Use AssertJ assertThat(actual).isEqualTo(expected) instead of assertEquals",
+        }
+
+    return None
 
 
 def _build_fix_prompt(
@@ -1591,6 +1608,14 @@ def _build_fix_prompt(
         if failure.get("type") == "compilation":
             prompt += f"**Compilation Error** in `{failure.get('file')}` line {failure.get('line')}:\n"
             prompt += f"```\n{failure.get('error')}\n```\n"
+            # Include JPA-specific fix suggestion if available
+            jpa_error = failure.get("jpa_error")
+            if jpa_error:
+                prompt += f"\n**🔧 Suggested Fix ({jpa_error['category']}):**\n"
+                prompt += f"- Problem: {jpa_error['description']}\n"
+                prompt += f"- Solution: {jpa_error['fix']}\n"
+                if jpa_error.get("import_needed"):
+                    prompt += f"- Required import: `{jpa_error['import_needed']}`\n"
         elif failure.get("method"):
             prompt += f"**Test**: `{failure.get('class')}.{failure.get('method')}()`\n"
             prompt += f"**Error**: {failure.get('error')}\n"
@@ -1615,7 +1640,14 @@ def _build_fix_prompt(
    - Wrong exception types
    - Null pointer issues
 
-4. Return the COMPLETE fixed test files in ```java code blocks
+4. **JPA Entity Testing Rules (CRITICAL):**
+   - NEVER call setId() on entities with @GeneratedValue - use ReflectionTestUtils.setField(entity, "id", value)
+   - Use Optional.of(entity) not Optional.empty() when testing found entities
+   - Use correct ID types: 1L for Long, 1 for Integer
+   - Use assertThat() instead of assertEquals() for type safety
+   - Import: org.springframework.test.util.ReflectionTestUtils
+
+5. Return the COMPLETE fixed test files in ```java code blocks
 
 IMPORTANT: Include the full corrected test class content, not just the changed parts.
 Each test file should be in a separate ```java block with the complete class.

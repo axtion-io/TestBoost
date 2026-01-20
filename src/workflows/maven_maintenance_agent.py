@@ -5,19 +5,22 @@ Implements US2: Maven maintenance with real LLM agent reasoning and MCP tool cal
 Replaces deterministic workflow logic with AI-powered decision making.
 """
 
-import asyncio
 import json
-import time
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
+from langchain_core.messages import HumanMessage
 from langgraph.prebuilt import create_react_agent
 
 from src.agents.loader import AgentLoader
+from src.lib.agent_retry import (
+    AgentTimeoutError as BaseAgentTimeoutError,
+    ToolCallError as BaseToolCallError,
+    invoke_agent_with_retry,
+)
 from src.lib.config import get_settings
-from src.lib.llm import LLMError, get_llm
+from src.lib.llm import get_llm
 from src.lib.logging import get_logger
 from src.mcp_servers.registry import get_tools_for_servers
 
@@ -35,197 +38,32 @@ class MavenAgentError(Exception):
         super().__init__(message)
 
 
-class ToolCallError(MavenAgentError):
-    """Raised when agent fails to call expected tools."""
+class ToolCallError(MavenAgentError, BaseToolCallError):
+    """Raised when agent fails to call expected tools (Maven-specific wrapper)."""
 
-    def __init__(self, message: str = "Agent failed to call expected tools", expected_tools: list[str] | None = None):
+    def __init__(
+        self,
+        message: str = "Agent failed to call expected tools",
+        expected_tools: list[str] | None = None,
+    ):
         if expected_tools:
             message = f"{message}. Expected tools: {', '.join(expected_tools)}"
-        super().__init__(message)
+        MavenAgentError.__init__(self, message)
         self.expected_tools = expected_tools
 
 
-class AgentTimeoutError(MavenAgentError):
-    """Raised when agent invocation times out."""
+class AgentTimeoutError(MavenAgentError, BaseAgentTimeoutError):
+    """Raised when agent invocation times out (Maven-specific wrapper)."""
 
-    def __init__(self, message: str = "Agent invocation timed out", timeout_seconds: float | None = None):
+    def __init__(
+        self,
+        message: str = "Agent invocation timed out",
+        timeout_seconds: float | None = None,
+    ):
         if timeout_seconds:
             message = f"{message} after {timeout_seconds}s"
-        super().__init__(message)
+        MavenAgentError.__init__(self, message)
         self.timeout_seconds = timeout_seconds
-
-
-async def _invoke_agent_with_retry(
-    agent: Any,
-    input_data: dict[str, Any] | list[BaseMessage],
-    max_retries: int = 3,
-    expected_tools: list[str] | None = None
-) -> AIMessage:
-    """
-    Invoke agent with retry logic for transient failures.
-
-    Implements:
-    - A2: Retry if no tools called (max 3 attempts with modified prompt)
-    - A4: Retry on intermittent connectivity (exponential backoff)
-    - A5: Retry on malformed JSON (max 3 attempts)
-
-    Args:
-        agent: DeepAgents agent instance
-        input_data: Input messages or dict
-        max_retries: Maximum retry attempts
-        expected_tools: List of tool names that should be called (for A2 validation)
-
-    Returns:
-        AIMessage with agent response
-
-    Raises:
-        ToolCallError: If expected tools not called after retries
-        LLMError: If invocation fails after retries
-        AgentTimeoutError: If invocation times out
-    """
-    last_error: Exception | None = None
-    messages = input_data if isinstance(input_data, list) else [HumanMessage(content=str(input_data))]
-
-    for attempt in range(1, max_retries + 1):
-        try:
-            logger.info("agent_invoke_attempt", attempt=attempt, max_retries=max_retries)
-
-            # Log what we're sending to the LLM
-            logger.info(
-                "llm_request_details",
-                attempt=attempt,
-                message_count=len(messages),
-                messages=[{"role": m.type if hasattr(m, 'type') else 'unknown', "content_length": len(str(m.content))} for m in messages],
-                first_message_preview=str(messages[0].content)[:500] if messages else ""
-            )
-
-            start_time = time.time()
-
-            # Invoke agent
-            # Set higher recursion limit to allow agent to complete complex tasks
-            response = await agent.ainvoke({"messages": messages}, {"recursion_limit": 100})
-
-            duration_ms = int((time.time() - start_time) * 1000)
-            logger.info("agent_invoke_success", attempt=attempt, duration_ms=duration_ms)
-
-            # Log the raw response
-            logger.debug(
-                "llm_raw_response",
-                attempt=attempt,
-                response_type=type(response).__name__,
-                response_keys=list(response.keys()) if isinstance(response, dict) else "not_dict"
-            )
-
-            # Extract AIMessage from response
-            if isinstance(response, dict) and "messages" in response:
-                # DeepAgents returns dict with messages list
-                agent_messages = response["messages"]
-                if agent_messages:
-                    ai_message = agent_messages[-1]
-                else:
-                    raise MavenAgentError("Agent returned empty messages list")
-            elif isinstance(response, AIMessage):
-                ai_message = response
-            else:
-                raise MavenAgentError(f"Unexpected agent response type: {type(response)}")
-
-            # Log the AI message details
-            logger.info(
-                "llm_response_content",
-                attempt=attempt,
-                content_preview=str(ai_message.content)[:500] if hasattr(ai_message, 'content') else "no_content",
-                has_tool_calls=hasattr(ai_message, "tool_calls") and bool(ai_message.tool_calls),
-                tool_calls_count=len(ai_message.tool_calls) if hasattr(ai_message, "tool_calls") and ai_message.tool_calls else 0
-            )
-
-            # A2 Edge Case: Verify expected tools were called
-            if expected_tools:
-                called_tools = []
-                if hasattr(ai_message, "tool_calls") and ai_message.tool_calls:
-                    called_tools = [tc.get("name") or tc.get("tool") for tc in ai_message.tool_calls]
-                    logger.info(
-                        "llm_tool_calls_detected",
-                        attempt=attempt,
-                        called_tools=called_tools,
-                        tool_calls_raw=[{k: v for k, v in tc.items() if k in ['name', 'tool', 'id']} for tc in ai_message.tool_calls]
-                    )
-
-                missing_tools = set(expected_tools) - set(called_tools)
-                if missing_tools:
-                    logger.warning(
-                        "agent_missing_tool_calls",
-                        attempt=attempt,
-                        expected=expected_tools,
-                        called=called_tools,
-                        missing=list(missing_tools)
-                    )
-
-                    if attempt < max_retries:
-                        # Retry with modified prompt instructing tool use
-                        retry_message = HumanMessage(
-                            content=f"You must use these tools: {', '.join(expected_tools)}. "
-                            f"Please analyze the project and call the required tools."
-                        )
-                        messages.append(retry_message)
-                        logger.info("agent_retry_with_tool_prompt", missing_tools=list(missing_tools))
-                        continue
-                    else:
-                        raise ToolCallError(
-                            f"Agent failed to call expected tools after {max_retries} attempts. "
-                            f"Expected: {expected_tools}, Called: {called_tools}"
-                        )
-
-            return ai_message  # type: ignore[no-any-return]
-
-        except json.JSONDecodeError as e:
-            # A5 Edge Case: Malformed JSON
-            logger.warning("agent_json_error", attempt=attempt, error=str(e))
-            last_error = e
-
-            if attempt < max_retries:
-                wait_time = min(2 ** (attempt - 1), 10)
-                logger.info("agent_retry_json_error", attempt=attempt, wait_seconds=wait_time)
-                await asyncio.sleep(wait_time)
-                continue
-            raise MavenAgentError(f"Agent returned malformed JSON after {max_retries} attempts: {e}") from e
-
-        except ConnectionError as e:
-            # A4 Edge Case: Intermittent connectivity
-            logger.warning("agent_connection_error", attempt=attempt, error=str(e))
-            last_error = e
-
-            if attempt < max_retries:
-                wait_time = min(2 ** (attempt - 1), 10)
-                logger.info("agent_retry_connection_error", attempt=attempt, wait_seconds=wait_time)
-                await asyncio.sleep(wait_time)
-                continue
-            raise LLMError(f"Agent connection failed after {max_retries} attempts: {e}") from e
-
-        except Exception as e:
-            # Check if it's a rate limit error (A1 - should NOT retry)
-            error_msg = str(e).lower()
-            if "429" in error_msg or "rate limit" in error_msg:
-                logger.error("agent_rate_limited", error=str(e))
-                raise LLMError(f"LLM rate limit exceeded: {e}") from e
-
-            # Check if it's an auth error (should NOT retry)
-            if "401" in error_msg or "403" in error_msg or "unauthorized" in error_msg:
-                logger.error("agent_auth_failed", error=str(e))
-                raise LLMError(f"LLM authentication failed: {e}") from e
-
-            # Unknown error - log and retry
-            logger.error("agent_invoke_error", attempt=attempt, error=str(e), error_type=type(e).__name__)
-            last_error = e
-
-            if attempt < max_retries:
-                wait_time = min(2 ** (attempt - 1), 10)
-                logger.info("agent_retry_unknown_error", attempt=attempt, wait_seconds=wait_time)
-                await asyncio.sleep(wait_time)
-                continue
-            raise MavenAgentError(f"Agent invocation failed after {max_retries} attempts: {e}") from e
-
-    # Should not reach here, but raise last error if we do
-    raise MavenAgentError(f"Agent invocation failed: {last_error}") from last_error
 
 
 async def run_maven_maintenance_with_agent(
@@ -355,12 +193,11 @@ Remember: You have access to these tools:
         # T040: Invoke agent with retry logic (A2, A4, A5 edge cases)
         # Note: DeepAgents executes tools via the graph workflow, so we don't verify
         # expected_tools in the AI message. MCP tool logging confirms execution.
-        # Note: _invoke_agent_with_retry should include recursion_limit in config
-        response = await _invoke_agent_with_retry(
+        response = await invoke_agent_with_retry(
             agent=agent,
             input_data=[HumanMessage(content=user_input)],
             max_retries=config.error_handling.max_retries,
-            expected_tools=None  # Let DeepAgents manage tool execution via graph
+            expected_tools=None,  # Let DeepAgents manage tool execution via graph
         )
 
         # T044: Store agent reasoning in session result
@@ -422,11 +259,17 @@ Remember: You have access to these tools:
         raise MavenAgentError(f"Maven maintenance workflow failed: {e}") from e
 
 
+# Re-export for backward compatibility
+_invoke_agent_with_retry = invoke_agent_with_retry
+
+
 __all__ = [
     "run_maven_maintenance_with_agent",
     "MavenAgentError",
     "ToolCallError",
     "AgentTimeoutError",
+    # Backward compatibility export
+    "_invoke_agent_with_retry",
 ]
 
 

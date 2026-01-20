@@ -79,29 +79,33 @@ class TestMissingToolCallsRetry:
 
         T105c: Mock LLM response without tool calls, assert retry with modified prompt.
         """
-        from src.workflows.maven_maintenance_agent import _invoke_agent_with_retry
+        from src.lib.agent_retry import invoke_agent_with_retry
 
-        # First response: no tool calls
-        first_response = AIMessage(content="Let me think about this...")
+        # First response: no tool calls (wrapped in dict like LangGraph returns)
+        first_response = {"messages": [AIMessage(content="Let me think about this...")]}
 
         # Second response: has tool calls
-        second_response = AIMessage(
-            content="Analyzing dependencies",
-            tool_calls=[
-                {
-                    "name": "maven_analyze_dependencies",
-                    "args": {"project_path": "/test"},
-                    "id": "call_1",
-                }
-            ],
-        )
+        second_response = {
+            "messages": [
+                AIMessage(
+                    content="Analyzing dependencies",
+                    tool_calls=[
+                        {
+                            "name": "maven_analyze_dependencies",
+                            "args": {"project_path": "/test"},
+                            "id": "call_1",
+                        }
+                    ],
+                )
+            ]
+        }
 
         mock_agent = AsyncMock()
         mock_agent.ainvoke.side_effect = [first_response, second_response]
 
-        result = await _invoke_agent_with_retry(
+        result = await invoke_agent_with_retry(
             agent=mock_agent,
-            input_data={"messages": [{"role": "user", "content": "Analyze"}]},
+            input_data=[{"role": "user", "content": "Analyze"}],
             max_retries=3,
             expected_tools=["maven_analyze_dependencies"],
         )
@@ -118,22 +122,19 @@ class TestMissingToolCallsRetry:
 
         A2 edge case: After 3 attempts, should fail with clear error.
         """
-        from src.workflows.maven_maintenance_agent import (
-            MavenAgentError,
-            _invoke_agent_with_retry,
-        )
+        from src.lib.agent_retry import ToolCallError, invoke_agent_with_retry
 
-        # Always return response without tool calls
-        no_tools_response = AIMessage(content="I cannot help with that.")
+        # Always return response without tool calls (wrapped in dict like LangGraph)
+        no_tools_response = {"messages": [AIMessage(content="I cannot help with that.")]}
 
         mock_agent = AsyncMock()
         mock_agent.ainvoke.return_value = no_tools_response
 
-        # MavenAgentError wraps ToolCallError
-        with pytest.raises(MavenAgentError) as exc_info:
-            await _invoke_agent_with_retry(
+        # Should raise ToolCallError
+        with pytest.raises(ToolCallError) as exc_info:
+            await invoke_agent_with_retry(
                 agent=mock_agent,
-                input_data={"messages": [{"role": "user", "content": "Analyze"}]},
+                input_data=[{"role": "user", "content": "Analyze"}],
                 max_retries=3,
                 expected_tools=["maven_analyze_dependencies"],
             )

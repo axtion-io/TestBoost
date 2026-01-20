@@ -348,7 +348,75 @@ def _analyze_class(source_code: str) -> dict[str, Any]:
         if not any(d["name"] == dep_name for d in dependencies):
             dependencies.append({"type": dep_type, "name": dep_name})
 
+    # Analyze JPA entity fields for @GeneratedValue, @Id
+    jpa_info = _analyze_jpa_fields(source_code)
+    info["jpa_info"] = jpa_info
+    info["is_jpa_entity"] = "Entity" in annotations or "Table" in annotations
+
     return info
+
+
+def _analyze_jpa_fields(source_code: str) -> dict[str, Any]:
+    """Analyze JPA entity fields to detect @GeneratedValue, @Id, and field types.
+
+    This information is critical for generating correct tests that don't call
+    setId() on @GeneratedValue fields.
+    """
+    jpa_info: dict[str, Any] = {
+        "id_field": None,
+        "id_type": None,
+        "has_generated_value": False,
+        "generated_value_strategy": None,
+        "date_fields": [],  # Fields using Date vs LocalDate
+    }
+
+    # Pattern to detect @Id field with potential @GeneratedValue
+    # Matches patterns like:
+    # @Id
+    # @GeneratedValue(strategy = GenerationType.IDENTITY)
+    # private Long id;
+    id_block_pattern = re.compile(
+        r'@Id\s*'
+        r'(?:@GeneratedValue\s*(?:\(\s*(?:strategy\s*=\s*)?(?:GenerationType\.)?(\w+)\s*\))?\s*)?'
+        r'(?:@\w+(?:\([^)]*\))?\s*)*'  # Other annotations
+        r'(?:private|protected)?\s*'
+        r'(\w+)\s+'  # Type (Long, Integer, UUID, etc.)
+        r'(\w+)\s*;',  # Field name
+        re.MULTILINE | re.DOTALL
+    )
+
+    id_match = id_block_pattern.search(source_code)
+    if id_match:
+        strategy = id_match.group(1)  # IDENTITY, SEQUENCE, AUTO, etc.
+        id_type = id_match.group(2)   # Long, Integer, UUID
+        id_name = id_match.group(3)   # id, entityId, etc.
+
+        jpa_info["id_field"] = id_name
+        jpa_info["id_type"] = id_type
+        jpa_info["has_generated_value"] = strategy is not None or "@GeneratedValue" in source_code
+        jpa_info["generated_value_strategy"] = strategy
+
+    # Also check for simpler @GeneratedValue pattern
+    if not jpa_info["has_generated_value"] and "@GeneratedValue" in source_code:
+        jpa_info["has_generated_value"] = True
+
+    # Detect date field types (java.util.Date vs java.time.LocalDate)
+    date_pattern = re.compile(
+        r'(?:private|protected)?\s*'
+        r'(Date|LocalDate|LocalDateTime|Instant|ZonedDateTime)\s+'
+        r'(\w+)\s*;',
+        re.MULTILINE
+    )
+
+    for match in date_pattern.finditer(source_code):
+        date_type = match.group(1)
+        field_name = match.group(2)
+        jpa_info["date_fields"].append({
+            "name": field_name,
+            "type": date_type
+        })
+
+    return jpa_info
 
 
 def _is_primitive_type(type_name: str) -> bool:
@@ -1179,6 +1247,18 @@ _TYPE_VALUES: dict[str, str] = {
 }
 
 
+def _extract_generic_type(param_type: str) -> str | None:
+    """Extract the inner type from a generic type like Optional<Long> or List<Entity>.
+
+    Returns None if no generic type is found.
+    """
+    # Match patterns like Optional<Long>, List<Owner>, Set<Pet>
+    match = re.search(r'<\s*(\w+(?:\.\w+)*)\s*>', param_type)
+    if match:
+        return match.group(1)
+    return None
+
+
 def _generate_test_value(param_type: str, param_name: str) -> str:
     """Generate appropriate test values based on parameter type."""
     type_lower = param_type.lower()
@@ -1212,14 +1292,29 @@ def _generate_test_value(param_type: str, param_name: str) -> str:
     if "date" in type_lower:
         return "LocalDate.now()"
 
-    # Collection types
+    # Collection types - extract inner type for non-empty collections
+    inner_type = _extract_generic_type(param_type)
+
     if "list" in type_lower:
+        if inner_type:
+            inner_value = _generate_test_value(inner_type, "item")
+            return f"List.of({inner_value})"
         return "List.of()"
+
     if "set" in type_lower:
+        if inner_type:
+            inner_value = _generate_test_value(inner_type, "item")
+            return f"Set.of({inner_value})"
         return "Set.of()"
+
     if "map" in type_lower:
         return "Map.of()"
+
+    # Optional<T> - IMPORTANT: Use Optional.of() for present values, not empty()
     if "optional" in type_lower:
+        if inner_type:
+            inner_value = _generate_test_value(inner_type, param_name)
+            return f"Optional.of({inner_value})"
         return "Optional.empty()"
 
     # Custom objects - check for DTO/Request patterns

@@ -244,12 +244,9 @@ def _find_source_files(project_path: str) -> list[str]:
     source_files = []
 
     # Patterns to include (testable classes)
+    # Include all Java files, then filter with exclude patterns
     include_patterns = [
-        "**/web/**/*.java",  # Controllers, resources
-        "**/controller/**/*.java",
-        "**/service/**/*.java",
-        "**/application/**/*.java",
-        "**/api/**/*.java",
+        "**/*.java",  # All Java files - then filtered by exclude patterns
     ]
 
     # Patterns to exclude

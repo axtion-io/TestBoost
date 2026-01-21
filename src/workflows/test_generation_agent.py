@@ -25,7 +25,7 @@ from src.agents.loader import AgentLoader
 from src.db.repository import ArtifactRepository, SessionRepository
 from src.lib.agent_retry import invoke_agent_with_retry
 from src.lib.config import get_settings
-from src.lib.llm import LLMError, get_llm
+from src.lib.llm import get_llm
 from src.lib.logging import get_logger
 from src.mcp_servers.registry import get_tools_for_servers
 from src.mcp_servers.test_generator.tools.generate_unit import generate_adaptive_tests

@@ -128,10 +128,19 @@ def get_llm(
             timeout=timeout,
             **kwargs,
         )
+    elif provider == "vllm":
+        return _create_vllm_llm(
+            api_key=api_key,
+            model=model,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            timeout=timeout,
+            **kwargs,
+        )
     else:
         raise LLMProviderError(
             f"Unknown LLM provider: '{provider}'. "
-            f"Supported providers: anthropic, google-genai, openai",
+            f"Supported providers: anthropic, google-genai, openai, vllm",
             provider=provider,
         )
 
@@ -218,6 +227,52 @@ def _create_openai_llm(
         max_tokens=max_tokens,
         timeout=float(timeout),
         callbacks=callbacks,
+        **kwargs,
+    )
+
+
+def _create_vllm_llm(
+    api_key: str,
+    model: str,
+    temperature: float,
+    max_tokens: int | None,
+    timeout: int,
+    **kwargs: Any,
+) -> BaseChatModel:
+    """
+    Create vLLM LLM instance using OpenAI-compatible API.
+
+    vLLM exposes an OpenAI-compatible API, so we use ChatOpenAI
+    with a custom base_url pointing to the vLLM server.
+
+    Supports local models like Qwen3-Coder-30B-A3B-Instruct.
+    """
+    from langchain_openai import ChatOpenAI
+
+    settings = get_settings()
+
+    # Use vLLM-specific model if not overridden
+    if model == settings.model and settings.llm_provider == "vllm":
+        model = settings.vllm_model
+
+    logger.debug(
+        "creating_vllm_llm",
+        model=model,
+        api_base=settings.vllm_api_base,
+    )
+    callbacks = _add_metrics_callback("vllm", model, kwargs)
+
+    # vLLM uses OpenAI-compatible API with custom base_url
+    return ChatOpenAI(  # type: ignore[call-arg]
+        api_key=api_key,
+        model=model,
+        temperature=temperature,
+        max_tokens=max_tokens,
+        timeout=float(timeout),
+        base_url=settings.vllm_api_base,
+        callbacks=callbacks,
+        # Qwen3-Coder specific: enable thinking mode for better reasoning
+        # Can be disabled via extra_body if needed
         **kwargs,
     )
 

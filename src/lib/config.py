@@ -33,7 +33,7 @@ class Settings(BaseSettings):
     )
 
     # LLM Provider settings
-    llm_provider: Literal["anthropic", "google-genai", "openai"] = Field(
+    llm_provider: Literal["anthropic", "google-genai", "openai", "vllm"] = Field(
         default="anthropic",
         description="LLM provider to use",
     )
@@ -54,6 +54,20 @@ class Settings(BaseSettings):
     openai_api_key: str | None = Field(
         default=None,
         description="OpenAI API key",
+    )
+
+    # vLLM / Local LLM settings
+    vllm_api_base: str = Field(
+        default="https://codeia.dev.etat-ge.ch/v1",
+        description="Base URL for vLLM API (OpenAI-compatible endpoint)",
+    )
+    vllm_api_key: str = Field(
+        default="EMPTY",
+        description="API key for vLLM (use 'EMPTY' for local deployments without auth)",
+    )
+    vllm_model: str = Field(
+        default="/data/sdia/downloaded_models/Qwen3-Coder-30B-A3B-Instruct/",
+        description="Default model path/name for vLLM",
     )
 
     # LangSmith tracing (optional)
@@ -120,6 +134,7 @@ class Settings(BaseSettings):
                 "google": "google-genai",
                 "anthropic": "anthropic",
                 "openai": "openai",
+                "vllm": "vllm",
             }
             if provider_part in provider_mapping:
                 # Override with parsed values (use object.__setattr__ for frozen model)
@@ -143,6 +158,7 @@ class Settings(BaseSettings):
             "anthropic": self.anthropic_api_key,
             "google-genai": self.google_api_key,
             "openai": self.openai_api_key,
+            "vllm": self.vllm_api_key,
         }
         return api_keys.get(provider)
 

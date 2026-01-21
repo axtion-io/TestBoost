@@ -1424,17 +1424,37 @@ async def _run_test_feedback_loop(
         )
 
         # Step 3: Ask agent to fix failures
-        fix_prompt = _build_fix_prompt(failures, current_tests, project_path)
+        # Check if using vLLM (doesn't support tool calls)
+        current_settings = get_settings()
+        use_prompt_only = current_settings.llm_provider == "vllm"
 
-        fix_response = await _invoke_agent_and_store_tools(
-            agent=agent,
-            input_data={"messages": [HumanMessage(content=fix_prompt)]},
-            session_id=session_id,
-            artifact_repo=artifact_repo,
-        )
+        if use_prompt_only:
+            # Use direct LLM call without tools (for vLLM compatibility)
+            logger.info(
+                "using_prompt_only_fix",
+                session_id=str(session_id),
+                reason="vllm_no_tool_support",
+            )
+            corrected_tests = await _fix_tests_without_tools(
+                failures=failures,
+                current_tests=current_tests,
+                project_path=project_path,
+                session_id=session_id,
+                artifact_repo=artifact_repo,
+            )
+        else:
+            # Use agent with tools (for OpenAI, Anthropic, Google)
+            fix_prompt = _build_fix_prompt(failures, current_tests, project_path)
 
-        # Step 4: Extract and write corrected tests
-        corrected_tests = _extract_generated_tests(fix_response)
+            fix_response = await _invoke_agent_and_store_tools(
+                agent=agent,
+                input_data={"messages": [HumanMessage(content=fix_prompt)]},
+                session_id=session_id,
+                artifact_repo=artifact_repo,
+            )
+
+            # Step 4: Extract and write corrected tests
+            corrected_tests = _extract_generated_tests(fix_response)
 
         if not corrected_tests:
             logger.warning(
@@ -1811,6 +1831,88 @@ Each test file should be in a separate ```java block with the complete class.
 """
 
     return prompt
+
+
+async def _fix_tests_without_tools(
+    failures: list[dict[str, Any]],
+    current_tests: dict[str, str],
+    project_path: str,
+    session_id: UUID,
+    artifact_repo: ArtifactRepository,
+) -> list[dict[str, Any]]:
+    """
+    Fix test failures using direct LLM call without tool calling.
+
+    This is an alternative to the agent-based approach for LLM providers
+    that don't support function calling (like vLLM without tool-call-parser).
+
+    Args:
+        failures: List of test failures
+        current_tests: Dict of test file path -> content
+        project_path: Project path
+        session_id: Session UUID for artifact storage
+        artifact_repo: Artifact repository
+
+    Returns:
+        List of corrected test dicts with path and content
+    """
+    # Build the fix prompt
+    fix_prompt = _build_fix_prompt(failures, current_tests, project_path)
+
+    # Get LLM directly (without tools)
+    llm = get_llm()
+
+    logger.info(
+        "fixing_tests_without_tools",
+        session_id=str(session_id),
+        failure_count=len(failures),
+    )
+
+    try:
+        # Call LLM directly
+        response = await llm.ainvoke([HumanMessage(content=fix_prompt)])
+
+        # Extract content from response
+        if isinstance(response, AIMessage):
+            response_content = response.content
+        else:
+            response_content = str(response)
+
+        logger.info(
+            "llm_fix_response_received",
+            session_id=str(session_id),
+            response_length=len(response_content),
+        )
+
+        # Store response as artifact
+        await artifact_repo.create(
+            session_id=session_id,
+            name="llm_fix_response",
+            artifact_type="llm_response",
+            content_type="text/plain",
+            file_path=f"artifacts/{session_id}/llm_fix_response.txt",
+            size_bytes=len(response_content),
+        )
+
+        # Extract corrected tests from response
+        # The response should contain ```java code blocks
+        corrected_tests = _extract_generated_tests(response_content)
+
+        logger.info(
+            "tests_extracted_from_response",
+            session_id=str(session_id),
+            corrected_count=len(corrected_tests),
+        )
+
+        return corrected_tests
+
+    except Exception as e:
+        logger.error(
+            "fix_tests_without_tools_failed",
+            session_id=str(session_id),
+            error=str(e),
+        )
+        return []
 
 
 __all__ = [

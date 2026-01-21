@@ -247,6 +247,7 @@ def _create_vllm_llm(
 
     Supports local models like Qwen3-Coder-30B-A3B-Instruct.
     """
+    import httpx
     from langchain_openai import ChatOpenAI
 
     settings = get_settings()
@@ -259,8 +260,17 @@ def _create_vllm_llm(
         "creating_vllm_llm",
         model=model,
         api_base=settings.vllm_api_base,
+        verify_ssl=settings.vllm_verify_ssl,
     )
     callbacks = _add_metrics_callback("vllm", model, kwargs)
+
+    # Create custom HTTP client if SSL verification is disabled
+    # (common for enterprise environments with self-signed certificates)
+    http_client = None
+    async_http_client = None
+    if not settings.vllm_verify_ssl:
+        http_client = httpx.Client(verify=False)
+        async_http_client = httpx.AsyncClient(verify=False)
 
     # vLLM uses OpenAI-compatible API with custom base_url
     return ChatOpenAI(  # type: ignore[call-arg]
@@ -271,8 +281,8 @@ def _create_vllm_llm(
         timeout=float(timeout),
         base_url=settings.vllm_api_base,
         callbacks=callbacks,
-        # Qwen3-Coder specific: enable thinking mode for better reasoning
-        # Can be disabled via extra_body if needed
+        http_client=http_client,
+        http_async_client=async_http_client,
         **kwargs,
     )
 

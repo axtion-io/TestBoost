@@ -69,6 +69,10 @@ class Settings(BaseSettings):
         default="/data/sdia/downloaded_models/Qwen3-Coder-30B-A3B-Instruct/",
         description="Default model path/name for vLLM",
     )
+    vllm_verify_ssl: bool = Field(
+        default=True,
+        description="Verify SSL certificates for vLLM API (set False for self-signed certs)",
+    )
 
     # LangSmith tracing (optional)
     langsmith_api_key: str | None = Field(

@@ -9,8 +9,8 @@ identity:
   persona: Reliable, health-check-focused, deployment-safety-conscious
 
 llm:
-  provider: google-genai
-  model: gemini-2.0-flash
+  provider: vllm
+  model: /data/sdia/downloaded_models/Qwen3-Coder-30B-A3B-Instruct/
   temperature: 0.3
   max_tokens: 8192
 

@@ -437,7 +437,9 @@ python -m src.cli.main config reload --all
 
 ## License
 
-MIT License - see [LICENSE](LICENSE) for details.
+Apache License 2.0 - see [LICENSE](LICENSE) for details.
+
+Copyright 2024-2025 Jean-Francois Chevalier / Axtion
 
 ## Acknowledgments
 

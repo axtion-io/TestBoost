@@ -1014,6 +1014,7 @@ def _is_valid_test_code(code: str) -> bool:
     Validates that code contains essential Java test elements:
     - A class declaration
     - At least one test annotation (@Test or @ParameterizedTest)
+    - Balanced braces (basic syntax check)
 
     Args:
         code: Java source code to validate
@@ -1022,19 +1023,106 @@ def _is_valid_test_code(code: str) -> bool:
         True if code appears to be valid Java test code
     """
     if not code or not isinstance(code, str):
+        logger.warning("validation_failed", reason="empty_or_invalid_input", code_type=type(code).__name__)
         return False
 
     # Must have a class declaration
     has_class = "class " in code
+    if not has_class:
+        logger.warning("validation_failed", reason="no_class_declaration", code_preview=code[:100] if len(code) > 100 else code)
+        return False
 
     # Must have at least one test annotation
     has_test = "@Test" in code or "@ParameterizedTest" in code
+    if not has_test:
+        logger.warning("validation_failed", reason="no_test_annotation", code_preview=code[:100] if len(code) > 100 else code)
+        return False
 
     # Basic sanity check: code should have some minimal structure
     # (at least have opening/closing braces for a class)
     has_structure = "{" in code and "}" in code
+    if not has_structure:
+        logger.warning("validation_failed", reason="no_brace_structure", code_preview=code[:100] if len(code) > 100 else code)
+        return False
 
-    return has_class and has_test and has_structure
+    # Check for balanced braces - critical for valid Java syntax
+    if not _has_balanced_braces(code):
+        logger.warning("validation_failed", reason="unbalanced_braces", code_preview=code[:100] if len(code) > 100 else code)
+        return False
+
+    return True
+
+
+def _has_balanced_braces(code: str) -> bool:
+    """Check if braces are balanced in Java code.
+
+    Counts curly braces while ignoring those inside string literals
+    and comments to determine if they are balanced.
+
+    Args:
+        code: Java source code to check
+
+    Returns:
+        True if braces are balanced, False otherwise
+    """
+    brace_count = 0
+    in_string = False
+    in_char = False
+    in_line_comment = False
+    in_block_comment = False
+    prev_char = ""
+
+    for i, char in enumerate(code):
+        # Handle end of line comment
+        if in_line_comment:
+            if char == "\n":
+                in_line_comment = False
+            prev_char = char
+            continue
+
+        # Handle block comment
+        if in_block_comment:
+            if prev_char == "*" and char == "/":
+                in_block_comment = False
+            prev_char = char
+            continue
+
+        # Check for start of comments
+        if not in_string and not in_char:
+            if prev_char == "/" and char == "/":
+                in_line_comment = True
+                prev_char = char
+                continue
+            if prev_char == "/" and char == "*":
+                in_block_comment = True
+                prev_char = char
+                continue
+
+        # Handle string literals
+        if char == '"' and not in_char and prev_char != "\\":
+            in_string = not in_string
+            prev_char = char
+            continue
+
+        # Handle char literals
+        if char == "'" and not in_string and prev_char != "\\":
+            in_char = not in_char
+            prev_char = char
+            continue
+
+        # Count braces only outside strings, chars, and comments
+        if not in_string and not in_char:
+            if char == "{":
+                brace_count += 1
+            elif char == "}":
+                brace_count -= 1
+                # Early exit: more closing than opening braces
+                if brace_count < 0:
+                    return False
+
+        prev_char = char
+
+    return brace_count == 0
 
 
 def _extract_test_info(code: str) -> dict[str, Any] | None:

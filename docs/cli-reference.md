@@ -108,14 +108,64 @@ boost maintenance run ./my-project -n
 boost maintenance run ./my-project -m autonomous -y -f json
 ```
 
-**Other maintenance commands**:
+---
+
+### boost maintenance list
+
+List available dependency updates for a Maven project.
+
+```bash
+boost maintenance list [PROJECT_PATH] [OPTIONS]
+```
+
+**Arguments**:
+- `PROJECT_PATH`: Path to Maven project root (default: current directory)
+
+**Options**:
+| Option | Short | Description | Default |
+|--------|-------|-------------|---------|
+| `--include-snapshots` | | Include SNAPSHOT versions | false |
+| `--format` | `-f` | Output format: rich, json | rich |
+
+**Example**:
 ```bash
 # List available updates
 boost maintenance list ./my-project
 
-# Check session status
-boost maintenance status <session-id>
+# Include SNAPSHOT versions
+boost maintenance list ./my-project --include-snapshots
+
+# JSON output for scripting
+boost maintenance list ./my-project -f json
 ```
+
+Shows all dependencies with available updates and any known security vulnerabilities.
+
+---
+
+### boost maintenance status
+
+Check the status of a maintenance session.
+
+```bash
+boost maintenance status <SESSION_ID> [OPTIONS]
+```
+
+**Arguments**:
+- `SESSION_ID`: Session UUID (required)
+
+**Options**:
+| Option | Short | Description | Default |
+|--------|-------|-------------|---------|
+| `--watch` | `-w` | Continuously watch for updates (not yet implemented) | false |
+
+**Example**:
+```bash
+# Check session status
+boost maintenance status abc123-def456-ghi789
+```
+
+Use the session ID returned from `maintenance run` to track the progress of a running maintenance workflow.
 
 ---
 
@@ -343,31 +393,211 @@ boost tests generate ./my-project -t com.example.MyService
 
 # Generate with custom mutation score target
 boost tests generate ./my-project --mutation-score 90
+
+# Dry-run (analyze without generating)
+boost tests generate ./my-project --dry-run
+
+# With verbose output
+boost tests generate ./my-project -v
 ```
 
-**Other test commands**:
+---
+
+### boost tests analyze
+
+Analyze a Java project for test generation.
+
 ```bash
-# Analyze project for test opportunities
+boost tests analyze [PROJECT_PATH] [OPTIONS]
+```
+
+**Arguments**:
+- `PROJECT_PATH`: Path to Maven project root (default: current directory)
+
+**Options**:
+| Option | Short | Description | Default |
+|--------|-------|-------------|---------|
+| `--verbose` | `-v` | Show detailed output | false |
+
+**Example**:
+```bash
+# Analyze project
 boost tests analyze ./my-project
 
-# Run mutation testing
+# Analyze with verbose output
+boost tests analyze ./my-project -v
+```
+
+Displays:
+- Project type and build system
+- Java version and frameworks
+- Number of source classes and existing tests
+- Detected test naming conventions
+- Assertion styles and mocking patterns
+
+---
+
+### boost tests mutation
+
+Run mutation testing on a Java project.
+
+```bash
+boost tests mutation [PROJECT_PATH] [OPTIONS]
+```
+
+**Arguments**:
+- `PROJECT_PATH`: Path to Maven project root (default: current directory)
+
+**Options**:
+| Option | Short | Description | Default |
+|--------|-------|-------------|---------|
+| `--classes` | `-c` | Target classes to mutate (glob pattern) | all |
+| `--tests` | `-t` | Target tests to run (glob pattern) | all |
+| `--verbose` | `-v` | Show detailed output | false |
+
+**Example**:
+```bash
+# Run mutation testing on entire project
 boost tests mutation ./my-project
 
-# Show improvement recommendations
+# Run on specific classes
+boost tests mutation ./my-project -c "com.example.service.*"
+
+# Run with specific tests
+boost tests mutation ./my-project -t "com.example.*Test"
+
+# Verbose output
+boost tests mutation ./my-project -v
+```
+
+Uses PIT mutation testing to measure test effectiveness. Reports:
+- Total mutants generated
+- Killed vs survived mutants
+- Mutation score percentage
+- Classes with low mutation scores
+
+---
+
+### boost tests recommendations
+
+Show test improvement recommendations.
+
+```bash
+boost tests recommendations [PROJECT_PATH] [OPTIONS]
+```
+
+**Arguments**:
+- `PROJECT_PATH`: Path to Maven project root (default: current directory)
+
+**Options**:
+| Option | Short | Description | Default |
+|--------|-------|-------------|---------|
+| `--target` | `-t` | Target mutation score percentage | 80 |
+| `--strategy` | `-s` | Prioritization strategy: quick_wins, high_impact, balanced | balanced |
+
+**Example**:
+```bash
+# Get recommendations with default settings
 boost tests recommendations ./my-project
 
-# Analyze impact of code changes
-boost tests impact ./my-project
+# Target 90% mutation score
+boost tests recommendations ./my-project -t 90
+
+# Use quick wins strategy (easiest improvements first)
+boost tests recommendations ./my-project -s quick_wins
+
+# Use high impact strategy (biggest improvements first)
+boost tests recommendations ./my-project -s high_impact
 ```
+
+Analyzes mutation testing results and provides prioritized recommendations for improving test effectiveness.
+
+---
+
+### boost tests impact
+
+Analyze impact of uncommitted changes.
+
+```bash
+boost tests impact [PROJECT_PATH] [OPTIONS]
+```
+
+**Arguments**:
+- `PROJECT_PATH`: Path to Maven project root (default: current directory)
+
+**Options**:
+| Option | Short | Description | Default |
+|--------|-------|-------------|---------|
+| `--output` | `-o` | Save report to file (default: stdout) | - |
+| `--verbose` | `-v` | Show progress and debug info | false |
+| `--chunk-size` | | Max lines per chunk for large diffs | 500 |
+
+**Example**:
+```bash
+# Analyze uncommitted changes
+boost tests impact ./my-project
+
+# Save report to file
+boost tests impact ./my-project -o impact-report.json
+
+# With verbose output
+boost tests impact ./my-project -v
+```
+
+Detects uncommitted changes in your working directory, classifies each change by category and risk level, and generates an impact report with test requirements.
+
+**Exit codes**:
+- `0` - Success, all impacts covered or no business-critical uncovered
+- `1` - Business-critical impacts have no tests (for CI enforcement)
 
 ---
 
 ### boost deploy run
 
-Deploy project using Docker.
+Deploy a Java project using Docker.
 
 ```bash
 boost deploy run [PROJECT_PATH] [OPTIONS]
+```
+
+**Arguments**:
+- `PROJECT_PATH`: Path to Java project root (default: current directory)
+
+**Options**:
+| Option | Short | Description | Default |
+|--------|-------|-------------|---------|
+| `--mode` | | Execution mode: interactive, autonomous, analysis_only, debug | interactive |
+| `--dependency` | `-d` | Additional service dependencies (postgres, mysql, redis, mongodb, rabbitmq, kafka) | - |
+| `--endpoint` | `-e` | Health check endpoints (e.g., 'http://localhost:8080/health') | - |
+| `--skip-health` | | Skip health check validation | false |
+| `--format` | `-f` | Output format: rich, json | rich |
+
+**Example**:
+```bash
+# Deploy with default settings
+boost deploy run ./my-project
+
+# Deploy with PostgreSQL dependency
+boost deploy run ./my-project -d postgres
+
+# Deploy with health check endpoint
+boost deploy run ./my-project -e http://localhost:8080/health
+
+# Deploy without health check validation
+boost deploy run ./my-project --skip-health
+
+# JSON output for CI/CD
+boost deploy run ./my-project -f json
+```
+
+---
+
+### boost deploy stop
+
+Stop a Docker deployment.
+
+```bash
+boost deploy stop [PROJECT_PATH] [OPTIONS]
 ```
 
 **Arguments**:
@@ -376,21 +606,93 @@ boost deploy run [PROJECT_PATH] [OPTIONS]
 **Options**:
 | Option | Short | Description | Default |
 |--------|-------|-------------|---------|
-| `--mode` | `-m` | Execution mode: interactive, autonomous, analysis_only | interactive |
-| `--compose-file` | `-f` | Docker Compose file name | docker-compose.yml |
-| `--environment` | `-e` | Target environment | development |
-| `--no-cache` | | Build without Docker cache | false |
+| `--volumes` | `-v` | Remove associated volumes | false |
 
 **Example**:
 ```bash
-# Deploy with default settings
-boost deploy run ./my-project
+# Stop deployment
+boost deploy stop ./my-project
 
-# Deploy to production
-boost deploy run ./my-project -e production
+# Stop and remove volumes
+boost deploy stop ./my-project -v
+```
 
-# Deploy with fresh build
-boost deploy run ./my-project --no-cache
+---
+
+### boost deploy logs
+
+Show logs from deployed containers.
+
+```bash
+boost deploy logs [PROJECT_PATH] [OPTIONS]
+```
+
+**Arguments**:
+- `PROJECT_PATH`: Path to project root (default: current directory)
+
+**Options**:
+| Option | Short | Description | Default |
+|--------|-------|-------------|---------|
+| `--service` | `-s` | Specific service to show logs for | all |
+| `--tail` | `-n` | Number of lines to show | 100 |
+| `--follow` | `-f` | Follow log output | false |
+
+**Example**:
+```bash
+# Show logs from all containers
+boost deploy logs ./my-project
+
+# Show last 50 lines
+boost deploy logs ./my-project -n 50
+
+# Follow logs from specific service
+boost deploy logs ./my-project -s app -f
+```
+
+---
+
+### boost deploy status
+
+Check status of deployed containers.
+
+```bash
+boost deploy status [PROJECT_PATH]
+```
+
+**Arguments**:
+- `PROJECT_PATH`: Path to project root (default: current directory)
+
+**Example**:
+```bash
+# Check deployment status
+boost deploy status ./my-project
+```
+
+---
+
+### boost deploy build
+
+Build Docker image without running containers.
+
+```bash
+boost deploy build [PROJECT_PATH] [OPTIONS]
+```
+
+**Arguments**:
+- `PROJECT_PATH`: Path to project root (default: current directory)
+
+**Options**:
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--no-cache` | Build without using cache | false |
+
+**Example**:
+```bash
+# Build Docker image
+boost deploy build ./my-project
+
+# Build without cache
+boost deploy build ./my-project --no-cache
 ```
 
 ---
@@ -431,33 +733,172 @@ boost cancel abc123-def456-ghi789
 
 ---
 
-### boost config
+### boost config validate
 
-Manage configuration.
+Validate agent configuration(s).
 
 ```bash
-boost config <subcommand>
+boost config validate [OPTIONS]
 ```
 
-**Subcommands**:
-| Command | Description |
-|---------|-------------|
-| `show` | Display current configuration |
-| `set <key> <value>` | Set configuration value |
-| `validate` | Validate configuration |
-| `init` | Initialize configuration file |
+**Options**:
+| Option | Short | Description | Default |
+|--------|-------|-------------|---------|
+| `--agent` | `-a` | Specific agent to validate | all |
+| `--config-dir` | `-c` | Path to agent configurations directory | config/agents |
 
 **Example**:
 ```bash
-# Show current config
-boost config show
-
-# Set LLM provider
-boost config set llm_provider anthropic
-
-# Validate configuration
+# Validate all agents
 boost config validate
+
+# Validate specific agent
+boost config validate -a maven_maintenance
+
+# Validate with custom config directory
+boost config validate -c ./custom-config
 ```
+
+---
+
+### boost config show
+
+Display agent configuration details.
+
+```bash
+boost config show <AGENT_NAME> [OPTIONS]
+```
+
+**Arguments**:
+- `AGENT_NAME`: Agent name to display (required)
+
+**Options**:
+| Option | Short | Description | Default |
+|--------|-------|-------------|---------|
+| `--config-dir` | `-c` | Path to agent configurations directory | config/agents |
+| `--format` | `-f` | Output format: pretty, json, yaml | pretty |
+
+**Example**:
+```bash
+# Show config in pretty format
+boost config show maven_maintenance
+
+# Show as JSON
+boost config show maven_maintenance -f json
+
+# Show as YAML
+boost config show maven_maintenance -f yaml
+```
+
+---
+
+### boost config reload
+
+Force reload configuration(s) from disk.
+
+```bash
+boost config reload [OPTIONS]
+```
+
+**Options**:
+| Option | Short | Description | Default |
+|--------|-------|-------------|---------|
+| `--agent` | `-a` | Specific agent to reload | - |
+| `--all` | | Reload all configurations | false |
+| `--config-dir` | `-c` | Path to agent configurations directory | config/agents |
+
+**Example**:
+```bash
+# Reload specific agent
+boost config reload -a maven_maintenance
+
+# Reload all configurations
+boost config reload --all
+```
+
+---
+
+### boost config backup
+
+Create a timestamped backup of an agent configuration.
+
+```bash
+boost config backup <AGENT_NAME> [OPTIONS]
+```
+
+**Arguments**:
+- `AGENT_NAME`: Agent name to backup (required)
+
+**Options**:
+| Option | Short | Description | Default |
+|--------|-------|-------------|---------|
+| `--config-dir` | `-c` | Path to agent configurations directory | config/agents |
+
+**Example**:
+```bash
+# Backup an agent configuration
+boost config backup maven_maintenance
+```
+
+Backups are stored in `config/agents/.backups/` with format: `<agent_name>_YYYYMMDD_HHMMSS.yaml`
+
+---
+
+### boost config list-backups
+
+List available configuration backups.
+
+```bash
+boost config list-backups [OPTIONS]
+```
+
+**Options**:
+| Option | Short | Description | Default |
+|--------|-------|-------------|---------|
+| `--agent` | `-a` | Filter by specific agent | all |
+| `--config-dir` | `-c` | Path to agent configurations directory | config/agents |
+
+**Example**:
+```bash
+# List all backups
+boost config list-backups
+
+# List backups for specific agent
+boost config list-backups -a maven_maintenance
+```
+
+---
+
+### boost config rollback
+
+Rollback agent configuration to the latest backup.
+
+```bash
+boost config rollback <AGENT_NAME> [OPTIONS]
+```
+
+**Arguments**:
+- `AGENT_NAME`: Agent name to rollback (required)
+
+**Options**:
+| Option | Short | Description | Default |
+|--------|-------|-------------|---------|
+| `--config-dir` | `-c` | Path to agent configurations directory | config/agents |
+| `--yes` | `-y` | Skip confirmation prompt | false |
+
+**Example**:
+```bash
+# Rollback with confirmation
+boost config rollback maven_maintenance
+
+# Rollback without confirmation
+boost config rollback maven_maintenance -y
+```
+
+This will:
+1. Create a backup of the current configuration
+2. Restore the latest backup
+3. Invalidate the config cache
 
 ---
 

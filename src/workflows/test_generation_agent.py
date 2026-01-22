@@ -46,6 +46,9 @@ TEST_TIMEOUT_SECONDS = 300  # 5 minutes timeout for Maven test run
 MAX_WRITE_RETRIES = 3  # Maximum retries for file write with verification
 WRITE_RETRY_DELAY_BASE = 0.5  # Base delay in seconds for retry backoff
 
+# Extraction retry configuration - handle cases where agent doesn't provide corrections
+MAX_EXTRACTION_RETRIES = 2  # Maximum retries to extract corrections from agent response
+
 
 class TestGenerationError(Exception):
     """Base exception for test generation errors."""
@@ -2064,16 +2067,80 @@ async def _run_test_feedback_loop(
         )
 
         # Pass validated_tests to preserve multi-module paths in corrections
+        # Use retry logic for extraction - sometimes agent doesn't format response correctly
         corrected_tests = _extract_generated_tests(fix_response, validated_tests)
+        current_fix_response = fix_response
+        extraction_messages = [HumanMessage(content=fix_prompt)]
 
+        for extraction_attempt in range(1, MAX_EXTRACTION_RETRIES + 1):
+            if corrected_tests:
+                break
+
+            logger.warning(
+                "feedback_loop_extraction_retry",
+                session_id=str(session_id),
+                iteration=iteration,
+                extraction_attempt=extraction_attempt,
+                max_extraction_retries=MAX_EXTRACTION_RETRIES,
+                reason="no_corrections_extracted",
+            )
+
+            # Build retry prompt asking agent to provide corrections in expected format
+            retry_prompt = """Your previous response didn't include the corrected test code in the expected format.
+
+Please provide the COMPLETE fixed test files. Each test file should be:
+1. In a separate ```java code block
+2. Include the FULL class content (package, imports, class definition, all methods)
+3. Be a complete, compilable Java file
+
+Example format:
+```java
+package com.example.service;
+
+import org.junit.jupiter.api.Test;
+// ... other imports
+
+public class MyServiceTest {
+    // ... complete test class
+}
+```
+
+Please provide the corrected test files now."""
+
+            extraction_messages.append(HumanMessage(content=retry_prompt))
+
+            # Re-invoke agent with retry prompt
+            retry_response = await _invoke_agent_and_store_tools(
+                agent=agent,
+                input_data={"messages": extraction_messages},
+                session_id=session_id,
+                artifact_repo=artifact_repo,
+            )
+            current_fix_response = retry_response
+
+            # Try to extract corrections from retry response
+            corrected_tests = _extract_generated_tests(retry_response, validated_tests)
+
+            if corrected_tests:
+                logger.info(
+                    "feedback_loop_extraction_retry_success",
+                    session_id=str(session_id),
+                    iteration=iteration,
+                    extraction_attempt=extraction_attempt,
+                    correction_count=len(corrected_tests),
+                )
+
+        # If still no corrections after retries, escalate and continue to next iteration
         if not corrected_tests:
             step4_duration = time.time() - step4_start
             logger.warning(
-                "feedback_loop_no_corrections",
+                "feedback_loop_no_corrections_escalated",
                 session_id=str(session_id),
                 iteration=iteration,
                 step=4,
                 duration_seconds=round(step4_duration, 2),
+                extraction_attempts=MAX_EXTRACTION_RETRIES + 1,
+                escalation_action="continue_to_next_iteration",
             )
             continue
 

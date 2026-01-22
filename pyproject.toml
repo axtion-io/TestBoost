@@ -2,8 +2,37 @@
 name = "testboost"
 version = "0.1.0"
 description = "Automated Java/Spring Boot maintenance with test generation, Maven updates, and Docker deployment"
-authors = ["TestBoost Team"]
+authors = ["TestBoost Contributors <contributors@testboost.dev>"]
+license = "MIT"
 readme = "README.md"
+homepage = "https://github.com/testboost/testboost"
+repository = "https://github.com/testboost/testboost"
+documentation = "https://github.com/testboost/testboost#readme"
+keywords = [
+    "java",
+    "spring-boot",
+    "test-generation",
+    "maven",
+    "automation",
+    "ai",
+    "llm",
+    "langchain",
+    "langgraph",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Framework :: FastAPI",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Testing",
+    "Topic :: Software Development :: Quality Assurance",
+    "Typing :: Typed",
+]
 packages = [{include = "src"}]
 
 [tool.poetry.dependencies]

@@ -437,7 +437,7 @@ python -m src.cli.main config reload --all
 
 ## License
 
-[Your License Here]
+MIT License - see [LICENSE](LICENSE) for details.
 
 ## Acknowledgments
 

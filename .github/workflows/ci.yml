@@ -96,7 +96,7 @@ jobs:
     - name: Run Ruff linter
       run: |
         poetry run ruff check src/ tests/
-      continue-on-error: true
+      continue-on-error: false
 
     - name: Run type checking with mypy
       run: |

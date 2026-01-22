@@ -870,7 +870,10 @@ def _check_test_syntax(test_content: str) -> dict[str, Any]:
     return {"success": len(errors) == 0, "errors": errors}
 
 
-def _extract_generated_tests(response: dict[str, Any] | AIMessage) -> list[dict[str, Any]]:
+def _extract_generated_tests(
+    response: dict[str, Any] | AIMessage,
+    existing_tests: list[dict[str, Any]] | None = None,
+) -> list[dict[str, Any]]:
     """Extract generated test files from agent response.
 
     Handles various agent response formats including:
@@ -880,8 +883,13 @@ def _extract_generated_tests(response: dict[str, Any] | AIMessage) -> list[dict[
     4. Raw Java code without markdown blocks (fallback)
     5. All messages in the conversation history
 
+    For multi-module projects, existing_tests can be passed to preserve
+    the actual_path (with module prefix) when extracting corrected tests.
+
     Args:
         response: Agent response as dict with 'messages' key or AIMessage
+        existing_tests: Optional list of existing test dicts with actual_path.
+                       Used to match corrected tests to their original paths.
 
     Returns:
         List of test info dicts with path, content, class_name, package
@@ -936,7 +944,7 @@ def _extract_generated_tests(response: dict[str, Any] | AIMessage) -> list[dict[
                         data = json.loads(match.group())
                         if data.get("test_code"):
                             code = data["test_code"]
-                            test_info = _extract_test_info(code)
+                            test_info = _extract_test_info(code, existing_tests)
                             if test_info and test_info not in tests:
                                 # Use file path from tool result if available
                                 if data.get("test_file"):
@@ -959,7 +967,7 @@ def _extract_generated_tests(response: dict[str, Any] | AIMessage) -> list[dict[
         # Validate and add extracted codes
         for code in extracted_codes:
             if _is_valid_test_code(code):
-                test_info = _extract_test_info(code)
+                test_info = _extract_test_info(code, existing_tests)
                 if test_info and test_info not in tests:
                     tests.append(test_info)
 
@@ -1125,8 +1133,24 @@ def _has_balanced_braces(code: str) -> bool:
     return brace_count == 0
 
 
-def _extract_test_info(code: str) -> dict[str, Any] | None:
-    """Extract test info from Java code."""
+def _extract_test_info(
+    code: str,
+    existing_tests: list[dict[str, Any]] | None = None,
+) -> dict[str, Any] | None:
+    """Extract test info from Java code.
+
+    For multi-module projects, this function can match the extracted class name
+    against existing tests to preserve their actual_path (which includes module prefix).
+
+    Args:
+        code: Java test code to extract info from
+        existing_tests: Optional list of existing test dicts with actual_path.
+                       Used to match corrected tests to their original paths
+                       in multi-module projects.
+
+    Returns:
+        dict with path, content, class_name, and package, or None if invalid
+    """
     if not code:
         return None
 
@@ -1144,8 +1168,39 @@ def _extract_test_info(code: str) -> dict[str, Any] | None:
                 class_name = parts[0].replace("{", "").strip()
             break
 
-    # Build test file path
-    if package:
+    # Try to match against existing tests to preserve multi-module paths
+    matched_path = None
+    if existing_tests:
+        for existing in existing_tests:
+            existing_class = existing.get("class_name")
+            existing_pkg = existing.get("package")
+
+            # Match by class name and package
+            if existing_class == class_name and existing_pkg == package:
+                # Use actual_path (with module) if available, otherwise original path
+                matched_path = existing.get("actual_path") or existing.get("path")
+                logger.debug(
+                    "test_path_matched",
+                    class_name=class_name,
+                    matched_path=matched_path,
+                )
+                break
+
+            # Fallback: match by class name only if no package in existing
+            # (for backward compatibility)
+            if existing_class == class_name and not existing_pkg:
+                matched_path = existing.get("actual_path") or existing.get("path")
+                logger.debug(
+                    "test_path_matched_by_class",
+                    class_name=class_name,
+                    matched_path=matched_path,
+                )
+                break
+
+    # Build test file path (default for new tests or when no match found)
+    if matched_path:
+        path = matched_path
+    elif package:
         package_path = package.replace(".", "/")
         path = f"src/test/java/{package_path}/{class_name}.java"
     else:
@@ -1713,7 +1768,8 @@ async def _run_test_feedback_loop(
         )
 
         # Step 4: Extract and write corrected tests
-        corrected_tests = _extract_generated_tests(fix_response)
+        # Pass validated_tests to preserve multi-module paths in corrections
+        corrected_tests = _extract_generated_tests(fix_response, validated_tests)
 
         if not corrected_tests:
             logger.warning(

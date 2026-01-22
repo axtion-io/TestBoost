@@ -1,0 +1,25 @@
+{
+  "active": true,
+  "spec": "003-boucle-retroaction-des-tests",
+  "state": "building",
+  "subtasks": {
+    "completed": 13,
+    "total": 16,
+    "in_progress": 1,
+    "failed": 0
+  },
+  "phase": {
+    "current": "Add Unit Tests for Feedback Loop",
+    "id": null,
+    "total": 3
+  },
+  "workers": {
+    "active": 0,
+    "max": 1
+  },
+  "session": {
+    "number": 1,
+    "started_at": "2026-01-22T17:15:25.603962"
+  },
+  "last_update": "2026-01-22T17:15:25.849989"
+}

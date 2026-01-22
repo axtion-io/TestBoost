@@ -10,7 +10,7 @@ import pytest
 from unittest.mock import MagicMock
 
 # conftest.py sets up mocks and sys.path before this import
-from workflows.test_generation_agent import _parse_test_failures, _extract_generated_tests
+from workflows.test_generation_agent import _parse_test_failures, _extract_generated_tests, _build_fix_prompt
 
 
 # Module-level test function for verification command compatibility
@@ -865,3 +865,327 @@ public class NoPackageTest {
         assert tests[0]["package"] == ""
         # Path should be in root test directory
         assert "NoPackageTest.java" in tests[0]["path"]
+
+
+# Module-level test function for _build_fix_prompt verification
+def test_build_fix_prompt_basic():
+    """Test basic fix prompt generation - module-level function for verification."""
+    failures = [{"type": "compilation", "file": "Test.java", "line": 10, "error": "cannot find symbol"}]
+    current_tests = {"src/test/java/Test.java": "public class Test {}"}
+    prompt = _build_fix_prompt(failures, current_tests, "/project")
+    assert "Failure 1" in prompt
+    assert "Compilation Error" in prompt
+    assert "Test.java" in prompt
+
+
+class TestBuildFixPromptCompilationErrors:
+    """Tests for _build_fix_prompt function - compilation error formatting."""
+
+    def test_build_fix_prompt_compilation_error_basic(self):
+        """Test prompt generation for basic compilation error."""
+        failures = [
+            {
+                "type": "compilation",
+                "file": "UserServiceTest.java",
+                "line": 42,
+                "error": "cannot find symbol: method setId(long)"
+            }
+        ]
+        current_tests = {
+            "src/test/java/com/example/UserServiceTest.java": "public class UserServiceTest { @Test void test() {} }"
+        }
+
+        prompt = _build_fix_prompt(failures, current_tests, "/my/project")
+
+        assert "## Project: /my/project" in prompt
+        assert "### Failure 1:" in prompt
+        assert "**Compilation Error**" in prompt
+        assert "UserServiceTest.java" in prompt
+        assert "line 42" in prompt
+        assert "cannot find symbol" in prompt
+
+    def test_build_fix_prompt_compilation_with_jpa_error(self):
+        """Test prompt generation for compilation error with JPA fix suggestion."""
+        failures = [
+            {
+                "type": "compilation",
+                "file": "EntityTest.java",
+                "line": 20,
+                "error": "cannot find symbol: method setId(long)",
+                "jpa_error": {
+                    "category": "generated_value_setid",
+                    "description": "Cannot call setId on @GeneratedValue field",
+                    "fix": "Use ReflectionTestUtils.setField(entity, \"id\", value)",
+                    "import_needed": "org.springframework.test.util.ReflectionTestUtils"
+                }
+            }
+        ]
+        current_tests = {}
+
+        prompt = _build_fix_prompt(failures, current_tests, "/project")
+
+        assert "**🔧 Suggested Fix (generated_value_setid):**" in prompt
+        assert "Cannot call setId on @GeneratedValue field" in prompt
+        assert "ReflectionTestUtils.setField" in prompt
+        assert "org.springframework.test.util.ReflectionTestUtils" in prompt
+
+    def test_build_fix_prompt_jpa_error_without_import(self):
+        """Test prompt generation for JPA error without import requirement."""
+        failures = [
+            {
+                "type": "compilation",
+                "file": "Test.java",
+                "line": 10,
+                "error": "type mismatch",
+                "jpa_error": {
+                    "category": "type_mismatch",
+                    "description": "Long/Integer mismatch",
+                    "fix": "Use 1L for Long type"
+                }
+            }
+        ]
+        current_tests = {}
+
+        prompt = _build_fix_prompt(failures, current_tests, "/project")
+
+        assert "**🔧 Suggested Fix (type_mismatch):**" in prompt
+        assert "Long/Integer mismatch" in prompt
+        assert "Use 1L for Long type" in prompt
+        # Should not have import line when not provided
+        assert "Required import:" not in prompt
+
+
+class TestBuildFixPromptTestMethodFailures:
+    """Tests for _build_fix_prompt function - test method failure formatting."""
+
+    def test_build_fix_prompt_test_method_failure(self):
+        """Test prompt generation for test method failure with class and method."""
+        failures = [
+            {
+                "method": "shouldReturnUser",
+                "class": "com.example.UserServiceTest",
+                "error": "expected: <true> but was: <false>"
+            }
+        ]
+        current_tests = {}
+
+        prompt = _build_fix_prompt(failures, current_tests, "/project")
+
+        assert "**Test**: `com.example.UserServiceTest.shouldReturnUser()`" in prompt
+        assert "**Error**: expected: <true> but was: <false>" in prompt
+
+    def test_build_fix_prompt_multiple_method_failures(self):
+        """Test prompt generation with multiple test method failures."""
+        failures = [
+            {
+                "method": "testCreate",
+                "class": "com.example.ServiceTest",
+                "error": "NullPointerException"
+            },
+            {
+                "method": "testUpdate",
+                "class": "com.example.ServiceTest",
+                "error": "AssertionError: expected 200 got 500"
+            }
+        ]
+        current_tests = {}
+
+        prompt = _build_fix_prompt(failures, current_tests, "/project")
+
+        assert "### Failure 1:" in prompt
+        assert "### Failure 2:" in prompt
+        assert "ServiceTest.testCreate()" in prompt
+        assert "ServiceTest.testUpdate()" in prompt
+        assert "NullPointerException" in prompt
+        assert "expected 200 got 500" in prompt
+
+
+class TestBuildFixPromptGenericErrors:
+    """Tests for _build_fix_prompt function - generic error formatting."""
+
+    def test_build_fix_prompt_generic_error(self):
+        """Test prompt generation for error without type or method."""
+        failures = [
+            {
+                "error": "Some unexpected error occurred"
+            }
+        ]
+        current_tests = {}
+
+        prompt = _build_fix_prompt(failures, current_tests, "/project")
+
+        assert "**Error**: Some unexpected error occurred" in prompt
+        # Should not have compilation or test method specific formatting
+        assert "**Compilation Error**" not in prompt
+        assert "**Test**:" not in prompt
+
+
+class TestBuildFixPromptTestFiles:
+    """Tests for _build_fix_prompt function - test file content inclusion."""
+
+    def test_build_fix_prompt_includes_test_files(self):
+        """Test that current test files are included in the prompt."""
+        failures = [{"error": "test failure"}]
+        current_tests = {
+            "src/test/java/com/example/UserServiceTest.java": """package com.example;
+
+import org.junit.jupiter.api.Test;
+
+public class UserServiceTest {
+    @Test
+    void shouldWork() {
+        assertTrue(true);
+    }
+}"""
+        }
+
+        prompt = _build_fix_prompt(failures, current_tests, "/project")
+
+        assert "## Current Test Files:" in prompt
+        assert "### src/test/java/com/example/UserServiceTest.java" in prompt
+        assert "```java" in prompt
+        assert "package com.example;" in prompt
+        assert "public class UserServiceTest" in prompt
+
+    def test_build_fix_prompt_multiple_test_files(self):
+        """Test prompt generation with multiple test files."""
+        failures = [{"error": "failure"}]
+        current_tests = {
+            "src/test/java/FirstTest.java": "public class FirstTest {}",
+            "src/test/java/SecondTest.java": "public class SecondTest {}"
+        }
+
+        prompt = _build_fix_prompt(failures, current_tests, "/project")
+
+        assert "### src/test/java/FirstTest.java" in prompt
+        assert "### src/test/java/SecondTest.java" in prompt
+        assert "public class FirstTest" in prompt
+        assert "public class SecondTest" in prompt
+
+    def test_build_fix_prompt_empty_test_files(self):
+        """Test prompt generation with no test files."""
+        failures = [{"error": "failure"}]
+        current_tests = {}
+
+        prompt = _build_fix_prompt(failures, current_tests, "/project")
+
+        assert "## Current Test Files:" in prompt
+        # Should still have section but no file entries
+
+
+class TestBuildFixPromptInstructions:
+    """Tests for _build_fix_prompt function - instructions section."""
+
+    def test_build_fix_prompt_contains_instructions(self):
+        """Test that prompt contains standard instructions."""
+        failures = [{"error": "failure"}]
+        current_tests = {}
+
+        prompt = _build_fix_prompt(failures, current_tests, "/project")
+
+        assert "## Instructions:" in prompt
+        assert "Analyze each failure" in prompt
+        assert "Fix the test code" in prompt
+        assert "Missing imports" in prompt
+        assert "Wrong method signatures" in prompt
+
+    def test_build_fix_prompt_contains_jpa_rules(self):
+        """Test that prompt contains JPA testing rules."""
+        failures = [{"error": "failure"}]
+        current_tests = {}
+
+        prompt = _build_fix_prompt(failures, current_tests, "/project")
+
+        assert "JPA Entity Testing Rules" in prompt
+        assert "NEVER call setId()" in prompt
+        assert "ReflectionTestUtils.setField" in prompt
+        assert "org.springframework.test.util.ReflectionTestUtils" in prompt
+
+    def test_build_fix_prompt_requests_complete_files(self):
+        """Test that prompt requests complete test file content."""
+        failures = [{"error": "failure"}]
+        current_tests = {}
+
+        prompt = _build_fix_prompt(failures, current_tests, "/project")
+
+        assert "COMPLETE fixed test files" in prompt
+        assert "```java code blocks" in prompt
+        assert "full corrected test class content" in prompt
+
+
+class TestBuildFixPromptEdgeCases:
+    """Tests for _build_fix_prompt function - edge cases."""
+
+    def test_build_fix_prompt_empty_failures(self):
+        """Test prompt generation with empty failures list."""
+        failures = []
+        current_tests = {}
+
+        prompt = _build_fix_prompt(failures, current_tests, "/project")
+
+        assert "## Project: /project" in prompt
+        assert "## Failures:" in prompt
+        # Should not have any failure entries
+        assert "### Failure 1:" not in prompt
+
+    def test_build_fix_prompt_mixed_failure_types(self):
+        """Test prompt generation with mixed failure types."""
+        failures = [
+            {
+                "type": "compilation",
+                "file": "Test.java",
+                "line": 10,
+                "error": "cannot find symbol"
+            },
+            {
+                "method": "testMethod",
+                "class": "com.example.Test",
+                "error": "assertion failed"
+            },
+            {
+                "error": "generic error"
+            }
+        ]
+        current_tests = {}
+
+        prompt = _build_fix_prompt(failures, current_tests, "/project")
+
+        assert "### Failure 1:" in prompt
+        assert "### Failure 2:" in prompt
+        assert "### Failure 3:" in prompt
+        assert "**Compilation Error**" in prompt
+        assert "testMethod()" in prompt
+        assert "generic error" in prompt
+
+    def test_build_fix_prompt_special_characters_in_error(self):
+        """Test prompt generation handles special characters in error messages."""
+        failures = [
+            {
+                "error": "Error: <expected> but was <actual> with 'quotes' and \"double quotes\""
+            }
+        ]
+        current_tests = {}
+
+        prompt = _build_fix_prompt(failures, current_tests, "/project")
+
+        assert "<expected>" in prompt
+        assert "<actual>" in prompt
+        assert "'quotes'" in prompt
+        assert '"double quotes"' in prompt
+
+    def test_build_fix_prompt_none_values_in_failure(self):
+        """Test prompt handles None values in failure dict gracefully."""
+        failures = [
+            {
+                "type": "compilation",
+                "file": None,
+                "line": None,
+                "error": "some error"
+            }
+        ]
+        current_tests = {}
+
+        prompt = _build_fix_prompt(failures, current_tests, "/project")
+
+        # Should not crash and include what it can
+        assert "some error" in prompt

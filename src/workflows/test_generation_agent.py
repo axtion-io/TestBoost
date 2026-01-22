@@ -2135,11 +2135,20 @@ def _parse_test_failures(maven_output: str) -> list[dict[str, Any]]:
 
 
 def _categorize_jpa_error(error_msg: str) -> dict[str, Any] | None:
-    """Categorize JPA-specific compilation errors and provide fix suggestions.
+    """Categorize JPA/Hibernate-specific errors and provide fix suggestions.
 
     This helps the feedback loop to intelligently fix common JPA test errors.
+    Covers both compilation errors and runtime/test failures related to JPA/Hibernate.
+
+    Categories covered:
+    - Compilation errors (missing setId, type mismatches)
+    - Hibernate-specific runtime errors (LazyInitializationException, EntityNotFoundException)
+    - JPA lifecycle errors (detached entities, transaction issues)
+    - Constraint violations
     """
     error_lower = error_msg.lower()
+
+    # ===== COMPILATION ERRORS =====
 
     # Pattern 1: setId() on @GeneratedValue field
     if "cannot find symbol" in error_lower and "setid" in error_lower:
@@ -2189,6 +2198,139 @@ def _categorize_jpa_error(error_msg: str) -> dict[str, Any] | None:
             "category": "ambiguous_assertion",
             "description": "Ambiguous assertEquals call with boxed types",
             "fix": "Use AssertJ assertThat(actual).isEqualTo(expected) instead of assertEquals",
+        }
+
+    # ===== HIBERNATE/JPA RUNTIME ERRORS =====
+
+    # Pattern 7: LazyInitializationException - accessing lazy collection outside session
+    if "lazyinitializationexception" in error_lower or \
+       ("could not initialize proxy" in error_lower and "no session" in error_lower) or \
+       ("failed to lazily initialize" in error_lower):
+        return {
+            "category": "lazy_initialization",
+            "description": "Accessing a lazy-loaded collection or proxy outside of an active Hibernate session",
+            "fix": "Either: (1) Add @Transactional to the test method, (2) Use FetchType.EAGER on the relationship, "
+                   "(3) Use Hibernate.initialize() before the session closes, or (4) Use JOIN FETCH in your query",
+            "import_needed": "org.springframework.transaction.annotation.Transactional",
+        }
+
+    # Pattern 8: EntityNotFoundException - entity not found by ID
+    if "entitynotfoundexception" in error_lower or \
+       ("unable to find" in error_lower and "with id" in error_lower) or \
+       ("no entity found for query" in error_lower):
+        return {
+            "category": "entity_not_found",
+            "description": "JPA could not find an entity with the specified identifier",
+            "fix": "Ensure the test data is properly set up before querying. "
+                   "Use @BeforeEach to insert test entities, or mock the repository method to return test data.",
+        }
+
+    # Pattern 9: Detached entity passed to persist
+    if "detached entity passed to persist" in error_lower or \
+       ("detachedentitypassedtopersist" in error_lower.replace(" ", "")):
+        return {
+            "category": "detached_entity_persist",
+            "description": "Attempting to persist an entity that is already detached from the persistence context",
+            "fix": "Use merge() instead of persist() for detached entities, "
+                   "or ensure the entity is new (without ID) before calling persist().",
+        }
+
+    # Pattern 10: Transaction required exception
+    if "transactionrequiredexception" in error_lower or \
+       ("no transaction is in progress" in error_lower) or \
+       ("transaction required" in error_lower):
+        return {
+            "category": "transaction_required",
+            "description": "A database operation was attempted without an active transaction",
+            "fix": "Add @Transactional annotation to the test method or test class. "
+                   "For Spring tests, ensure @DataJpaTest or @SpringBootTest is used.",
+            "import_needed": "org.springframework.transaction.annotation.Transactional",
+        }
+
+    # Pattern 11: EntityManager closed/not open
+    if ("entitymanager is closed" in error_lower) or \
+       ("session is closed" in error_lower) or \
+       ("session/entitymanager is closed" in error_lower.replace(" ", "")):
+        return {
+            "category": "session_closed",
+            "description": "Attempting to use EntityManager/Session after it has been closed",
+            "fix": "Ensure all database operations complete before the session closes. "
+                   "Use @Transactional on the test or access data within the same transaction.",
+        }
+
+    # Pattern 12: Object references an unsaved transient instance
+    if "object references an unsaved transient instance" in error_lower or \
+       "transientobjectexception" in error_lower:
+        return {
+            "category": "unsaved_transient",
+            "description": "An entity references another entity that has not been persisted yet",
+            "fix": "Either: (1) Persist the referenced entity first, (2) Add CascadeType.PERSIST to the relationship, "
+                   "or (3) Set the referenced entity's ID if it already exists in the database.",
+        }
+
+    # Pattern 13: Constraint violation (unique, foreign key, not null)
+    if "constraintviolationexception" in error_lower or \
+       "dataintegrity" in error_lower or \
+       "unique constraint" in error_lower or \
+       "foreign key constraint" in error_lower or \
+       "not-null property" in error_lower:
+        return {
+            "category": "constraint_violation",
+            "description": "A database constraint was violated (unique, foreign key, or not null)",
+            "fix": "Check test data for: (1) duplicate unique values, (2) missing required fields, "
+                   "(3) invalid foreign key references. Use unique test data for each test.",
+        }
+
+    # Pattern 14: PropertyNotFoundException - wrong property/field name in query
+    if "propertynotfoundexception" in error_lower or \
+       ("could not resolve property" in error_lower) or \
+       ("unknown property" in error_lower):
+        return {
+            "category": "property_not_found",
+            "description": "A property name used in a query does not exist on the entity",
+            "fix": "Verify the property name matches the entity field name exactly (case-sensitive). "
+                   "Check for typos or renamed fields.",
+        }
+
+    # Pattern 15: PersistenceException generic wrapper
+    if "persistenceexception" in error_lower and "caused by" in error_lower:
+        return {
+            "category": "persistence_exception",
+            "description": "A JPA persistence operation failed (wrapper exception)",
+            "fix": "Check the nested 'Caused by' exception for the root cause. "
+                   "Common causes: missing entity mapping, constraint violation, or connection issue.",
+        }
+
+    # Pattern 16: StaleObjectStateException - optimistic locking failure
+    if "staleobjectstateexception" in error_lower or \
+       "optimisticlock" in error_lower or \
+       ("row was updated or deleted by another transaction" in error_lower):
+        return {
+            "category": "optimistic_lock_failure",
+            "description": "Optimistic locking failed - the entity was modified by another transaction",
+            "fix": "In tests, ensure no concurrent modifications. Refresh the entity before updating, "
+                   "or use @Version field with proper handling.",
+        }
+
+    # Pattern 17: Missing @Entity or @Id annotation hints
+    if ("unknown entity" in error_lower) or \
+       ("not an entity" in error_lower) or \
+       ("no identifier specified for entity" in error_lower):
+        return {
+            "category": "missing_entity_mapping",
+            "description": "Entity is not properly mapped (missing @Entity or @Id)",
+            "fix": "Ensure the entity class has @Entity annotation and has an @Id field. "
+                   "Check that the entity is included in the component scan.",
+            "import_needed": "jakarta.persistence.Entity",
+        }
+
+    # Pattern 18: Repository method name derivation error
+    if "no property" in error_lower and "found for type" in error_lower:
+        return {
+            "category": "repository_method_error",
+            "description": "Spring Data JPA cannot derive query from repository method name",
+            "fix": "Verify method name follows Spring Data naming conventions. "
+                   "Property name must match entity field exactly. Consider using @Query annotation.",
         }
 
     return None
@@ -2276,4 +2418,5 @@ __all__ = [
     "CompilationError",
     "MavenNotFoundError",
     "MavenTimeoutError",
+    "_categorize_jpa_error",
 ]

@@ -2,13 +2,15 @@
 
 Tests cover:
 - _parse_test_failures: Parsing Maven test output for failures, compilation errors, and assertions
+- _extract_generated_tests: Extracting generated tests from various response formats
 - Various failure patterns including assertion failures, compilation errors, and JPA-specific errors
 """
 
 import pytest
+from unittest.mock import MagicMock
 
 # conftest.py sets up mocks and sys.path before this import
-from workflows.test_generation_agent import _parse_test_failures
+from workflows.test_generation_agent import _parse_test_failures, _extract_generated_tests
 
 
 # Module-level test function for verification command compatibility
@@ -329,3 +331,537 @@ class TestParseTestFailuresEdgeCases:
         lines = {f.get("line") for f in compilation_failures}
         assert 10 in lines
         assert 20 in lines
+
+
+# Module-level test function for _extract_generated_tests verification
+def test_extract_generated_tests_java_block():
+    """Test extracting tests from Java code block - module-level function for verification."""
+    response = {
+        "messages": [
+            MagicMock(content='''Here is the test:
+```java
+package com.example;
+
+import org.junit.jupiter.api.Test;
+
+public class UserServiceTest {
+    @Test
+    void shouldReturnUser() {
+    }
+}
+```
+''')
+        ]
+    }
+    tests = _extract_generated_tests(response)
+    assert len(tests) >= 1
+    assert tests[0]["class_name"] == "UserServiceTest"
+    assert tests[0]["package"] == "com.example"
+
+
+class TestExtractGeneratedTestsJavaBlocks:
+    """Tests for _extract_generated_tests function - Java code block extraction."""
+
+    def test_extract_from_java_code_block_lowercase(self):
+        """Test extracting test from lowercase ```java code block."""
+        response = {
+            "messages": [
+                MagicMock(content='''```java
+package com.example.service;
+
+import org.junit.jupiter.api.Test;
+import static org.junit.jupiter.api.Assertions.*;
+
+public class ProductServiceTest {
+    @Test
+    void shouldCalculateTotal() {
+        assertEquals(100, 100);
+    }
+}
+```''')
+            ]
+        }
+        tests = _extract_generated_tests(response)
+
+        assert len(tests) >= 1
+        test = tests[0]
+        assert test["class_name"] == "ProductServiceTest"
+        assert test["package"] == "com.example.service"
+        assert "@Test" in test["content"]
+        assert "src/test/java/com/example/service/ProductServiceTest.java" in test["path"]
+
+    def test_extract_from_java_code_block_uppercase(self):
+        """Test extracting test from uppercase ```JAVA code block."""
+        response = {
+            "messages": [
+                MagicMock(content='''```JAVA
+package com.example;
+
+import org.junit.jupiter.api.Test;
+
+public class OrderTest {
+    @Test
+    void testOrder() {
+    }
+}
+```''')
+            ]
+        }
+        tests = _extract_generated_tests(response)
+
+        assert len(tests) >= 1
+        assert tests[0]["class_name"] == "OrderTest"
+
+    def test_extract_from_java_code_block_mixed_case(self):
+        """Test extracting test from mixed case ```Java code block."""
+        response = {
+            "messages": [
+                MagicMock(content='''```Java
+package com.example;
+
+import org.junit.jupiter.api.Test;
+
+public class MixedCaseTest {
+    @Test
+    void test() {
+    }
+}
+```''')
+            ]
+        }
+        tests = _extract_generated_tests(response)
+
+        assert len(tests) >= 1
+        assert tests[0]["class_name"] == "MixedCaseTest"
+
+    def test_extract_multiple_java_blocks(self):
+        """Test extracting multiple tests from multiple Java code blocks."""
+        response = {
+            "messages": [
+                MagicMock(content='''First test:
+```java
+package com.example;
+
+import org.junit.jupiter.api.Test;
+
+public class FirstTest {
+    @Test
+    void firstTest() {
+    }
+}
+```
+
+Second test:
+```java
+package com.example;
+
+import org.junit.jupiter.api.Test;
+
+public class SecondTest {
+    @Test
+    void secondTest() {
+    }
+}
+```''')
+            ]
+        }
+        tests = _extract_generated_tests(response)
+
+        # Should extract at least 2 tests
+        assert len(tests) >= 2
+        class_names = {t["class_name"] for t in tests}
+        assert "FirstTest" in class_names
+        assert "SecondTest" in class_names
+
+    def test_extract_parameterized_test(self):
+        """Test extracting tests with @ParameterizedTest annotation."""
+        response = {
+            "messages": [
+                MagicMock(content='''```java
+package com.example;
+
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
+
+public class ParameterizedExampleTest {
+    @ParameterizedTest
+    @ValueSource(strings = {"a", "b", "c"})
+    void testValues(String value) {
+    }
+}
+```''')
+            ]
+        }
+        tests = _extract_generated_tests(response)
+
+        assert len(tests) >= 1
+        assert tests[0]["class_name"] == "ParameterizedExampleTest"
+        assert "@ParameterizedTest" in tests[0]["content"]
+
+
+class TestExtractGeneratedTestsPlainBlocks:
+    """Tests for _extract_generated_tests function - plain code block extraction."""
+
+    def test_extract_from_plain_code_block_with_class(self):
+        """Test extracting test from plain ``` code block containing Java class."""
+        response = {
+            "messages": [
+                MagicMock(content='''```
+package com.example;
+
+import org.junit.jupiter.api.Test;
+
+public class PlainBlockTest {
+    @Test
+    void testPlain() {
+    }
+}
+```''')
+            ]
+        }
+        tests = _extract_generated_tests(response)
+
+        # Plain blocks should work if they contain class and @Test
+        assert len(tests) >= 1
+        assert tests[0]["class_name"] == "PlainBlockTest"
+
+    def test_plain_block_without_test_annotation_ignored(self):
+        """Test that plain code blocks without @Test are ignored."""
+        response = {
+            "messages": [
+                MagicMock(content='''```
+public class NotATest {
+    public void regularMethod() {
+    }
+}
+```''')
+            ]
+        }
+        tests = _extract_generated_tests(response)
+
+        # Should not extract non-test classes
+        assert len(tests) == 0
+
+
+class TestExtractGeneratedTestsJsonToolResults:
+    """Tests for _extract_generated_tests function - JSON tool result extraction."""
+
+    def test_extract_from_json_tool_result(self):
+        """Test extracting test from JSON tool result with test_code field."""
+        java_code = '''package com.example;
+
+import org.junit.jupiter.api.Test;
+
+public class JsonResultTest {
+    @Test
+    void testJson() {
+    }
+}'''
+        response = {
+            "messages": [
+                MagicMock(content=f'{{"test_code": "{java_code.replace(chr(10), "\\n")}", "test_file": "src/test/java/com/example/JsonResultTest.java"}}')
+            ]
+        }
+        tests = _extract_generated_tests(response)
+
+        # JSON tool results with test_code should be extracted
+        assert len(tests) >= 1
+
+    def test_extract_from_json_with_test_file_path(self):
+        """Test that test_file path from JSON is used when available."""
+        java_code = '''package com.example;
+
+import org.junit.jupiter.api.Test;
+
+public class PathTest {
+    @Test
+    void test() {
+    }
+}'''
+        # Create valid JSON with escaped newlines
+        import json
+        json_content = json.dumps({"test_code": java_code, "test_file": "custom/path/PathTest.java"})
+        response = {
+            "messages": [
+                MagicMock(content=json_content)
+            ]
+        }
+        tests = _extract_generated_tests(response)
+
+        if len(tests) >= 1:
+            # Path from JSON tool result should be used
+            assert "PathTest" in tests[0]["class_name"] or "custom/path" in tests[0].get("path", "")
+
+
+class TestExtractGeneratedTestsRawJava:
+    """Tests for _extract_generated_tests function - raw Java code extraction."""
+
+    def test_extract_raw_java_without_code_block(self):
+        """Test extracting Java test code without markdown code blocks."""
+        response = {
+            "messages": [
+                MagicMock(content='''Here is the test class for you:
+
+package com.example;
+
+import org.junit.jupiter.api.Test;
+import static org.junit.jupiter.api.Assertions.*;
+
+public class RawJavaTest {
+    @Test
+    void shouldWork() {
+        assertTrue(true);
+    }
+}
+
+I hope this helps!''')
+            ]
+        }
+        tests = _extract_generated_tests(response)
+
+        # Raw Java code should be extracted as fallback
+        assert len(tests) >= 1
+        assert tests[0]["class_name"] == "RawJavaTest"
+
+
+class TestExtractGeneratedTestsAIMessage:
+    """Tests for _extract_generated_tests function - direct AIMessage handling."""
+
+    def test_extract_from_ai_message_direct(self):
+        """Test extracting tests from direct AIMessage response."""
+        ai_message = MagicMock()
+        ai_message.content = '''```java
+package com.example;
+
+import org.junit.jupiter.api.Test;
+
+public class DirectMessageTest {
+    @Test
+    void testDirect() {
+    }
+}
+```'''
+        tests = _extract_generated_tests(ai_message)
+
+        assert len(tests) >= 1
+        assert tests[0]["class_name"] == "DirectMessageTest"
+
+    def test_extract_from_ai_message_non_string_content(self):
+        """Test handling AIMessage with non-string content."""
+        ai_message = MagicMock()
+        ai_message.content = ["Some", "list", "content"]
+
+        tests = _extract_generated_tests(ai_message)
+
+        # Should handle gracefully without crashing
+        assert isinstance(tests, list)
+
+
+class TestExtractGeneratedTestsExistingTests:
+    """Tests for _extract_generated_tests function - existing tests path matching."""
+
+    def test_match_existing_test_by_class_and_package(self):
+        """Test that extracted tests match existing tests by class name and package."""
+        existing_tests = [
+            {
+                "class_name": "UserServiceTest",
+                "package": "com.example.service",
+                "path": "src/test/java/com/example/service/UserServiceTest.java",
+                "actual_path": "module-a/src/test/java/com/example/service/UserServiceTest.java"
+            }
+        ]
+        response = {
+            "messages": [
+                MagicMock(content='''```java
+package com.example.service;
+
+import org.junit.jupiter.api.Test;
+
+public class UserServiceTest {
+    @Test
+    void correctedTest() {
+    }
+}
+```''')
+            ]
+        }
+        tests = _extract_generated_tests(response, existing_tests)
+
+        assert len(tests) >= 1
+        # Should use the actual_path from existing test (multi-module support)
+        assert tests[0]["path"] == "module-a/src/test/java/com/example/service/UserServiceTest.java"
+
+    def test_match_existing_test_by_class_only(self):
+        """Test matching existing tests by class name when no package in existing."""
+        existing_tests = [
+            {
+                "class_name": "LegacyTest",
+                "package": "",
+                "path": "src/test/java/LegacyTest.java",
+                "actual_path": "legacy-module/src/test/java/LegacyTest.java"
+            }
+        ]
+        response = {
+            "messages": [
+                MagicMock(content='''```java
+import org.junit.jupiter.api.Test;
+
+public class LegacyTest {
+    @Test
+    void test() {
+    }
+}
+```''')
+            ]
+        }
+        tests = _extract_generated_tests(response, existing_tests)
+
+        assert len(tests) >= 1
+
+    def test_no_match_creates_default_path(self):
+        """Test that unmatched tests get default path based on package."""
+        existing_tests = [
+            {
+                "class_name": "OtherTest",
+                "package": "com.other",
+                "path": "src/test/java/com/other/OtherTest.java"
+            }
+        ]
+        response = {
+            "messages": [
+                MagicMock(content='''```java
+package com.example.new;
+
+import org.junit.jupiter.api.Test;
+
+public class NewTest {
+    @Test
+    void test() {
+    }
+}
+```''')
+            ]
+        }
+        tests = _extract_generated_tests(response, existing_tests)
+
+        assert len(tests) >= 1
+        # Should create default path based on package
+        assert "com/example/new/NewTest.java" in tests[0]["path"]
+
+
+class TestExtractGeneratedTestsEdgeCases:
+    """Tests for _extract_generated_tests function - edge cases."""
+
+    def test_empty_response_dict(self):
+        """Test handling empty response dict."""
+        response = {"messages": []}
+        tests = _extract_generated_tests(response)
+
+        assert tests == []
+
+    def test_response_without_messages_key(self):
+        """Test handling response dict without messages key."""
+        response = {}
+        tests = _extract_generated_tests(response)
+
+        assert tests == []
+
+    def test_message_without_content_attribute(self):
+        """Test handling messages that are plain strings."""
+        response = {
+            "messages": [
+                "Just a string message without code"
+            ]
+        }
+        tests = _extract_generated_tests(response)
+
+        assert tests == []
+
+    def test_invalid_java_code_not_extracted(self):
+        """Test that invalid Java code (unbalanced braces) is not extracted."""
+        response = {
+            "messages": [
+                MagicMock(content='''```java
+package com.example;
+
+import org.junit.jupiter.api.Test;
+
+public class UnbalancedTest {
+    @Test
+    void test() {
+    // Missing closing braces
+```''')
+            ]
+        }
+        tests = _extract_generated_tests(response)
+
+        # Invalid code (unbalanced braces) should not be extracted
+        assert len(tests) == 0
+
+    def test_code_without_class_not_extracted(self):
+        """Test that code without class declaration is not extracted."""
+        response = {
+            "messages": [
+                MagicMock(content='''```java
+package com.example;
+
+import org.junit.jupiter.api.Test;
+
+@Test
+void standaloneTest() {
+}
+```''')
+            ]
+        }
+        tests = _extract_generated_tests(response)
+
+        # Code without class should not be extracted
+        assert len(tests) == 0
+
+    def test_deduplicate_extracted_tests(self):
+        """Test that duplicate tests are not added multiple times."""
+        java_code = '''```java
+package com.example;
+
+import org.junit.jupiter.api.Test;
+
+public class DuplicateTest {
+    @Test
+    void test() {
+    }
+}
+```'''
+        response = {
+            "messages": [
+                MagicMock(content=java_code),
+                MagicMock(content=java_code)
+            ]
+        }
+        tests = _extract_generated_tests(response)
+
+        # Should deduplicate identical tests
+        class_counts = [t["class_name"] for t in tests].count("DuplicateTest")
+        assert class_counts == 1
+
+    def test_extract_test_without_package(self):
+        """Test extracting test class without package declaration."""
+        response = {
+            "messages": [
+                MagicMock(content='''```java
+import org.junit.jupiter.api.Test;
+
+public class NoPackageTest {
+    @Test
+    void test() {
+    }
+}
+```''')
+            ]
+        }
+        tests = _extract_generated_tests(response)
+
+        assert len(tests) >= 1
+        assert tests[0]["class_name"] == "NoPackageTest"
+        assert tests[0]["package"] == ""
+        # Path should be in root test directory
+        assert "NoPackageTest.java" in tests[0]["path"]

@@ -1,6 +1,9 @@
 # API Authentication
 
-Documentation for TestBoost API authentication.
+**Purpose**: Complete guide for TestBoost API authentication and security
+**Version**: 1.0.0
+
+---
 
 ## X-API-Key Authentication (CHK024)
 

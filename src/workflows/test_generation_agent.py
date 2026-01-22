@@ -42,6 +42,10 @@ MAX_CORRECTION_RETRIES = 3
 MAX_TEST_ITERATIONS = 5  # Maximum attempts to fix failing tests
 TEST_TIMEOUT_SECONDS = 300  # 5 minutes timeout for Maven test run
 
+# Write verification configuration
+MAX_WRITE_RETRIES = 3  # Maximum retries for file write with verification
+WRITE_RETRY_DELAY_BASE = 0.5  # Base delay in seconds for retry backoff
+
 
 class TestGenerationError(Exception):
     """Base exception for test generation errors."""
@@ -1343,6 +1347,164 @@ def _write_tests_to_disk(project_path: str, validated_tests: list[dict[str, Any]
     return written_files
 
 
+def _write_test_file_with_verification(
+    file_path: Path,
+    content: str,
+    max_retries: int = MAX_WRITE_RETRIES,
+    retry_delay_base: float = WRITE_RETRY_DELAY_BASE,
+) -> dict[str, Any]:
+    """
+    Write a test file to disk with verification and retry logic.
+
+    Following the retry pattern from agent_retry.py, this function:
+    - Writes the file content
+    - Reads it back to verify write success
+    - Retries with exponential backoff on transient failures
+    - Returns detailed result info for logging and tracking
+
+    Args:
+        file_path: Full path to write the file
+        content: Content to write
+        max_retries: Maximum retry attempts
+        retry_delay_base: Base delay in seconds for exponential backoff
+
+    Returns:
+        dict with:
+        - success: bool indicating if write succeeded
+        - path: str path that was written
+        - size_bytes: int size of content written (if successful)
+        - attempts: int number of attempts made
+        - error: str error message (if failed)
+        - verified: bool indicating if content was verified
+    """
+    import time
+
+    last_error: str | None = None
+
+    for attempt in range(1, max_retries + 1):
+        try:
+            logger.info(
+                "test_file_write_attempt",
+                path=str(file_path),
+                attempt=attempt,
+                max_retries=max_retries,
+                content_size=len(content),
+            )
+
+            # Ensure parent directory exists
+            file_path.parent.mkdir(parents=True, exist_ok=True)
+
+            # Write the file
+            file_path.write_text(content, encoding="utf-8")
+
+            # Verify write by reading back
+            verification_content = file_path.read_text(encoding="utf-8")
+
+            if verification_content != content:
+                logger.warning(
+                    "test_file_write_verification_mismatch",
+                    path=str(file_path),
+                    attempt=attempt,
+                    expected_size=len(content),
+                    actual_size=len(verification_content),
+                )
+                last_error = "Content verification failed: written content does not match"
+                if attempt < max_retries:
+                    wait_time = min(retry_delay_base * (2 ** (attempt - 1)), 5.0)
+                    time.sleep(wait_time)
+                    continue
+                return {
+                    "success": False,
+                    "path": str(file_path),
+                    "attempts": attempt,
+                    "error": last_error,
+                    "verified": False,
+                }
+
+            # Success - content verified
+            logger.info(
+                "test_file_write_success",
+                path=str(file_path),
+                attempt=attempt,
+                size_bytes=len(content),
+                verified=True,
+            )
+            return {
+                "success": True,
+                "path": str(file_path),
+                "size_bytes": len(content),
+                "attempts": attempt,
+                "verified": True,
+            }
+
+        except PermissionError as e:
+            # Permission errors are usually not transient - don't retry
+            logger.error(
+                "test_file_write_permission_error",
+                path=str(file_path),
+                error=str(e),
+            )
+            return {
+                "success": False,
+                "path": str(file_path),
+                "attempts": attempt,
+                "error": f"Permission denied: {e}",
+                "verified": False,
+            }
+
+        except OSError as e:
+            # OS errors (disk full, etc.) - retry with backoff
+            logger.warning(
+                "test_file_write_os_error",
+                path=str(file_path),
+                attempt=attempt,
+                error=str(e),
+            )
+            last_error = f"OS error: {e}"
+            if attempt < max_retries:
+                wait_time = min(retry_delay_base * (2 ** (attempt - 1)), 5.0)
+                time.sleep(wait_time)
+                continue
+            return {
+                "success": False,
+                "path": str(file_path),
+                "attempts": attempt,
+                "error": last_error,
+                "verified": False,
+            }
+
+        except Exception as e:
+            # Unknown error - retry with backoff
+            logger.error(
+                "test_file_write_error",
+                path=str(file_path),
+                attempt=attempt,
+                error=str(e),
+                error_type=type(e).__name__,
+            )
+            last_error = f"{type(e).__name__}: {e}"
+            if attempt < max_retries:
+                wait_time = min(retry_delay_base * (2 ** (attempt - 1)), 5.0)
+                time.sleep(wait_time)
+                continue
+            return {
+                "success": False,
+                "path": str(file_path),
+                "attempts": attempt,
+                "error": last_error,
+                "verified": False,
+            }
+
+    # Should not reach here, but handle it gracefully
+    return {
+        "success": False,
+        "path": str(file_path),
+        "attempts": max_retries,
+        "error": last_error or "Unknown error after max retries",
+        "verified": False,
+    }
+
+
 def _detect_maven_modules(project_dir: Path) -> list[Path]:
     """
     Detect Maven module directories in a multi-module project.
@@ -1779,24 +1941,73 @@ async def _run_test_feedback_loop(
             )
             continue
 
-        # Update current tests with corrections
+        # Update current tests with corrections and write to disk with verification
+        corrections_written = 0
+        corrections_failed = 0
+
         for corrected in corrected_tests:
             path = corrected.get("path")
             content = corrected.get("content")
-            if path and content:
-                current_tests[path] = content
-                # Write to disk
-                full_path = project_dir / path
-                try:
-                    full_path.parent.mkdir(parents=True, exist_ok=True)
-                    full_path.write_text(content, encoding="utf-8")
-                    logger.info(
-                        "corrected_test_written",
-                        path=str(full_path),
-                        iteration=iteration,
-                    )
-                except Exception as e:
-                    logger.error("corrected_test_write_failed", path=path, error=str(e))
+            if not path or not content:
+                logger.warning(
+                    "correction_missing_data",
+                    session_id=str(session_id),
+                    iteration=iteration,
+                    has_path=bool(path),
+                    has_content=bool(content),
+                )
+                continue
+
+            current_tests[path] = content
+            full_path = project_dir / path
+
+            # Write to disk with verification and retry logic
+            write_result = _write_test_file_with_verification(full_path, content)
+
+            # Update corrected test dict with write status
+            corrected["written_to_disk"] = write_result["success"]
+            corrected["write_verified"] = write_result.get("verified", False)
+            corrected["actual_path"] = path
+
+            if write_result["success"]:
+                corrections_written += 1
+                logger.info(
+                    "corrected_test_written",
+                    session_id=str(session_id),
+                    path=str(full_path),
+                    iteration=iteration,
+                    attempts=write_result["attempts"],
+                    verified=write_result["verified"],
+                    size_bytes=write_result.get("size_bytes"),
+                )
+
+                # Also update the original test in validated_tests if found
+                for orig_test in validated_tests:
+                    orig_path = orig_test.get("actual_path") or orig_test.get("path")
+                    if orig_path == path:
+                        orig_test["content"] = content
+                        orig_test["corrected_iteration"] = iteration
+                        break
+            else:
+                corrections_failed += 1
+                logger.error(
+                    "corrected_test_write_failed",
+                    session_id=str(session_id),
+                    path=path,
+                    iteration=iteration,
+                    attempts=write_result["attempts"],
+                    error=write_result.get("error"),
+                )
+
+        # Log summary of corrections for this iteration
+        logger.info(
+            "correction_write_summary",
+            session_id=str(session_id),
+            iteration=iteration,
+            total_corrections=len(corrected_tests),
+            written=corrections_written,
+            failed=corrections_failed,
+        )
 
     # Max iterations reached
     logger.warning(

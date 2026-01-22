@@ -873,10 +873,18 @@ def _check_test_syntax(test_content: str) -> dict[str, Any]:
 def _extract_generated_tests(response: dict[str, Any] | AIMessage) -> list[dict[str, Any]]:
     """Extract generated test files from agent response.
 
-    Extracts tests from:
-    1. ```java code blocks in the response content
-    2. JSON tool results containing 'test_code' field
-    3. All messages in the conversation history
+    Handles various agent response formats including:
+    1. ```java code blocks (case-insensitive: ```java, ```Java, ```JAVA)
+    2. Plain ``` code blocks containing Java class definitions
+    3. JSON tool results containing 'test_code' field
+    4. Raw Java code without markdown blocks (fallback)
+    5. All messages in the conversation history
+
+    Args:
+        response: Agent response as dict with 'messages' key or AIMessage
+
+    Returns:
+        List of test info dicts with path, content, class_name, package
     """
     tests = []
     all_content = []
@@ -898,27 +906,37 @@ def _extract_generated_tests(response: dict[str, Any] | AIMessage) -> list[dict[
 
     # Process all collected content
     for content in all_content:
-        # Strategy 1: Look for Java code blocks
-        if "```java" in content:
-            code_blocks = content.split("```java")
-            for block in code_blocks[1:]:
-                code = block.split("```")[0].strip()
-                if code and _is_valid_test_code(code):
-                    test_info = _extract_test_info(code)
-                    if test_info and test_info not in tests:
-                        tests.append(test_info)
+        extracted_codes = []
 
-        # Strategy 2: Look for JSON tool results with test_code
+        # Strategy 1: Look for Java code blocks (case-insensitive)
+        # Matches: ```java, ```Java, ```JAVA, ``` java (with space)
+        java_block_pattern = r'```[jJ][aA][vV][aA]\s*\n(.*?)```'
+        for match in re.finditer(java_block_pattern, content, re.DOTALL):
+            code = match.group(1).strip()
+            if code:
+                extracted_codes.append(code)
+
+        # Strategy 2: Look for plain code blocks that contain Java class definitions
+        # Only if no java-specific blocks were found
+        if not extracted_codes:
+            plain_block_pattern = r'```\s*\n(.*?)```'
+            for match in re.finditer(plain_block_pattern, content, re.DOTALL):
+                code = match.group(1).strip()
+                # Check if this looks like Java code (has class definition)
+                if code and ("public class " in code or "class " in code) and "@Test" in code:
+                    extracted_codes.append(code)
+
+        # Strategy 3: Look for JSON tool results with test_code
         if '"test_code"' in content or "'test_code'" in content:
             try:
                 # Try to find and parse JSON objects in the content
-                import re
                 json_pattern = r'\{[^{}]*"test_code"[^{}]*\}'
                 for match in re.finditer(json_pattern, content, re.DOTALL):
                     try:
                         data = json.loads(match.group())
                         if data.get("test_code"):
-                            test_info = _extract_test_info(data["test_code"])
+                            code = data["test_code"]
+                            test_info = _extract_test_info(code)
                             if test_info and test_info not in tests:
                                 # Use file path from tool result if available
                                 if data.get("test_file"):
@@ -928,19 +946,95 @@ def _extract_generated_tests(response: dict[str, Any] | AIMessage) -> list[dict[
                         # Expected for partial JSON matches, skip silently
                         continue
             except Exception as e:
-                logger.debug("test_extraction_error", error=str(e), content_length=len(content))
+                logger.debug("test_extraction_json_error", error=str(e), content_length=len(content))
+
+        # Strategy 4: Fallback - look for raw Java code without markdown blocks
+        # Only if no code blocks found and content has Java patterns
+        if not extracted_codes and "class " in content and "@Test" in content:
+            # Try to extract Java class definition from raw content
+            raw_code = _extract_java_class_from_raw_content(content)
+            if raw_code:
+                extracted_codes.append(raw_code)
+
+        # Validate and add extracted codes
+        for code in extracted_codes:
+            if _is_valid_test_code(code):
+                test_info = _extract_test_info(code)
+                if test_info and test_info not in tests:
+                    tests.append(test_info)
 
     logger.debug("extracted_tests", count=len(tests))
     return tests
 
 
+def _extract_java_class_from_raw_content(content: str) -> str | None:
+    """Extract Java class definition from raw content without markdown blocks.
+
+    Attempts to find Java code by looking for package/import/class patterns.
+
+    Args:
+        content: Raw text content that may contain Java code
+
+    Returns:
+        Extracted Java code or None if not found
+    """
+    lines = content.split("\n")
+    java_lines = []
+    in_class = False
+    brace_count = 0
+
+    for line in lines:
+        stripped = line.strip()
+
+        # Start capturing at package, import, or class declaration
+        if not in_class:
+            if stripped.startswith("package ") or stripped.startswith("import ") or "class " in stripped:
+                in_class = True
+
+        if in_class:
+            java_lines.append(line)
+            brace_count += line.count("{") - line.count("}")
+
+            # Stop when we've closed all braces after opening the class
+            if brace_count == 0 and len(java_lines) > 1 and any("{" in l for l in java_lines):
+                break
+
+    if java_lines:
+        code = "\n".join(java_lines).strip()
+        # Verify it's actually valid Java test code
+        if "class " in code and "@Test" in code:
+            return code
+
+    return None
+
+
 def _is_valid_test_code(code: str) -> bool:
-    """Check if code is valid Java test code."""
-    return (
-        "class " in code
-        and ("@Test" in code or "@ParameterizedTest" in code)
-        and len(code) > 100  # Minimum reasonable test size
-    )
+    """Check if code is valid Java test code.
+
+    Validates that code contains essential Java test elements:
+    - A class declaration
+    - At least one test annotation (@Test or @ParameterizedTest)
+
+    Args:
+        code: Java source code to validate
+
+    Returns:
+        True if code appears to be valid Java test code
+    """
+    if not code or not isinstance(code, str):
+        return False
+
+    # Must have a class declaration
+    has_class = "class " in code
+
+    # Must have at least one test annotation
+    has_test = "@Test" in code or "@ParameterizedTest" in code
+
+    # Basic sanity check: code should have some minimal structure
+    # (at least have opening/closing braces for a class)
+    has_structure = "{" in code and "}" in code
+
+    return has_class and has_test and has_structure
 
 
 def _extract_test_info(code: str) -> dict[str, Any] | None:
@@ -978,12 +1072,42 @@ def _extract_test_info(code: str) -> dict[str, Any] | None:
 
 
 def _extract_code_from_response(content: str) -> str | None:
-    """Extract Java code from agent response."""
-    if "```java" in content:
-        code_blocks = content.split("```java")
-        if len(code_blocks) > 1:
-            code = code_blocks[1].split("```")[0].strip()
+    """Extract Java code from agent response.
+
+    Handles various code block formats:
+    - ```java (case-insensitive: java, Java, JAVA)
+    - Plain ``` blocks containing Java code
+    - Raw Java code without markdown blocks (fallback)
+
+    Args:
+        content: Response content that may contain Java code
+
+    Returns:
+        Extracted Java code or None if not found
+    """
+    if not content:
+        return None
+
+    # Strategy 1: Look for Java code blocks (case-insensitive)
+    java_block_pattern = r'```[jJ][aA][vV][aA]\s*\n(.*?)```'
+    match = re.search(java_block_pattern, content, re.DOTALL)
+    if match:
+        return match.group(1).strip()
+
+    # Strategy 2: Look for plain code blocks with Java content
+    plain_block_pattern = r'```\s*\n(.*?)```'
+    for match in re.finditer(plain_block_pattern, content, re.DOTALL):
+        code = match.group(1).strip()
+        # Check if this looks like Java code
+        if code and ("class " in code or "public " in code):
             return code
+
+    # Strategy 3: Fallback - try to extract raw Java code
+    if "class " in content:
+        raw_code = _extract_java_class_from_raw_content(content)
+        if raw_code:
+            return raw_code
+
     return None
 
 

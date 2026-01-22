@@ -967,7 +967,7 @@ async def get_session_events(
         max_length=100,
         example="workflow_started",
     ),
-    request: Request = None,
+    request: Request | None = None,
     db: AsyncSession = Depends(get_db),
 ) -> EventListResponse:
     """

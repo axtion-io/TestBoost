@@ -693,10 +693,10 @@ async def analyze_impact(request: ImpactAnalysisRequest) -> ImpactAnalysisRespon
             ImpactInfo(
                 id=impact.id,
                 file_path=impact.file_path,
-                change_category=impact.change_category.value,
+                change_category=impact.category.value,
                 risk_level=impact.risk_level.value,
-                affected_methods=impact.affected_methods,
-                change_description=impact.change_description if request.verbose else "",
+                affected_methods=impact.affected_components,
+                change_description=impact.change_summary if request.verbose else "",
             )
             for impact in report.impacts
         ]
@@ -706,9 +706,9 @@ async def analyze_impact(request: ImpactAnalysisRequest) -> ImpactAnalysisRespon
                 id=req.id,
                 impact_id=req.impact_id,
                 test_type=req.test_type.value,
-                scenario=req.scenario.value,
-                priority=req.priority,
-                suggested_assertions=req.suggested_assertions if request.verbose else [],
+                scenario=req.scenario_type.value,
+                priority=str(req.priority),
+                suggested_assertions=[],
             )
             for req in report.test_requirements
         ]

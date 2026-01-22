@@ -86,7 +86,8 @@ class APIClient:
             return {}
 
         try:
-            return response.json()
+            result: dict[str, Any] = response.json()
+            return result
         except Exception:
             return {"raw": response.text}
 

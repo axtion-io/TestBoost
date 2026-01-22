@@ -138,7 +138,7 @@ def get_llm(
 
 def _add_metrics_callback(provider: str, model: str, kwargs: dict[str, Any]) -> list[Any]:
     """Create metrics callback and add to callbacks list."""
-    callbacks = kwargs.pop("callbacks", [])
+    callbacks: list[Any] = kwargs.pop("callbacks", [])
     callbacks.append(LLMMetricsCallback(provider=provider, model=model))
     return callbacks
 

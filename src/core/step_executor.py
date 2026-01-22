@@ -12,6 +12,7 @@ import asyncio
 import time
 import uuid
 from datetime import datetime
+from collections.abc import Awaitable, Callable
 from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -177,7 +178,7 @@ class StepExecutor:
 
             if workflow_fn is None:
                 # No specific workflow - mark as completed with placeholder
-                outputs = {
+                outputs: dict[str, Any] = {
                     "message": f"Step '{step.name}' completed (no workflow defined)",
                     "timestamp": datetime.utcnow().isoformat(),
                 }
@@ -207,14 +208,14 @@ class StepExecutor:
             )
 
             # Mark step as completed
-            outputs = {
+            step_outputs: dict[str, Any] = {
                 "result": result,
                 "timestamp": datetime.utcnow().isoformat(),
             }
             await self.session_service.update_step_status(
                 step_id,
                 StepStatus.COMPLETED.value,
-                outputs=outputs,
+                outputs=step_outputs,
             )
 
             logger.info(
@@ -234,7 +235,7 @@ class StepExecutor:
             # Check for auto-advance to next step
             await self._maybe_auto_advance(session_id, session_type, step_code)
 
-            return {"status": "completed", "outputs": outputs}
+            return {"status": "completed", "outputs": step_outputs}
 
         except Exception as e:
             # Mark step as failed
@@ -395,12 +396,15 @@ class StepExecutor:
             if step_def.get("code") == current_step_code:
                 # Check if there's a next step
                 if i + 1 < len(steps):
-                    return steps[i + 1].get("code")
+                    next_code = steps[i + 1].get("code")
+                    return str(next_code) if next_code else None
                 return None
 
         return None
 
-    def _get_workflow_function(self, session_type: str, step_code: str):
+    def _get_workflow_function(
+        self, session_type: str, step_code: str
+    ) -> Callable[..., Awaitable[dict[str, Any]]] | None:
         """Get the workflow function for a step.
 
         Maps session_type + step_code to actual workflow functions.

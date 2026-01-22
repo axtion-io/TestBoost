@@ -71,7 +71,168 @@ docker compose version
 
 ---
 
-## Commands
+## Global Options
+
+### Version
+
+Show TestBoost version and exit.
+
+```bash
+boost --version
+boost -v
+```
+
+---
+
+## Top-Level Commands
+
+### boost init
+
+Initialize TestBoost for a Java project.
+
+```bash
+boost init [PROJECT_PATH] [OPTIONS]
+```
+
+**Arguments**:
+- `PROJECT_PATH`: Path to the Java project to initialize (default: current directory)
+
+**Options**:
+| Option | Short | Description | Default |
+|--------|-------|-------------|---------|
+| `--mode` | `-m` | Execution mode: interactive, autonomous, analysis_only, debug | interactive |
+| `--force` | `-f` | Overwrite existing configuration | false |
+
+**Example**:
+```bash
+# Initialize in current directory
+boost init
+
+# Initialize with force overwrite
+boost init ./my-project --force
+```
+
+---
+
+### boost analyze
+
+Analyze a Java project for test generation opportunities.
+
+This is a shortcut for `boost tests analyze`.
+
+```bash
+boost analyze [PROJECT_PATH] [OPTIONS]
+```
+
+**Arguments**:
+- `PROJECT_PATH`: Path to the Java project to analyze (default: current directory)
+
+**Options**:
+| Option | Short | Description | Default |
+|--------|-------|-------------|---------|
+| `--verbose` | `-v` | Show detailed output | false |
+
+**Example**:
+```bash
+# Analyze current project
+boost analyze
+
+# Analyze with verbose output
+boost analyze ./my-project -v
+```
+
+---
+
+### boost generate
+
+Generate tests for a Java project.
+
+This is a shortcut for `boost tests generate`.
+
+```bash
+boost generate [PROJECT_PATH] [OPTIONS]
+```
+
+**Arguments**:
+- `PROJECT_PATH`: Path to the Java project (default: current directory)
+
+**Options**:
+| Option | Short | Description | Default |
+|--------|-------|-------------|---------|
+| `--mode` | `-m` | Execution mode: interactive, autonomous, analysis_only | interactive |
+| `--target` | `-t` | Specific class or package to generate tests for | all |
+| `--mutation-score` | | Target mutation score percentage | 80 |
+| `--dry-run` | | Analyze without generating tests | false |
+
+**Example**:
+```bash
+# Generate tests for current project
+boost generate
+
+# Generate tests for specific class
+boost generate ./my-project -t com.example.MyService
+```
+
+---
+
+### boost maven
+
+Perform Maven maintenance tasks.
+
+This is a shortcut for `boost maintenance run` or `boost maintenance list`.
+
+```bash
+boost maven [PROJECT_PATH] [OPTIONS]
+```
+
+**Arguments**:
+- `PROJECT_PATH`: Path to the Maven project (default: current directory)
+
+**Options**:
+| Option | Short | Description | Default |
+|--------|-------|-------------|---------|
+| `--mode` | `-m` | Execution mode | interactive |
+| `--check-updates` | `-u` | Check for dependency updates (list only) | false |
+| `--dry-run` | `-n` | Analyze without applying changes | false |
+
+**Example**:
+```bash
+# Run full maintenance workflow
+boost maven ./my-project
+
+# List available updates only
+boost maven ./my-project -u
+```
+
+---
+
+### boost serve
+
+Start the TestBoost API server.
+
+```bash
+boost serve [OPTIONS]
+```
+
+**Options**:
+| Option | Short | Description | Default |
+|--------|-------|-------------|---------|
+| `--host` | `-h` | Host to bind the server to | 0.0.0.0 |
+| `--port` | `-p` | Port to bind the server to | 8000 |
+| `--reload` | `-r` | Enable auto-reload for development | false |
+
+**Example**:
+```bash
+# Start server with defaults
+boost serve
+
+# Start on custom port with reload
+boost serve -p 3000 -r
+```
+
+---
+
+## Maintenance Commands
 
 ### boost maintenance run
 
@@ -361,6 +522,8 @@ boost maintenance cancel abc123-def456 --force
 
 ---
 
+## Test Commands
+
 ### boost tests generate
 
 Generate tests for Java classes.
@@ -552,6 +715,8 @@ Detects uncommitted changes in your working directory, classifies each change by
 
 ---
 
+## Deploy Commands
+
 ### boost deploy run
 
 Deploy a Java project using Docker.
@@ -697,41 +862,7 @@ boost deploy build ./my-project --no-cache
 
 ---
 
-### boost status
-
-Check session status.
-
-```bash
-boost status <session-id>
-```
-
-**Arguments**:
-- `session-id`: Session UUID (required)
-
-**Example**:
-```bash
-boost status abc123-def456-ghi789
-```
-
----
-
-### boost cancel
-
-Cancel a running session.
-
-```bash
-boost cancel <session-id>
-```
-
-**Arguments**:
-- `session-id`: Session UUID (required)
-
-**Example**:
-```bash
-boost cancel abc123-def456-ghi789
-```
-
----
+## Config Commands
 
 ### boost config validate
 
@@ -901,6 +1032,8 @@ This will:
 3. Invalidate the config cache
 
 ---
+
+## Audit Commands
 
 ### boost audit scan
 
@@ -1124,3 +1257,66 @@ boost maintenance ./my-project --output json
   }
 }
 ```
+
+---
+
+## Command Summary
+
+### Top-Level Commands
+| Command | Description |
+|---------|-------------|
+| `boost --version` | Show version |
+| `boost init` | Initialize TestBoost for a project |
+| `boost analyze` | Analyze project (shortcut) |
+| `boost generate` | Generate tests (shortcut) |
+| `boost maven` | Maven maintenance (shortcut) |
+| `boost status` | Check session status |
+| `boost serve` | Start API server |
+
+### Maintenance Commands
+| Command | Description |
+|---------|-------------|
+| `boost maintenance run` | Run maintenance workflow |
+| `boost maintenance list` | List available updates |
+| `boost maintenance status` | Check session status |
+| `boost maintenance sessions` | List all sessions |
+| `boost maintenance steps` | List session steps |
+| `boost maintenance step` | Execute a step |
+| `boost maintenance pause` | Pause a session |
+| `boost maintenance resume` | Resume a session |
+| `boost maintenance artifacts` | Get session artifacts |
+| `boost maintenance cancel` | Cancel a session |
+
+### Test Commands
+| Command | Description |
+|---------|-------------|
+| `boost tests generate` | Generate tests |
+| `boost tests analyze` | Analyze project |
+| `boost tests mutation` | Run mutation testing |
+| `boost tests recommendations` | Show recommendations |
+| `boost tests impact` | Analyze change impact |
+
+### Deploy Commands
+| Command | Description |
+|---------|-------------|
+| `boost deploy run` | Deploy with Docker |
+| `boost deploy stop` | Stop deployment |
+| `boost deploy logs` | Show container logs |
+| `boost deploy status` | Check deployment status |
+| `boost deploy build` | Build image only |
+
+### Config Commands
+| Command | Description |
+|---------|-------------|
+| `boost config validate` | Validate configurations |
+| `boost config show` | Show agent config |
+| `boost config reload` | Reload configurations |
+| `boost config backup` | Backup agent config |
+| `boost config list-backups` | List backups |
+| `boost config rollback` | Rollback to backup |
+
+### Audit Commands
+| Command | Description |
+|---------|-------------|
+| `boost audit scan` | Scan for vulnerabilities |
+| `boost audit report` | Generate security report |

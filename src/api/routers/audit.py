@@ -249,7 +249,7 @@ async def get_audit_report(session_id: str) -> AuditReportResponse:
     )
 
 
-@router.get("/report/{session_id}/html", response_class=HTMLResponse)
+@router.get("/report/{session_id}/html", response_class=HTMLResponse, response_model=None)
 async def get_audit_report_html(session_id: str) -> HTMLResponse:
     """
     Get the audit report as an HTML page.

@@ -124,11 +124,12 @@ warn_required_dynamic_aliases = true
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
 testpaths = ["tests"]
-addopts = "-v --cov=src --cov-report=term-missing --cov-report=xml"
+addopts = "-v --cov=src --cov-report=term-missing --cov-report=xml -m 'not e2e'"
 markers = [
     "unit: mark test as unit test",
     "integration: mark test as integration test (may require database)",
     "slow: mark test as slow-running (excluded by default in CI)",
+    "e2e: mark test as end-to-end test requiring real LLM API keys (excluded by default)",
 ]
 filterwarnings = [
     "ignore::DeprecationWarning",

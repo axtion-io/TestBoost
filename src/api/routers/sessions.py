@@ -860,7 +860,7 @@ async def get_session_artifacts(
 MAX_CONTENT_SIZE_BYTES = 10 * 1024 * 1024
 
 
-@router.get("/{session_id}/artifacts/{artifact_id}/content")
+@router.get("/{session_id}/artifacts/{artifact_id}/content", response_model=None)
 async def get_artifact_content(
     session_id: uuid.UUID,
     artifact_id: uuid.UUID,
@@ -953,6 +953,7 @@ async def get_artifact_content(
 @router.get("/{session_id}/events", response_model=EventListResponse)
 async def get_session_events(
     session_id: uuid.UUID,
+    request: Request,
     page: int = Query(1, ge=1, description="Page number (1-indexed)"),
     per_page: int = Query(20, ge=1, le=100, description="Items per page"),
     since: datetime | None = Query(
@@ -967,7 +968,6 @@ async def get_session_events(
         max_length=100,
         example="workflow_started",
     ),
-    request: Request | None = None,
     db: AsyncSession = Depends(get_db),
 ) -> EventListResponse:
     """
@@ -1001,7 +1001,7 @@ async def get_session_events(
     """
     # Get request ID for logging
     request_id = (
-        request.state.request_id if request and hasattr(request.state, "request_id") else "unknown"
+        request.state.request_id if hasattr(request.state, "request_id") else "unknown"
     )
 
     # Log request start (DEBUG level to reduce log noise)

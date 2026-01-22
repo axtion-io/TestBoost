@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
 import pytest
+from langchain_core.messages import AIMessage
 
 
 class TestTestGenAgentWorkflow:
@@ -59,15 +60,17 @@ public class Calculator {
 
             # Create a mock agent that returns a response
             mock_agent = MagicMock()
-            mock_response = MagicMock()
-            mock_response.content = "Generated tests for Calculator class"
-            mock_response.tool_calls = []
-            mock_response.response_metadata = {"model": "test-model", "usage": {}}
-            mock_response.usage_metadata = {
-                "input_tokens": 100,
-                "output_tokens": 200,
-                "total_tokens": 300,
-            }
+            # Return response in the expected format: dict with "messages" key
+            ai_message = AIMessage(
+                content="Generated tests for Calculator class",
+                response_metadata={"model": "test-model", "usage": {}},
+                usage_metadata={
+                    "input_tokens": 100,
+                    "output_tokens": 200,
+                    "total_tokens": 300,
+                },
+            )
+            mock_response = {"messages": [ai_message]}
             mock_agent.ainvoke = AsyncMock(return_value=mock_response)
             return mock_agent
 
@@ -166,15 +169,17 @@ public class Calculator {
         # Mock agent to return a simple response
         def mock_create_deep_agent(*args, **kwargs):
             mock_agent = MagicMock()
-            mock_response = MagicMock()
-            mock_response.content = "Generated test analysis"
-            mock_response.tool_calls = []
-            mock_response.response_metadata = {"model": "test-model", "usage": {}}
-            mock_response.usage_metadata = {
-                "input_tokens": 100,
-                "output_tokens": 200,
-                "total_tokens": 300,
-            }
+            # Return response in the expected format: dict with "messages" key
+            ai_message = AIMessage(
+                content="Generated test analysis",
+                response_metadata={"model": "test-model", "usage": {}},
+                usage_metadata={
+                    "input_tokens": 100,
+                    "output_tokens": 200,
+                    "total_tokens": 300,
+                },
+            )
+            mock_response = {"messages": [ai_message]}
             mock_agent.ainvoke = AsyncMock(return_value=mock_response)
             return mock_agent
 

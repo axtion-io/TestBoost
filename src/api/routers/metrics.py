@@ -181,7 +181,7 @@ def record_request(method: str, path: str, status_code: int, duration_seconds: f
     )
 
 
-@router.get("/metrics", response_class=PlainTextResponse)
+@router.get("/metrics", response_class=PlainTextResponse, response_model=None)
 async def get_metrics() -> str:
     """
     Expose Prometheus metrics.

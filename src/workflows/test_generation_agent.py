@@ -66,6 +66,44 @@ class CompilationError(TestGenerationError):
         self.errors = errors or []
 
 
+class MavenNotFoundError(TestGenerationError):
+    """Raised when Maven executable is not found on the system.
+
+    This typically means Maven is not installed or not in the system PATH.
+    """
+
+    def __init__(
+        self,
+        message: str = "Maven executable not found",
+        search_paths: list[str] | None = None,
+    ):
+        if search_paths:
+            message = f"{message}. Searched in: {', '.join(search_paths)}"
+        super().__init__(message)
+        self.search_paths = search_paths or []
+
+
+class MavenTimeoutError(TestGenerationError):
+    """Raised when Maven test execution times out.
+
+    This can happen with large test suites or slow CI environments.
+    """
+
+    def __init__(
+        self,
+        message: str = "Maven test execution timed out",
+        timeout_seconds: float | None = None,
+        module: str | None = None,
+    ):
+        if timeout_seconds:
+            message = f"{message} after {timeout_seconds}s"
+        if module:
+            message = f"{message} (module: {module})"
+        super().__init__(message)
+        self.timeout_seconds = timeout_seconds
+        self.module = module
+
+
 def _find_source_files(project_path: str) -> list[str]:
     """
     Find Java source files to generate tests for.
@@ -1379,7 +1417,36 @@ async def _run_test_feedback_loop(
         )
 
         # Step 1: Run Maven tests
-        test_result = await _run_maven_tests(project_dir, test_files)
+        try:
+            test_result = await _run_maven_tests(project_dir, test_files)
+        except MavenNotFoundError as e:
+            logger.error(
+                "maven_not_found_in_feedback_loop",
+                session_id=str(session_id),
+                error=str(e),
+            )
+            return {
+                "success": False,
+                "iterations": iteration,
+                "tests": validated_tests,
+                "message": f"Maven not found: {e}. Please install Maven and ensure it's in your PATH.",
+                "error_type": "maven_not_found",
+            }
+        except MavenTimeoutError as e:
+            logger.error(
+                "maven_timeout_in_feedback_loop",
+                session_id=str(session_id),
+                iteration=iteration,
+                timeout=e.timeout_seconds,
+                module=e.module,
+            )
+            return {
+                "success": False,
+                "iterations": iteration,
+                "tests": validated_tests,
+                "message": f"Maven tests timed out: {e}. Consider increasing TEST_TIMEOUT_SECONDS or optimizing tests.",
+                "error_type": "maven_timeout",
+            }
 
         if test_result["success"]:
             logger.info(
@@ -1594,14 +1661,65 @@ async def _run_maven_tests(
                 return_code=result.returncode,
             )
 
-        except subprocess.TimeoutExpired:
-            logger.error("maven_tests_timeout", module=module, timeout=TEST_TIMEOUT_SECONDS)
-            all_output.append(f"Module {module}: timed out after {TEST_TIMEOUT_SECONDS}s")
+        except subprocess.TimeoutExpired as e:
+            logger.error(
+                "maven_tests_timeout",
+                module=module or "root",
+                timeout=TEST_TIMEOUT_SECONDS,
+                command=" ".join(mvn_cmd),
+            )
+            # Raise specific timeout error for proper handling upstream
+            raise MavenTimeoutError(
+                message="Maven test execution timed out",
+                timeout_seconds=TEST_TIMEOUT_SECONDS,
+                module=module or "root",
+            ) from e
+
+        except FileNotFoundError as e:
+            # Maven executable not found in PATH
+            logger.error(
+                "maven_not_found",
+                module=module or "root",
+                command=mvn_cmd[0],
+                error=str(e),
+            )
+            # Check common Maven installation paths
+            common_paths = [
+                "/usr/bin/mvn",
+                "/usr/local/bin/mvn",
+                "C:\\Program Files\\Apache\\maven\\bin\\mvn.cmd",
+                "C:\\Program Files (x86)\\Apache\\maven\\bin\\mvn.cmd",
+            ]
+            raise MavenNotFoundError(
+                message="Maven executable not found. Ensure Maven is installed and in your PATH",
+                search_paths=common_paths,
+            ) from e
+
+        except OSError as e:
+            # Handle other OS-level errors (permission denied, etc.)
+            error_msg = str(e)
+            logger.error(
+                "maven_execution_os_error",
+                module=module or "root",
+                error=error_msg,
+                error_code=getattr(e, "errno", None),
+            )
+            # Check if it's a "file not found" variant (errno 2)
+            if getattr(e, "errno", None) == 2:
+                raise MavenNotFoundError(
+                    message=f"Maven executable not found: {error_msg}",
+                ) from e
+            all_output.append(f"Module {module or 'root'}: OS error - {error_msg}")
             all_success = False
 
         except Exception as e:
-            logger.error("maven_tests_failed", module=module, error=str(e))
-            all_output.append(f"Module {module}: {str(e)}")
+            logger.error(
+                "maven_tests_failed",
+                module=module or "root",
+                error=str(e),
+                error_type=type(e).__name__,
+            )
+            all_output.append(f"Module {module or 'root'}: {str(e)}")
             all_success = False
 
     return {
@@ -1834,4 +1952,6 @@ __all__ = [
     "run_test_generation_with_agent",
     "TestGenerationError",
     "CompilationError",
+    "MavenNotFoundError",
+    "MavenTimeoutError",
 ]

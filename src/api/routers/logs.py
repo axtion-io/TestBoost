@@ -2,7 +2,7 @@
 
 import json
 import re
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -187,7 +187,7 @@ def _convert_to_log_entry(log_dict: dict[str, Any]) -> LogEntry:
     try:
         timestamp = datetime.fromisoformat(timestamp_str.replace("Z", "+00:00"))
     except (ValueError, AttributeError):
-        timestamp = datetime.now(timezone.utc)
+        timestamp = datetime.now(UTC)
 
     level = log_dict.get("level", "info")
     event = log_dict.get("event", "unknown")

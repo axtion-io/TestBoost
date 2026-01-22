@@ -1819,16 +1819,38 @@ async def _run_test_feedback_loop(
     Returns:
         dict with final test results and iteration count
     """
+    # ===== FEEDBACK LOOP START =====
+    loop_start_time = time.time()
+    logger.info(
+        "feedback_loop_started",
+        session_id=str(session_id),
+        project_path=project_path,
+        max_iterations=max_iterations,
+        total_validated_tests=len(validated_tests),
+    )
+
     # Get the test files that were written
     test_files = [t for t in validated_tests if t.get("written_to_disk")]
     if not test_files:
-        logger.warning("no_tests_to_run", session_id=str(session_id))
+        logger.warning(
+            "feedback_loop_no_tests",
+            session_id=str(session_id),
+            reason="no_tests_written_to_disk",
+            validated_count=len(validated_tests),
+        )
         return {
             "success": False,
             "iterations": 0,
             "tests": validated_tests,
             "message": "No tests were written to disk",
         }
+
+    logger.debug(
+        "feedback_loop_test_files",
+        session_id=str(session_id),
+        test_file_count=len(test_files),
+        test_files=[t.get("actual_path", t.get("path")) for t in test_files],
+    )
 
     project_dir = Path(project_path)
     # Use actual_path (with module) if available, otherwise original path
@@ -1838,21 +1860,58 @@ async def _run_test_feedback_loop(
     }
 
     for iteration in range(1, max_iterations + 1):
+        iteration_start_time = time.time()
         logger.info(
-            "test_feedback_iteration",
+            "feedback_loop_iteration_start",
             session_id=str(session_id),
             iteration=iteration,
             max_iterations=max_iterations,
+            test_count=len(current_tests),
         )
 
-        # Step 1: Run Maven tests
+        # ===== STEP 1: Run Maven tests =====
+        step1_start = time.time()
+        logger.info(
+            "feedback_loop_step",
+            session_id=str(session_id),
+            iteration=iteration,
+            step=1,
+            step_name="run_maven_tests",
+            status="started",
+        )
         try:
             test_result = await _run_maven_tests(project_dir, test_files)
-        except MavenNotFoundError as e:
-            logger.error(
-                "maven_not_found_in_feedback_loop",
+            step1_duration = time.time() - step1_start
+            logger.info(
+                "feedback_loop_step",
                 session_id=str(session_id),
+                iteration=iteration,
+                step=1,
+                step_name="run_maven_tests",
+                status="completed",
+                duration_seconds=round(step1_duration, 2),
+                tests_passed=test_result["success"],
+            )
+        except MavenNotFoundError as e:
+            step1_duration = time.time() - step1_start
+            total_duration = time.time() - loop_start_time
+            logger.error(
+                "feedback_loop_step",
+                session_id=str(session_id),
+                iteration=iteration,
+                step=1,
+                step_name="run_maven_tests",
+                status="failed",
+                duration_seconds=round(step1_duration, 2),
+                error_type="maven_not_found",
                 error=str(e),
+            )
+            logger.error(
+                "feedback_loop_error",
+                session_id=str(session_id),
+                iteration=iteration,
+                error_type="maven_not_found",
+                total_duration_seconds=round(total_duration, 2),
             )
             return {
                 "success": False,
@@ -1862,12 +1921,26 @@ async def _run_test_feedback_loop(
                 "error_type": "maven_not_found",
             }
         except MavenTimeoutError as e:
+            step1_duration = time.time() - step1_start
+            total_duration = time.time() - loop_start_time
             logger.error(
-                "maven_timeout_in_feedback_loop",
+                "feedback_loop_step",
                 session_id=str(session_id),
                 iteration=iteration,
-                timeout=e.timeout_seconds,
+                step=1,
+                step_name="run_maven_tests",
+                status="failed",
+                duration_seconds=round(step1_duration, 2),
+                error_type="maven_timeout",
+                timeout_seconds=e.timeout_seconds,
                 module=e.module,
+            )
+            logger.error(
+                "feedback_loop_error",
+                session_id=str(session_id),
+                iteration=iteration,
+                error_type="maven_timeout",
+                total_duration_seconds=round(total_duration, 2),
             )
             return {
                 "success": False,
@@ -1878,10 +1951,15 @@ async def _run_test_feedback_loop(
             }
 
         if test_result["success"]:
+            iteration_duration = time.time() - iteration_start_time
+            total_duration = time.time() - loop_start_time
             logger.info(
-                "test_feedback_success",
+                "feedback_loop_success",
                 session_id=str(session_id),
                 iteration=iteration,
+                iteration_duration_seconds=round(iteration_duration, 2),
+                total_duration_seconds=round(total_duration, 2),
+                tests_passed=True,
             )
             return {
                 "success": True,
@@ -1890,23 +1968,39 @@ async def _run_test_feedback_loop(
                 "message": f"All tests passed after {iteration} iteration(s)",
             }
 
-        # Step 2: Parse failures
+        # ===== STEP 2: Parse failures =====
+        step2_start = time.time()
+        logger.info(
+            "feedback_loop_step",
+            session_id=str(session_id),
+            iteration=iteration,
+            step=2,
+            step_name="parse_failures",
+            status="started",
+        )
         failures = _parse_test_failures(test_result["output"])
 
         if not failures:
             # Tests failed but couldn't parse failures - might be compilation issue
             logger.warning(
-                "test_failures_unparseable",
+                "feedback_loop_failures_unparseable",
                 session_id=str(session_id),
-                output=test_result["output"][:500],
+                iteration=iteration,
+                output_preview=test_result["output"][:500],
             )
             failures = [{"error": test_result["output"][:2000], "test": "unknown"}]
 
+        step2_duration = time.time() - step2_start
         logger.info(
-            "test_failures_found",
+            "feedback_loop_step",
             session_id=str(session_id),
-            failure_count=len(failures),
             iteration=iteration,
+            step=2,
+            step_name="parse_failures",
+            status="completed",
+            duration_seconds=round(step2_duration, 2),
+            failure_count=len(failures),
+            failure_types=[f.get("type", "test_failure") for f in failures[:5]],
         )
 
         # Store failure artifact
@@ -1919,8 +2013,26 @@ async def _run_test_feedback_loop(
             size_bytes=len(json.dumps(failures)),
         )
 
-        # Step 3: Ask agent to fix failures
+        # ===== STEP 3: Ask agent to fix failures =====
+        step3_start = time.time()
+        logger.info(
+            "feedback_loop_step",
+            session_id=str(session_id),
+            iteration=iteration,
+            step=3,
+            step_name="invoke_agent_fix",
+            status="started",
+            failure_count=len(failures),
+        )
+
         fix_prompt = _build_fix_prompt(failures, current_tests, project_path)
+        logger.debug(
+            "feedback_loop_fix_prompt_built",
+            session_id=str(session_id),
+            iteration=iteration,
+            prompt_length=len(fix_prompt),
+            test_file_count=len(current_tests),
+        )
 
         fix_response = await _invoke_agent_and_store_tools(
             agent=agent,
@@ -1929,17 +2041,49 @@ async def _run_test_feedback_loop(
             artifact_repo=artifact_repo,
         )
 
-        # Step 4: Extract and write corrected tests
+        step3_duration = time.time() - step3_start
+        logger.info(
+            "feedback_loop_step",
+            session_id=str(session_id),
+            iteration=iteration,
+            step=3,
+            step_name="invoke_agent_fix",
+            status="completed",
+            duration_seconds=round(step3_duration, 2),
+        )
+
+        # ===== STEP 4: Extract and write corrected tests =====
+        step4_start = time.time()
+        logger.info(
+            "feedback_loop_step",
+            session_id=str(session_id),
+            iteration=iteration,
+            step=4,
+            step_name="write_corrections",
+            status="started",
+        )
+
         # Pass validated_tests to preserve multi-module paths in corrections
         corrected_tests = _extract_generated_tests(fix_response, validated_tests)
 
         if not corrected_tests:
+            step4_duration = time.time() - step4_start
             logger.warning(
-                "no_corrections_from_agent",
+                "feedback_loop_no_corrections",
                 session_id=str(session_id),
                 iteration=iteration,
+                step=4,
+                duration_seconds=round(step4_duration, 2),
             )
             continue
+
+        logger.debug(
+            "feedback_loop_corrections_extracted",
+            session_id=str(session_id),
+            iteration=iteration,
+            correction_count=len(corrected_tests),
+            correction_paths=[c.get("path") for c in corrected_tests],
+        )
 
         # Update current tests with corrections and write to disk with verification
         corrections_written = 0
@@ -1950,9 +2094,10 @@ async def _run_test_feedback_loop(
             content = corrected.get("content")
             if not path or not content:
                 logger.warning(
-                    "correction_missing_data",
+                    "feedback_loop_correction_invalid",
                     session_id=str(session_id),
                     iteration=iteration,
+                    step=4,
                     has_path=bool(path),
                     has_content=bool(content),
                 )
@@ -1971,12 +2116,13 @@ async def _run_test_feedback_loop(
 
             if write_result["success"]:
                 corrections_written += 1
-                logger.info(
-                    "corrected_test_written",
+                logger.debug(
+                    "feedback_loop_correction_written",
                     session_id=str(session_id),
-                    path=str(full_path),
                     iteration=iteration,
-                    attempts=write_result["attempts"],
+                    step=4,
+                    path=str(full_path),
+                    write_attempts=write_result["attempts"],
                     verified=write_result["verified"],
                     size_bytes=write_result.get("size_bytes"),
                 )
@@ -1991,29 +2137,50 @@ async def _run_test_feedback_loop(
             else:
                 corrections_failed += 1
                 logger.error(
-                    "corrected_test_write_failed",
+                    "feedback_loop_correction_write_failed",
                     session_id=str(session_id),
-                    path=path,
                     iteration=iteration,
-                    attempts=write_result["attempts"],
+                    step=4,
+                    path=path,
+                    write_attempts=write_result["attempts"],
                     error=write_result.get("error"),
                 )
 
         # Log summary of corrections for this iteration
+        step4_duration = time.time() - step4_start
         logger.info(
-            "correction_write_summary",
+            "feedback_loop_step",
             session_id=str(session_id),
             iteration=iteration,
+            step=4,
+            step_name="write_corrections",
+            status="completed",
+            duration_seconds=round(step4_duration, 2),
             total_corrections=len(corrected_tests),
             written=corrections_written,
             failed=corrections_failed,
         )
 
+        # Log iteration completion
+        iteration_duration = time.time() - iteration_start_time
+        logger.info(
+            "feedback_loop_iteration_complete",
+            session_id=str(session_id),
+            iteration=iteration,
+            duration_seconds=round(iteration_duration, 2),
+            tests_passed=False,
+            corrections_applied=corrections_written,
+            next_iteration=iteration + 1 if iteration < max_iterations else None,
+        )
+
     # Max iterations reached
+    total_duration = time.time() - loop_start_time
     logger.warning(
-        "test_feedback_max_iterations",
+        "feedback_loop_max_iterations",
         session_id=str(session_id),
         max_iterations=max_iterations,
+        total_duration_seconds=round(total_duration, 2),
+        tests_passed=False,
     )
     return {
         "success": False,

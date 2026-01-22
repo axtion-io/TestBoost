@@ -1748,8 +1748,10 @@ def _parse_test_failures(maven_output: str) -> list[dict[str, Any]]:
     #   shouldRejectInvalidEmail(com.example.OwnerResourceTest): expected: <400> but was: <500>"
 
     # Look for failure summary
+    # Pattern matches "Failed tests:" or "Tests in error:" followed by indented lines
+    # Uses (?:\n|$) to handle both mid-string and end-of-string cases
     failure_pattern = re.compile(
-        r"(?:Failed tests?|Tests in error):\s*\n((?:\s+.+\n)+)",
+        r"(?:Failed tests?|Tests in error):\s*\n((?:\s+.+(?:\n|$))+)",
         re.MULTILINE
     )
 
@@ -1773,13 +1775,16 @@ def _parse_test_failures(maven_output: str) -> list[dict[str, Any]]:
                 # Generic format
                 failures.append({"error": line, "test": "unknown"})
 
-    # Also look for compilation errors
-    compile_error_pattern = re.compile(
+    # ===== COMPREHENSIVE COMPILATION ERROR PARSING =====
+    # Maven outputs various compilation error formats that need to be parsed
+
+    # Pattern 1: Standard format with line and column [ERROR] /path/Test.java:[10,5] message
+    compile_error_pattern_1 = re.compile(
         r"\[ERROR\]\s*(.+\.java):\[(\d+),(\d+)\]\s*(.+)",
         re.MULTILINE
     )
 
-    for match in compile_error_pattern.finditer(maven_output):
+    for match in compile_error_pattern_1.finditer(maven_output):
         error_msg = match.group(4)
         failure = {
             "type": "compilation",
@@ -1788,10 +1793,179 @@ def _parse_test_failures(maven_output: str) -> list[dict[str, Any]]:
             "column": int(match.group(3)),
             "error": error_msg,
         }
-
         # Categorize JPA-specific errors with fix suggestions
         failure["jpa_error"] = _categorize_jpa_error(error_msg)
         failures.append(failure)
+
+    # Pattern 2: Format without column [ERROR] /path/Test.java:[10] message
+    compile_error_pattern_2 = re.compile(
+        r"\[ERROR\]\s*(.+\.java):\[(\d+)\]\s+(.+)",
+        re.MULTILINE
+    )
+
+    for match in compile_error_pattern_2.finditer(maven_output):
+        # Skip if already captured by pattern 1 (has column)
+        file_path = match.group(1)
+        line_num = int(match.group(2))
+        if any(f.get("file") == file_path and f.get("line") == line_num for f in failures):
+            continue
+        error_msg = match.group(3)
+        failure = {
+            "type": "compilation",
+            "file": file_path,
+            "line": line_num,
+            "column": 0,
+            "error": error_msg,
+        }
+        failure["jpa_error"] = _categorize_jpa_error(error_msg)
+        failures.append(failure)
+
+    # Pattern 3: Alternative format with colon separator /path/Test.java:10: error: message
+    compile_error_pattern_3 = re.compile(
+        r"(?:^|\n)\s*(.+\.java):(\d+):\s*(?:error:\s*)?(.+?)(?=\n|$)",
+        re.MULTILINE
+    )
+
+    for match in compile_error_pattern_3.finditer(maven_output):
+        file_path = match.group(1)
+        line_num = int(match.group(2))
+        # Skip if already captured
+        if any(f.get("file") == file_path and f.get("line") == line_num for f in failures):
+            continue
+        error_msg = match.group(3).strip()
+        if error_msg:
+            failure = {
+                "type": "compilation",
+                "file": file_path,
+                "line": line_num,
+                "column": 0,
+                "error": error_msg,
+            }
+            failure["jpa_error"] = _categorize_jpa_error(error_msg)
+            failures.append(failure)
+
+    # Pattern 4: Multi-line errors - capture symbol and location info
+    # Example:
+    #   [ERROR] /path/Test.java:[10,5] cannot find symbol
+    #     symbol:   method setId(long)
+    #     location: class com.example.Entity
+    multiline_error_pattern = re.compile(
+        r"\[ERROR\]\s*(.+\.java):\[(\d+),?(\d*)\]\s*(cannot find symbol|incompatible types)[^\n]*\n"
+        r"(?:\s+symbol:\s*(.+?)\n)?"
+        r"(?:\s+location:\s*(.+?)(?:\n|$))?",
+        re.MULTILINE
+    )
+
+    for match in multiline_error_pattern.finditer(maven_output):
+        file_path = match.group(1)
+        line_num = int(match.group(2))
+        col_num = int(match.group(3)) if match.group(3) else 0
+
+        # Skip if already captured without symbol/location info
+        existing = next((f for f in failures if f.get("file") == file_path and f.get("line") == line_num), None)
+
+        error_type = match.group(4)
+        symbol = match.group(5).strip() if match.group(5) else None
+        location = match.group(6).strip() if match.group(6) else None
+
+        # Build comprehensive error message
+        error_msg = error_type
+        if symbol:
+            error_msg += f" - symbol: {symbol}"
+        if location:
+            error_msg += f" in {location}"
+
+        if existing:
+            # Update existing failure with more details
+            existing["error"] = error_msg
+            if symbol:
+                existing["symbol"] = symbol
+            if location:
+                existing["location"] = location
+            existing["jpa_error"] = _categorize_jpa_error(error_msg)
+        else:
+            failure = {
+                "type": "compilation",
+                "file": file_path,
+                "line": line_num,
+                "column": col_num,
+                "error": error_msg,
+            }
+            if symbol:
+                failure["symbol"] = symbol
+            if location:
+                failure["location"] = location
+            failure["jpa_error"] = _categorize_jpa_error(error_msg)
+            failures.append(failure)
+
+    # Pattern 5: Package does not exist errors
+    package_error_pattern = re.compile(
+        r"\[ERROR\]\s*(.+\.java):\[(\d+),?(\d*)\]\s*package\s+(\S+)\s+does not exist",
+        re.MULTILINE
+    )
+
+    for match in package_error_pattern.finditer(maven_output):
+        file_path = match.group(1)
+        line_num = int(match.group(2))
+        if any(f.get("file") == file_path and f.get("line") == line_num for f in failures):
+            continue
+        col_num = int(match.group(3)) if match.group(3) else 0
+        package_name = match.group(4)
+        failure = {
+            "type": "compilation",
+            "file": file_path,
+            "line": line_num,
+            "column": col_num,
+            "error": f"package {package_name} does not exist",
+            "missing_package": package_name,
+            "jpa_error": None,
+        }
+        failures.append(failure)
+
+    # Pattern 6: Class not found / cannot be resolved errors
+    class_not_found_pattern = re.compile(
+        r"\[ERROR\]\s*(.+\.java):\[(\d+),?(\d*)\]\s*(?:cannot find symbol|cannot resolve)\s*[:-]?\s*(?:class|type)?\s*(\w+)",
+        re.MULTILINE
+    )
+
+    for match in class_not_found_pattern.finditer(maven_output):
+        file_path = match.group(1)
+        line_num = int(match.group(2))
+        if any(f.get("file") == file_path and f.get("line") == line_num for f in failures):
+            continue
+        col_num = int(match.group(3)) if match.group(3) else 0
+        class_name = match.group(4)
+        failure = {
+            "type": "compilation",
+            "file": file_path,
+            "line": line_num,
+            "column": col_num,
+            "error": f"cannot find symbol: class {class_name}",
+            "missing_class": class_name,
+            "jpa_error": None,
+        }
+        failures.append(failure)
+
+    # Pattern 7: Maven compiler plugin failure summary
+    compiler_failure_pattern = re.compile(
+        r"\[ERROR\]\s*COMPILATION ERROR\s*:\s*\n\[INFO\]\s*-+\n((?:\[ERROR\].+\n)+)",
+        re.MULTILINE
+    )
+
+    for match in compiler_failure_pattern.finditer(maven_output):
+        error_block = match.group(1)
+        # Parse individual errors within the block
+        for error_line in error_block.strip().split("\n"):
+            error_line = error_line.replace("[ERROR]", "").strip()
+            if error_line and not any(f.get("error") == error_line for f in failures):
+                failures.append({
+                    "type": "compilation",
+                    "error": error_line,
+                    "file": "unknown",
+                    "line": 0,
+                    "column": 0,
+                    "jpa_error": _categorize_jpa_error(error_line),
+                })
 
     # Look for assertion failures with stack traces
     assertion_pattern = re.compile(

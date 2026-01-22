@@ -84,9 +84,13 @@ class Project(Base):
 
     last_analyzed: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
-    analysis_config: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True, default=dict)
+    analysis_config: Mapped[dict[str, Any] | None] = mapped_column(
+        JSON, nullable=True, default=dict
+    )
 
-    project_metadata: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True, default=dict)
+    project_metadata: Mapped[dict[str, Any] | None] = mapped_column(
+        JSON, nullable=True, default=dict
+    )
 
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
 

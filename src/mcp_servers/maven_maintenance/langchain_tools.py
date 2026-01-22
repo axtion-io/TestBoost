@@ -15,9 +15,7 @@ logger = get_logger(__name__)
 
 @tool
 async def maven_analyze_dependencies(
-    project_path: str,
-    include_snapshots: bool = False,
-    check_vulnerabilities: bool = True
+    project_path: str, include_snapshots: bool = False, check_vulnerabilities: bool = True
 ) -> str:
     """
     Analyze Maven project dependencies for updates, vulnerabilities, and compatibility issues.
@@ -42,29 +40,23 @@ async def maven_analyze_dependencies(
         tool="maven_analyze_dependencies",
         project_path=project_path,
         include_snapshots=include_snapshots,
-        check_vulnerabilities=check_vulnerabilities
+        check_vulnerabilities=check_vulnerabilities,
     )
 
     result = await analyze_dependencies(
         project_path=project_path,
         include_snapshots=include_snapshots,
-        check_vulnerabilities=check_vulnerabilities
+        check_vulnerabilities=check_vulnerabilities,
     )
 
-    logger.info(
-        "mcp_tool_completed",
-        tool="maven_analyze_dependencies",
-        result_length=len(result)
-    )
+    logger.info("mcp_tool_completed", tool="maven_analyze_dependencies", result_length=len(result))
 
     return result
 
 
 @tool
 async def maven_compile_tests(
-    project_path: str,
-    profiles: list[str] | None = None,
-    skip_main: bool = False
+    project_path: str, profiles: list[str] | None = None, skip_main: bool = False
 ) -> str:
     """
     Compile test sources for a Maven project.
@@ -87,20 +79,14 @@ async def maven_compile_tests(
         tool="maven_compile_tests",
         project_path=project_path,
         profiles=profiles,
-        skip_main=skip_main
+        skip_main=skip_main,
     )
 
     result = await compile_tests(
-        project_path=project_path,
-        profiles=profiles or [],
-        skip_main=skip_main
+        project_path=project_path, profiles=profiles or [], skip_main=skip_main
     )
 
-    logger.info(
-        "mcp_tool_completed",
-        tool="maven_compile_tests",
-        result_length=len(result)
-    )
+    logger.info("mcp_tool_completed", tool="maven_compile_tests", result_length=len(result))
 
     return result
 
@@ -111,7 +97,7 @@ async def maven_run_tests(
     test_pattern: str = "**/Test*.java",
     profiles: list[str] | None = None,
     parallel: bool = False,
-    fail_fast: bool = False
+    fail_fast: bool = False,
 ) -> str:
     """
     Execute tests for a Maven project.
@@ -138,7 +124,7 @@ async def maven_run_tests(
         test_pattern=test_pattern,
         profiles=profiles,
         parallel=parallel,
-        fail_fast=fail_fast
+        fail_fast=fail_fast,
     )
 
     result = await run_tests(
@@ -146,23 +132,17 @@ async def maven_run_tests(
         test_pattern=test_pattern,
         profiles=profiles or [],
         parallel=parallel,
-        fail_fast=fail_fast
+        fail_fast=fail_fast,
     )
 
-    logger.info(
-        "mcp_tool_completed",
-        tool="maven_run_tests",
-        result_length=len(result)
-    )
+    logger.info("mcp_tool_completed", tool="maven_run_tests", result_length=len(result))
 
     return result
 
 
 @tool
 async def maven_package(
-    project_path: str,
-    skip_tests: bool = False,
-    profiles: list[str] | None = None
+    project_path: str, skip_tests: bool = False, profiles: list[str] | None = None
 ) -> str:
     """
     Package a Maven project (create JAR/WAR).
@@ -185,20 +165,14 @@ async def maven_package(
         tool="maven_package",
         project_path=project_path,
         skip_tests=skip_tests,
-        profiles=profiles
+        profiles=profiles,
     )
 
     result = await package_project(
-        project_path=project_path,
-        skip_tests=skip_tests,
-        profiles=profiles or []
+        project_path=project_path, skip_tests=skip_tests, profiles=profiles or []
     )
 
-    logger.info(
-        "mcp_tool_completed",
-        tool="maven_package",
-        result_length=len(result)
-    )
+    logger.info("mcp_tool_completed", tool="maven_package", result_length=len(result))
 
     return result
 

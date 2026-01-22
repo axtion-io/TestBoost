@@ -70,9 +70,7 @@ class AgentTimeoutError(MavenAgentError, BaseAgentTimeoutError):
 
 
 async def run_maven_maintenance_with_agent(
-    project_path: str,
-    session_id: str,
-    mode: str = "autonomous"
+    project_path: str, session_id: str, mode: str = "autonomous"
 ) -> str:
     """
     Run Maven maintenance workflow using DeepAgents LLM agent.
@@ -99,10 +97,7 @@ async def run_maven_maintenance_with_agent(
     """
 
     logger.info(
-        "maven_agent_workflow_start",
-        session_id=session_id,
-        project_path=project_path,
-        mode=mode
+        "maven_agent_workflow_start", session_id=session_id, project_path=project_path, mode=mode
     )
 
     try:
@@ -115,7 +110,7 @@ async def run_maven_maintenance_with_agent(
             agent=config.name,
             provider=config.llm.provider,
             model=config.llm.model,
-            temperature=config.llm.temperature
+            temperature=config.llm.temperature,
         )
 
         # T038: Load system prompt from Markdown
@@ -129,7 +124,7 @@ async def run_maven_maintenance_with_agent(
         logger.info(
             "agent_prompt_loaded",
             prompt_length=len(system_prompt),
-            prompt_preview=system_prompt[:300]
+            prompt_preview=system_prompt[:300],
         )
 
         # T035: Get MCP tools for agent
@@ -139,7 +134,7 @@ async def run_maven_maintenance_with_agent(
             "agent_tools_loaded",
             servers=config.tools.mcp_servers,
             tool_count=len(tools),
-            tool_names=[t.name for t in tools]
+            tool_names=[t.name for t in tools],
         )
 
         # T035: Create LLM instance
@@ -147,7 +142,7 @@ async def run_maven_maintenance_with_agent(
             provider=config.llm.provider,
             model=config.llm.model,
             temperature=config.llm.temperature,
-            max_tokens=config.llm.max_tokens
+            max_tokens=config.llm.max_tokens,
         )
 
         # Log tools configuration
@@ -156,7 +151,17 @@ async def run_maven_maintenance_with_agent(
             model=config.llm.model,
             tools_count=len(tools),
             tool_names=[t.name for t in tools],
-            tool_details=[{"name": t.name, "description": t.description[:100] if hasattr(t, 'description') and t.description else "no_desc"} for t in tools[:3]]  # First 3 tools
+            tool_details=[
+                {
+                    "name": t.name,
+                    "description": (
+                        t.description[:100]
+                        if hasattr(t, "description") and t.description
+                        else "no_desc"
+                    ),
+                }
+                for t in tools[:3]
+            ],  # First 3 tools
         )
 
         # T035: Create LangGraph ReAct agent
@@ -209,7 +214,7 @@ Remember: You have access to these tools:
             "reasoning": response.content,
             "model": config.llm.model,
             "timestamp": datetime.utcnow().isoformat(),
-            "tool_calls": []
+            "tool_calls": [],
         }
 
         # T045: Store tool calls
@@ -219,45 +224,48 @@ Remember: You have access to these tools:
                     "tool_name": tool_call.get("name") or tool_call.get("tool"),
                     "arguments": tool_call.get("args") or tool_call.get("arguments", {}),
                     "id": tool_call.get("id"),
-                    "timestamp": datetime.utcnow().isoformat()
+                    "timestamp": datetime.utcnow().isoformat(),
                 }
                 agent_reasoning["tool_calls"].append(tool_call_data)  # type: ignore[union-attr]
 
                 logger.info(
                     "agent_tool_call",
                     tool=tool_call_data["tool_name"],
-                    args=tool_call_data["arguments"]
+                    args=tool_call_data["arguments"],
                 )
 
         # T046: Add LLM metrics (estimated - real metrics come from LangSmith)
         agent_reasoning["llm_metrics"] = {  # type: ignore[assignment]
             "estimated_tokens": len(str(response.content).split()) * 1.3,  # Rough estimate
             "model": config.llm.model,
-            "provider": config.llm.provider
+            "provider": config.llm.provider,
         }
 
         logger.info(
             "maven_agent_workflow_complete",
             session_id=session_id,
             tool_calls_count=len(agent_reasoning["tool_calls"]),
-            response_length=len(response.content)
+            response_length=len(response.content),
         )
 
         # Return both the reasoning and the structured data
         # The calling code will store this in session.result JSONB field
-        return json.dumps({
-            "success": True,
-            "analysis": response.content,
-            "agent_reasoning": agent_reasoning,
-            "session_id": session_id
-        }, indent=2)
+        return json.dumps(
+            {
+                "success": True,
+                "analysis": response.content,
+                "agent_reasoning": agent_reasoning,
+                "session_id": session_id,
+            },
+            indent=2,
+        )
 
     except Exception as e:
         logger.error(
             "maven_agent_workflow_failed",
             session_id=session_id,
             error=str(e),
-            error_type=type(e).__name__
+            error_type=type(e).__name__,
         )
         raise MavenAgentError(f"Maven maintenance workflow failed: {e}") from e
 
@@ -274,11 +282,3 @@ __all__ = [
     # Backward compatibility export
     "_invoke_agent_with_retry",
 ]
-
-
-
-
-
-
-
-

@@ -46,29 +46,29 @@ def is_windows() -> bool:
 
 # Unicode to ASCII replacements for Windows console compatibility
 UNICODE_REPLACEMENTS = {
-    "\u2192": "->",   # → rightwards arrow
-    "\u2190": "<-",   # ← leftwards arrow
+    "\u2192": "->",  # → rightwards arrow
+    "\u2190": "<-",  # ← leftwards arrow
     "\u2194": "<->",  # ↔ left right arrow
     "\u2713": "[x]",  # ✓ check mark
     "\u2717": "[ ]",  # ✗ ballot x
     "\u2714": "[x]",  # ✔ heavy check mark
     "\u2716": "[X]",  # ✖ heavy multiplication x
-    "\u2022": "*",    # • bullet
-    "\u2023": ">",    # ‣ triangular bullet
-    "\u2043": "-",    # ⁃ hyphen bullet
-    "\u25cf": "*",    # ● black circle
-    "\u25cb": "o",    # ○ white circle
-    "\u25a0": "#",    # ■ black square
-    "\u25a1": "[]",   # □ white square
-    "\u2605": "*",    # ★ black star
-    "\u2606": "*",    # ☆ white star
+    "\u2022": "*",  # • bullet
+    "\u2023": ">",  # ‣ triangular bullet
+    "\u2043": "-",  # ⁃ hyphen bullet
+    "\u25cf": "*",  # ● black circle
+    "\u25cb": "o",  # ○ white circle
+    "\u25a0": "#",  # ■ black square
+    "\u25a1": "[]",  # □ white square
+    "\u2605": "*",  # ★ black star
+    "\u2606": "*",  # ☆ white star
     "\u2026": "...",  # … horizontal ellipsis
-    "\u2014": "--",   # — em dash
-    "\u2013": "-",    # – en dash
-    "\u201c": '"',    # " left double quotation mark
-    "\u201d": '"',    # " right double quotation mark
-    "\u2018": "'",    # ' left single quotation mark
-    "\u2019": "'",    # ' right single quotation mark
+    "\u2014": "--",  # — em dash
+    "\u2013": "-",  # – en dash
+    "\u201c": '"',  # " left double quotation mark
+    "\u201d": '"',  # " right double quotation mark
+    "\u2018": "'",  # ' left single quotation mark
+    "\u2019": "'",  # ' right single quotation mark
 }
 
 

@@ -393,7 +393,9 @@ class AgentLoader:
 
             # 4. Validate temperature range
             if not 0.0 <= config.llm.temperature <= 2.0:
-                errors.append(f"Temperature must be between 0.0 and 2.0, got {config.llm.temperature}")
+                errors.append(
+                    f"Temperature must be between 0.0 and 2.0, got {config.llm.temperature}"
+                )
 
             # 5. Validate max_tokens
             if config.llm.max_tokens is not None and config.llm.max_tokens <= 0:

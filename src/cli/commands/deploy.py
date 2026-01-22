@@ -102,8 +102,6 @@ def run_deployment(
 
         with create_progress(console) as progress:
 
-
-
             task = progress.add_task("Running Docker deployment...", total=None)
 
             try:
@@ -247,8 +245,6 @@ def stop_deployment(
         return stdout.decode("utf-8", errors="replace"), process.returncode or 0
 
     with create_progress(console) as progress:
-
-
 
         task = progress.add_task("Stopping deployment...", total=None)
         output, returncode = asyncio.run(_stop())
@@ -455,8 +451,6 @@ def build_only(
         }
 
     with create_progress(console) as progress:
-
-
 
         task = progress.add_task("Building Docker image...", total=None)
         result = asyncio.run(_build())

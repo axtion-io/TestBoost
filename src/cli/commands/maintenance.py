@@ -105,12 +105,14 @@ def run_maintenance(
 
             try:
                 # Convert mode to agent-compatible format
-                agent_mode = mode if mode in ["autonomous", "interactive", "analysis_only", "debug"] else "autonomous"
+                agent_mode = (
+                    mode
+                    if mode in ["autonomous", "interactive", "analysis_only", "debug"]
+                    else "autonomous"
+                )
 
                 result_json = await run_maven_maintenance_with_agent(
-                    project_path=str(project_dir),
-                    session_id=session_id,
-                    mode=agent_mode
+                    project_path=str(project_dir), session_id=session_id, mode=agent_mode
                 )
 
                 progress.update(task, completed=True)
@@ -450,7 +452,9 @@ def list_sessions(
             pagination = result.get("pagination", {})
             total = pagination.get("total", len(sessions))
             if total > limit:
-                console.print(f"\n[dim]Showing {len(sessions)} of {total} sessions. Use --limit to see more.[/dim]")
+                console.print(
+                    f"\n[dim]Showing {len(sessions)} of {total} sessions. Use --limit to see more.[/dim]"
+                )
 
     except APIError as e:
         console.print(f"[red]Error:[/red] {e.message}")

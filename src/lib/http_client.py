@@ -17,16 +17,16 @@ settings = get_settings()
 
 # Default timeout values by operation type
 DEFAULT_TIMEOUTS = {
-    "connect": 10.0,      # Connection timeout
-    "read": 30.0,         # Read timeout for most operations
-    "write": 30.0,        # Write timeout
-    "pool": 10.0,         # Connection pool timeout
+    "connect": 10.0,  # Connection timeout
+    "read": 30.0,  # Read timeout for most operations
+    "write": 30.0,  # Write timeout
+    "pool": 10.0,  # Connection pool timeout
 }
 
 # Extended timeouts for long-running operations
 EXTENDED_TIMEOUTS = {
     "connect": 10.0,
-    "read": 120.0,        # Extended read timeout
+    "read": 120.0,  # Extended read timeout
     "write": 60.0,
     "pool": 10.0,
 }

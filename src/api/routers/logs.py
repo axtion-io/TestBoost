@@ -238,7 +238,9 @@ async def get_logs(
     session_id: str | None = Query(None, description="Filter by session UUID"),
     event: str | None = Query(None, description="Filter by event name (regex pattern)"),
     since: datetime | None = Query(None, description="Filter logs after this timestamp (ISO 8601)"),
-    until: datetime | None = Query(None, description="Filter logs before this timestamp (ISO 8601)"),
+    until: datetime | None = Query(
+        None, description="Filter logs before this timestamp (ISO 8601)"
+    ),
     page: int = Query(1, ge=1, description="Page number (1-indexed)"),
     per_page: int = Query(100, ge=1, le=1000, description="Items per page"),
     date: str | None = Query(None, description="Log file date (YYYYMMDD, defaults to today)"),

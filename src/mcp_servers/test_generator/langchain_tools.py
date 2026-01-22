@@ -17,9 +17,7 @@ from src.mcp_servers.test_generator.tools.mutation import run_mutation_testing
 
 @tool
 async def test_gen_analyze_project(
-    project_path: str,
-    include_dependencies: bool = True,
-    scan_depth: int = 10
+    project_path: str, include_dependencies: bool = True, scan_depth: int = 10
 ) -> str:
     """
     Analyze Java project structure, frameworks, and testing patterns.
@@ -39,17 +37,12 @@ async def test_gen_analyze_project(
         JSON with project metadata, frameworks, dependencies, and file structure
     """
     return await analyze_project_context(
-        project_path=project_path,
-        include_dependencies=include_dependencies,
-        scan_depth=scan_depth
+        project_path=project_path, include_dependencies=include_dependencies, scan_depth=scan_depth
     )
 
 
 @tool
-async def test_gen_detect_conventions(
-    project_path: str,
-    sample_size: int = 20
-) -> str:
+async def test_gen_detect_conventions(project_path: str, sample_size: int = 20) -> str:
     """
     Detect existing test conventions and patterns in the project.
 
@@ -66,10 +59,7 @@ async def test_gen_detect_conventions(
     Returns:
         JSON with detected conventions for naming, assertions, mocking, and organization
     """
-    return await detect_test_conventions(
-        project_path=project_path,
-        sample_size=sample_size
-    )
+    return await detect_test_conventions(project_path=project_path, sample_size=sample_size)
 
 
 @tool
@@ -79,7 +69,7 @@ async def test_gen_generate_unit_tests(
     class_type: str | None = None,
     conventions: dict[str, Any] | None = None,
     coverage_target: float = 80.0,
-    test_requirements: list[dict[str, Any]] | None = None
+    test_requirements: list[dict[str, Any]] | None = None,
 ) -> str:
     """
     Generate unit tests adapted to project conventions and class type.
@@ -112,16 +102,13 @@ async def test_gen_generate_unit_tests(
         class_type=class_type,
         conventions=conventions,
         coverage_target=coverage_target,
-        test_requirements=test_requirements
+        test_requirements=test_requirements,
     )
 
 
 @tool
 async def test_gen_generate_integration_tests(
-    project_path: str,
-    source_file: str,
-    test_containers: bool = True,
-    mock_external: bool = True
+    project_path: str, source_file: str, test_containers: bool = True, mock_external: bool = True
 ) -> str:
     """
     Generate integration tests for service interactions and database operations.
@@ -145,15 +132,13 @@ async def test_gen_generate_integration_tests(
         project_path=project_path,
         source_file=source_file,
         test_containers=test_containers,
-        mock_external=mock_external
+        mock_external=mock_external,
     )
 
 
 @tool
 async def test_gen_generate_snapshot_tests(
-    project_path: str,
-    source_file: str,
-    snapshot_format: str = "json"
+    project_path: str, source_file: str, snapshot_format: str = "json"
 ) -> str:
     """
     Generate snapshot tests for API responses and serialization.
@@ -173,9 +158,7 @@ async def test_gen_generate_snapshot_tests(
         Generated snapshot test code as a string
     """
     return await generate_snapshot_tests(
-        project_path=project_path,
-        source_file=source_file,
-        snapshot_format=snapshot_format
+        project_path=project_path, source_file=source_file, snapshot_format=snapshot_format
     )
 
 
@@ -185,7 +168,7 @@ async def test_gen_run_mutation_testing(
     target_classes: list[str] | None = None,
     target_tests: list[str] | None = None,
     mutators: list[str] | None = None,
-    timeout_factor: float = 1.5
+    timeout_factor: float = 1.5,
 ) -> str:
     """
     Run mutation testing using PIT to measure test effectiveness.
@@ -211,15 +194,13 @@ async def test_gen_run_mutation_testing(
         target_classes=target_classes,
         target_tests=target_tests,
         mutators=mutators or ["DEFAULTS"],
-        timeout_factor=timeout_factor
+        timeout_factor=timeout_factor,
     )
 
 
 @tool
 async def test_gen_analyze_mutants(
-    project_path: str,
-    report_path: str | None = None,
-    min_score: float = 80.0
+    project_path: str, report_path: str | None = None, min_score: float = 80.0
 ) -> str:
     """
     Analyze mutation testing results to identify hard-to-kill mutants.
@@ -239,9 +220,7 @@ async def test_gen_analyze_mutants(
         JSON with mutant analysis, low-score classes, and improvement recommendations
     """
     return await analyze_mutants(
-        project_path=project_path,
-        report_path=report_path,
-        min_score=min_score
+        project_path=project_path, report_path=report_path, min_score=min_score
     )
 
 
@@ -250,7 +229,7 @@ async def test_gen_generate_killer_tests(
     project_path: str,
     surviving_mutants: list[dict[str, Any]],
     source_file: str,
-    max_tests: int = 10
+    max_tests: int = 10,
 ) -> str:
     """
     Generate tests specifically designed to kill surviving mutants.
@@ -274,7 +253,7 @@ async def test_gen_generate_killer_tests(
         project_path=project_path,
         surviving_mutants=surviving_mutants,
         source_file=source_file,
-        max_tests=max_tests
+        max_tests=max_tests,
     )
 
 

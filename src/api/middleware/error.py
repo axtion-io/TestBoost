@@ -303,7 +303,11 @@ class ErrorHandlerMiddleware(BaseHTTPMiddleware):
                 if response is not None:
                     return response
                 return self._log_and_create_error_response(
-                    request, e, "Database connection error", "DATABASE_ERROR", include_traceback=False
+                    request,
+                    e,
+                    "Database connection error",
+                    "DATABASE_ERROR",
+                    include_traceback=False,
                 )
             return self._log_and_create_error_response(request, e)
         except Exception as e:

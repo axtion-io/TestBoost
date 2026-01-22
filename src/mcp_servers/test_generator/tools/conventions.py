@@ -98,7 +98,9 @@ async def _analyze_naming_conventions(test_files: list[Path]) -> dict[str, Any]:
 
     # Determine dominant pattern
     total = sum(naming_patterns.values())
-    dominant_pattern = max(naming_patterns, key=lambda k: naming_patterns[k]) if total > 0 else "unknown"
+    dominant_pattern = (
+        max(naming_patterns, key=lambda k: naming_patterns[k]) if total > 0 else "unknown"
+    )
 
     return {
         "dominant_pattern": dominant_pattern,

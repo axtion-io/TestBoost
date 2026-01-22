@@ -15,10 +15,7 @@ from src.mcp_servers.docker.tools.logs import collect_logs
 
 @tool
 async def docker_create_dockerfile(
-    project_path: str,
-    java_version: str = "",
-    base_image: str = "",
-    output_path: str = ""
+    project_path: str, java_version: str = "", base_image: str = "", output_path: str = ""
 ) -> str:
     """
     Generate a Dockerfile for a Java project based on detected configuration.
@@ -42,7 +39,7 @@ async def docker_create_dockerfile(
         project_path=project_path,
         java_version=java_version,
         base_image=base_image,
-        output_path=output_path
+        output_path=output_path,
     )
 
 
@@ -52,7 +49,7 @@ async def docker_create_compose(
     service_name: str = "app",
     dependencies: list[str] | None = None,
     expose_ports: bool = True,
-    output_path: str = ""
+    output_path: str = "",
 ) -> str:
     """
     Generate a docker-compose.yml file with application and dependencies.
@@ -78,7 +75,7 @@ async def docker_create_compose(
         service_name=service_name,
         dependencies=dependencies or [],
         expose_ports=expose_ports,
-        output_path=output_path
+        output_path=output_path,
     )
 
 
@@ -88,7 +85,7 @@ async def docker_deploy_compose(
     project_name: str = "",
     build: bool = True,
     detach: bool = True,
-    force_recreate: bool = False
+    force_recreate: bool = False,
 ) -> str:
     """
     Deploy containers using docker-compose.
@@ -114,7 +111,7 @@ async def docker_deploy_compose(
         project_name=project_name,
         build=build,
         detach=detach,
-        force_recreate=force_recreate
+        force_recreate=force_recreate,
     )
 
 
@@ -124,7 +121,7 @@ async def docker_health_check(
     project_name: str = "",
     timeout: int = 120,
     check_interval: int = 5,
-    endpoints: list[dict[str, Any]] | None = None
+    endpoints: list[dict[str, Any]] | None = None,
 ) -> str:
     """
     Check health status of deployed containers with wait logic.
@@ -150,7 +147,7 @@ async def docker_health_check(
         project_name=project_name,
         timeout=timeout,
         check_interval=check_interval,
-        endpoints=endpoints or []
+        endpoints=endpoints or [],
     )
 
 
@@ -161,7 +158,7 @@ async def docker_collect_logs(
     services: list[str] | None = None,
     tail: int = 100,
     since: str = "",
-    follow: bool = False
+    follow: bool = False,
 ) -> str:
     """
     Collect logs from deployed containers.
@@ -189,7 +186,7 @@ async def docker_collect_logs(
         services=services or [],
         tail=tail,
         since=since,
-        follow=follow
+        follow=follow,
     )
 
 

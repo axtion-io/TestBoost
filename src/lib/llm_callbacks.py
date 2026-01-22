@@ -32,9 +32,7 @@ class LLMMetricsCallback(BaseCallbackHandler):
         self.model = model
         self.start_time: float | None = None
 
-    def on_llm_start(
-        self, serialized: dict[str, Any], prompts: list[str], **kwargs: Any
-    ) -> None:
+    def on_llm_start(self, serialized: dict[str, Any], prompts: list[str], **kwargs: Any) -> None:
         """Called when LLM starts running."""
         self.start_time = time.time()
         logger.debug(

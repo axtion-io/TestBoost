@@ -257,7 +257,9 @@ def rollback_config(
         # Check if backups exist
         backups = loader.list_backups(agent_name)
         if not backups:
-            console.print(f"[ERROR] No backups found for agent: [cyan]{agent_name}[/cyan]", style="red")
+            console.print(
+                f"[ERROR] No backups found for agent: [cyan]{agent_name}[/cyan]", style="red"
+            )
             raise typer.Exit(ExitCode.PROJECT_NOT_FOUND)
 
         latest_backup = backups[0]
@@ -321,6 +323,7 @@ def show_config(
         elif format == "yaml":
             # YAML output
             import yaml
+
             console.print(yaml.dump(config.model_dump(), default_flow_style=False))
         else:
             # Pretty table output

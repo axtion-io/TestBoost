@@ -108,7 +108,9 @@ class MetricsCollector:
 metrics = MetricsCollector()
 
 
-def record_workflow_duration(workflow_type: str, duration_seconds: float, status: str = "success") -> None:
+def record_workflow_duration(
+    workflow_type: str, duration_seconds: float, status: str = "success"
+) -> None:
     """Record workflow execution duration."""
     metrics.observe_histogram(
         "testboost_workflow_duration_seconds",

@@ -90,8 +90,6 @@ def scan_vulnerabilities(
 
         with create_progress(console) as progress:
 
-
-
             task = progress.add_task("Scanning for vulnerabilities...", total=None)
 
             result = await analyze_dependencies(
@@ -289,8 +287,6 @@ def generate_report(
 
         with create_progress(console) as progress:
 
-
-
             task = progress.add_task("Generating security report...", total=None)
 
             result = await analyze_dependencies(
@@ -321,7 +317,9 @@ def generate_report(
     console.print(f"[green]Security report generated:[/green] {output_path.absolute()}")
 
 
-def _generate_html_report(project_path: str, vulnerabilities: list[Any], dependencies: list[Any]) -> str:
+def _generate_html_report(
+    project_path: str, vulnerabilities: list[Any], dependencies: list[Any]
+) -> str:
     """Generate an HTML security report."""
     from datetime import datetime
 

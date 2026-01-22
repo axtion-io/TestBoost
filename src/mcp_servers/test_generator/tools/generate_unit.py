@@ -173,7 +173,7 @@ Do not include any explanation or markdown - just the raw Java code.
         response = await llm.ainvoke(prompt)
 
         # Extract the test code from response
-        raw_content = response.content if hasattr(response, 'content') else str(response)
+        raw_content = response.content if hasattr(response, "content") else str(response)
         # Ensure test_code is a string (LangChain content can be str or list)
         test_code: str = str(raw_content) if not isinstance(raw_content, str) else raw_content
 
@@ -261,19 +261,37 @@ def _analyze_class(source_code: str) -> dict[str, Any]:
 
     # Extract ALL class-level annotations (before the class declaration)
     # Find where the class declaration starts
-    class_decl_match = re.search(r'(?:public\s+)?(?:abstract\s+)?class\s+\w+', source_code)
+    class_decl_match = re.search(r"(?:public\s+)?(?:abstract\s+)?class\s+\w+", source_code)
     if class_decl_match:
         # Get all annotations in the code before the class declaration
-        before_class = source_code[:class_decl_match.start()]
+        before_class = source_code[: class_decl_match.start()]
         # Find the last group of annotations (those closest to class declaration)
         # Look for annotations that are not inside method signatures
-        class_annotations = re.findall(r'@(\w+)(?:\([^)]*\))?', before_class)
+        class_annotations = re.findall(r"@(\w+)(?:\([^)]*\))?", before_class)
         # Filter to class-level annotations (skip parameter annotations like @Valid)
-        class_level_annots = [a for a in class_annotations if a in (
-            'Controller', 'RestController', 'Service', 'Repository', 'Component',
-            'RequestMapping', 'Timed', 'Transactional', 'Configuration', 'Bean',
-            'Slf4j', 'Log4j2', 'Data', 'Entity', 'Table', 'Document'
-        )]
+        class_level_annots = [
+            a
+            for a in class_annotations
+            if a
+            in (
+                "Controller",
+                "RestController",
+                "Service",
+                "Repository",
+                "Component",
+                "RequestMapping",
+                "Timed",
+                "Transactional",
+                "Configuration",
+                "Bean",
+                "Slf4j",
+                "Log4j2",
+                "Data",
+                "Entity",
+                "Table",
+                "Document",
+            )
+        ]
         annotations.extend(class_level_annots)
 
     # FIX: Extract constructor parameters for dependency injection
@@ -281,8 +299,7 @@ def _analyze_class(source_code: str) -> dict[str, Any]:
     class_name = info["class_name"]
     if class_name:
         constructor_pattern = re.compile(
-            rf"(?:public\s+)?{re.escape(class_name)}\s*\(([^)]*)\)",
-            re.MULTILINE | re.DOTALL
+            rf"(?:public\s+)?{re.escape(class_name)}\s*\(([^)]*)\)", re.MULTILINE | re.DOTALL
         )
         for match in constructor_pattern.finditer(source_code):
             constructor_params = match.group(1)
@@ -376,20 +393,20 @@ def _analyze_jpa_fields(source_code: str) -> dict[str, Any]:
     # @GeneratedValue(strategy = GenerationType.IDENTITY)
     # private Long id;
     id_block_pattern = re.compile(
-        r'@Id\s*'
-        r'(?:@GeneratedValue\s*(?:\(\s*(?:strategy\s*=\s*)?(?:GenerationType\.)?(\w+)\s*\))?\s*)?'
-        r'(?:@\w+(?:\([^)]*\))?\s*)*'  # Other annotations
-        r'(?:private|protected)?\s*'
-        r'(\w+)\s+'  # Type (Long, Integer, UUID, etc.)
-        r'(\w+)\s*;',  # Field name
-        re.MULTILINE | re.DOTALL
+        r"@Id\s*"
+        r"(?:@GeneratedValue\s*(?:\(\s*(?:strategy\s*=\s*)?(?:GenerationType\.)?(\w+)\s*\))?\s*)?"
+        r"(?:@\w+(?:\([^)]*\))?\s*)*"  # Other annotations
+        r"(?:private|protected)?\s*"
+        r"(\w+)\s+"  # Type (Long, Integer, UUID, etc.)
+        r"(\w+)\s*;",  # Field name
+        re.MULTILINE | re.DOTALL,
     )
 
     id_match = id_block_pattern.search(source_code)
     if id_match:
         strategy = id_match.group(1)  # IDENTITY, SEQUENCE, AUTO, etc.
-        id_type = id_match.group(2)   # Long, Integer, UUID
-        id_name = id_match.group(3)   # id, entityId, etc.
+        id_type = id_match.group(2)  # Long, Integer, UUID
+        id_name = id_match.group(3)  # id, entityId, etc.
 
         jpa_info["id_field"] = id_name
         jpa_info["id_type"] = id_type
@@ -402,19 +419,16 @@ def _analyze_jpa_fields(source_code: str) -> dict[str, Any]:
 
     # Detect date field types (java.util.Date vs java.time.LocalDate)
     date_pattern = re.compile(
-        r'(?:private|protected)?\s*'
-        r'(Date|LocalDate|LocalDateTime|Instant|ZonedDateTime)\s+'
-        r'(\w+)\s*;',
-        re.MULTILINE
+        r"(?:private|protected)?\s*"
+        r"(Date|LocalDate|LocalDateTime|Instant|ZonedDateTime)\s+"
+        r"(\w+)\s*;",
+        re.MULTILINE,
     )
 
     for match in date_pattern.finditer(source_code):
         date_type = match.group(1)
         field_name = match.group(2)
-        jpa_info["date_fields"].append({
-            "name": field_name,
-            "type": date_type
-        })
+        jpa_info["date_fields"].append({"name": field_name, "type": date_type})
 
     return jpa_info
 
@@ -422,10 +436,29 @@ def _analyze_jpa_fields(source_code: str) -> dict[str, Any]:
 def _is_primitive_type(type_name: str) -> bool:
     """Check if a type is a Java primitive or wrapper type."""
     primitives = {
-        "int", "long", "short", "byte", "double", "float", "boolean", "char",
-        "Integer", "Long", "Short", "Byte", "Double", "Float", "Boolean", "Character",
-        "String", "java.lang.String", "java.lang.Integer", "java.lang.Long",
-        "java.lang.Double", "java.lang.Float", "java.lang.Boolean",
+        "int",
+        "long",
+        "short",
+        "byte",
+        "double",
+        "float",
+        "boolean",
+        "char",
+        "Integer",
+        "Long",
+        "Short",
+        "Byte",
+        "Double",
+        "Float",
+        "Boolean",
+        "Character",
+        "String",
+        "java.lang.String",
+        "java.lang.Integer",
+        "java.lang.Long",
+        "java.lang.Double",
+        "java.lang.Float",
+        "java.lang.Boolean",
     }
     # Strip generics and 'final' modifier
     clean_type = type_name.replace("final", "").strip().split("<")[0].strip()
@@ -551,12 +584,15 @@ def _generate_test_code(context: dict[str, Any]) -> str:
         if any(skip in imp for skip in ["junit", "mockito", "assertj", "hamcrest"]):
             continue
         # Include model/domain imports, utility imports
-        if any(keep in imp for keep in [
-            package.rsplit(".", 1)[0] if "." in package else package,  # Same package prefix
-            "java.util",
-            "java.time",
-            "java.math",
-        ]):
+        if any(
+            keep in imp
+            for keep in [
+                package.rsplit(".", 1)[0] if "." in package else package,  # Same package prefix
+                "java.util",
+                "java.time",
+                "java.math",
+            ]
+        ):
             import_line = f"import {imp};"
             if import_line not in imports:
                 imports.append(import_line)
@@ -569,7 +605,9 @@ def _generate_test_code(context: dict[str, Any]) -> str:
     class_body = []
     if uses_mockito and dependencies:
         class_body.append("@ExtendWith(MockitoExtension.class)")
-    class_body.extend([f'@DisplayName("{class_name} Unit Tests")', f"class {test_class_name} {{", ""])
+    class_body.extend(
+        [f'@DisplayName("{class_name} Unit Tests")', f"class {test_class_name} {{", ""]
+    )
 
     # Add mocks for dependencies
     for dep in dependencies:
@@ -596,7 +634,9 @@ def _generate_test_code(context: dict[str, Any]) -> str:
     elif is_record:
         # FIX: Java records need all-args constructor
         class_body.append(f"        // Note: {class_name} is a record - provide required arguments")
-        class_body.append(f"        {_to_camel_case(class_name)} = new {class_name}(/* TODO: provide record components */);")
+        class_body.append(
+            f"        {_to_camel_case(class_name)} = new {class_name}(/* TODO: provide record components */);"
+        )
     else:
         class_body.append(f"        {_to_camel_case(class_name)} = new {class_name}();")
 
@@ -607,14 +647,24 @@ def _generate_test_code(context: dict[str, Any]) -> str:
         class_body.append("    // ========== Tests from Impact Analysis ==========")
         class_body.append("")
         for req in test_requirements:
-            req_tests = _generate_requirement_test(req, class_name, uses_assertj, methods, used_test_names, uses_reactive)
+            req_tests = _generate_requirement_test(
+                req, class_name, uses_assertj, methods, used_test_names, uses_reactive
+            )
             class_body.extend(req_tests)
 
     # Generate standard test methods for remaining methods
     class_body.append("    // ========== Standard Coverage Tests ==========")
     class_body.append("")
     for method in methods:
-        test_methods = _generate_method_tests(method, class_name, class_type, uses_assertj, used_test_names, uses_reactive, dependencies)
+        test_methods = _generate_method_tests(
+            method,
+            class_name,
+            class_type,
+            uses_assertj,
+            used_test_names,
+            uses_reactive,
+            dependencies,
+        )
         class_body.extend(test_methods)
 
     class_body.append("}")
@@ -679,31 +729,39 @@ def _generate_requirement_test(
 
     # Check if this method returns reactive types (for StepVerifier assertions)
     is_reactive_method = matched_method is not None and (
-        "Mono" in (matched_method.get("return_type") or "") or
-        "Flux" in (matched_method.get("return_type") or "")
+        "Mono" in (matched_method.get("return_type") or "")
+        or "Flux" in (matched_method.get("return_type") or "")
     )
-    reactive_return_type = (matched_method.get("return_type") or "") if is_reactive_method and matched_method else ""
+    reactive_return_type = (
+        (matched_method.get("return_type") or "") if is_reactive_method and matched_method else ""
+    )
 
     # Generate test based on scenario type
-    tests.extend([
-        "    @Test",
-        f'    @DisplayName("{description[:80]}")',
-        f"    void {test_name}() {{",
-    ])
+    tests.extend(
+        [
+            "    @Test",
+            f'    @DisplayName("{description[:80]}")',
+            f"    void {test_name}() {{",
+        ]
+    )
 
     if scenario_type == "edge_case":
         # Edge case: test validation/rejection
         # Generate smart invalid values based on description
-        invalid_data = _generate_invalid_data_from_description(description, test_name, matched_method)
+        invalid_data = _generate_invalid_data_from_description(
+            description, test_name, matched_method
+        )
 
         tests.append("        // Arrange - invalid input scenario")
         for line in invalid_data["arrange_lines"]:
             tests.append(f"        {line}")
 
-        tests.extend([
-            "",
-            "        // Act & Assert - should reject invalid input",
-        ])
+        tests.extend(
+            [
+                "",
+                "        // Act & Assert - should reject invalid input",
+            ]
+        )
 
         method_call = invalid_data["method_call"]
         exception_type = invalid_data.get("exception_type", "IllegalArgumentException")
@@ -712,16 +770,20 @@ def _generate_requirement_test(
             tests.append(f"        assertThatThrownBy(() -> {instance_name}.{method_call})")
             tests.append(f"            .isInstanceOf({exception_type}.class);")
         else:
-            tests.append(f"        assertThrows({exception_type}.class, () -> {instance_name}.{method_call});")
+            tests.append(
+                f"        assertThrows({exception_type}.class, () -> {instance_name}.{method_call});"
+            )
 
     elif scenario_type == "regression":
         # Regression: verify bug fix
-        tests.extend([
-            "        // Arrange - scenario that previously caused bug",
-            "        // TODO: Set up the specific condition that was fixed",
-            "",
-            "        // Act",
-        ])
+        tests.extend(
+            [
+                "        // Arrange - scenario that previously caused bug",
+                "        // TODO: Set up the specific condition that was fixed",
+                "",
+                "        // Act",
+            ]
+        )
         if matched_method:
             params = matched_method.get("parsed_params", [])
             if params:
@@ -732,20 +794,24 @@ def _generate_requirement_test(
             tests.append(f"        var result = {instance_name}.{method_call};")
         else:
             tests.append("        // TODO: Call the method under test")
-        tests.extend([
-            "",
-            "        // Assert - verify bug is fixed",
-            "        // TODO: Add specific assertion for the bug fix",
-        ])
+        tests.extend(
+            [
+                "",
+                "        // Assert - verify bug is fixed",
+                "        // TODO: Add specific assertion for the bug fix",
+            ]
+        )
 
     elif scenario_type == "invariant":
         # Invariant: verify business rule always holds
-        tests.extend([
-            "        // Arrange - business rule scenario",
-            "        // TODO: Set up business rule test data",
-            "",
-            "        // Act",
-        ])
+        tests.extend(
+            [
+                "        // Arrange - business rule scenario",
+                "        // TODO: Set up business rule test data",
+                "",
+                "        // Act",
+            ]
+        )
         if matched_method:
             params = matched_method.get("parsed_params", [])
             if params:
@@ -756,11 +822,13 @@ def _generate_requirement_test(
             tests.append(f"        var result = {instance_name}.{method_call};")
         else:
             tests.append("        // TODO: Call the method under test")
-        tests.extend([
-            "",
-            "        // Assert - business rule must always hold",
-            "        // TODO: Verify business invariant",
-        ])
+        tests.extend(
+            [
+                "",
+                "        // Assert - business rule must always hold",
+                "        // TODO: Verify business invariant",
+            ]
+        )
 
     else:  # nominal
         # Nominal: happy path test
@@ -769,7 +837,9 @@ def _generate_requirement_test(
             params = matched_method.get("parsed_params", [])
             for p in params:
                 if p["type"] not in ("String", "int", "long", "double", "float", "boolean"):
-                    tests.append(f"        {p['type']} {p['name']} = {_generate_test_value(p['type'], p['name'])};")
+                    tests.append(
+                        f"        {p['type']} {p['name']} = {_generate_test_value(p['type'], p['name'])};"
+                    )
 
             tests.append("")
             tests.append("        // Act")
@@ -783,7 +853,9 @@ def _generate_requirement_test(
                 tests.append(f"        {instance_name}.{method_call};")
             elif is_reactive_method:
                 # Use StepVerifier for reactive types (Mono/Flux)
-                tests.append(f"        {reactive_return_type} result = {instance_name}.{method_call};")
+                tests.append(
+                    f"        {reactive_return_type} result = {instance_name}.{method_call};"
+                )
             else:
                 tests.append(f"        var result = {instance_name}.{method_call};")
 
@@ -807,15 +879,17 @@ def _generate_requirement_test(
             else:
                 tests.append("        // Verify expected side effects")
         else:
-            tests.extend([
-                "        // TODO: Set up test data",
-                "",
-                "        // Act",
-                "        // TODO: Call method under test",
-                "",
-                "        // Assert",
-                "        // TODO: Verify expected outcome",
-            ])
+            tests.extend(
+                [
+                    "        // TODO: Set up test data",
+                    "",
+                    "        // Act",
+                    "        // TODO: Call method under test",
+                    "",
+                    "        // Assert",
+                    "        // TODO: Verify expected outcome",
+                ]
+            )
 
     tests.extend(["    }", ""])
     return tests
@@ -965,7 +1039,9 @@ def _generate_method_tests(
             tests.append(f"        assertThatThrownBy(() -> {instance_name}.{null_method_call})")
             tests.append("            .isInstanceOf(NullPointerException.class);")
         else:
-            tests.append(f"        assertThrows(NullPointerException.class, () -> {instance_name}.{null_method_call});")
+            tests.append(
+                f"        assertThrows(NullPointerException.class, () -> {instance_name}.{null_method_call});"
+            )
 
         tests.extend(["    }", ""])
 
@@ -1034,9 +1110,18 @@ def _generate_mock_stubs(
             # Add mapper stub if mapper exists
             if mapper_name:
                 # Find Request parameter
-                request_param = next((p for p in parsed_params if p["type"].endswith("Request") or p["type"].endswith("DTO")), None)
+                request_param = next(
+                    (
+                        p
+                        for p in parsed_params
+                        if p["type"].endswith("Request") or p["type"].endswith("DTO")
+                    ),
+                    None,
+                )
                 if request_param:
-                    stubs.append(f"Mockito.when({mapper_name}.map(Mockito.any({entity_type}.class), Mockito.eq({request_param['name']}))).thenReturn(mappedEntity);")
+                    stubs.append(
+                        f"Mockito.when({mapper_name}.map(Mockito.any({entity_type}.class), Mockito.eq({request_param['name']}))).thenReturn(mappedEntity);"
+                    )
             stubs.append(f"Mockito.when({repo_name}.save(mappedEntity)).thenReturn(mappedEntity);")
 
     elif "update" in method_lower or "modify" in method_lower:
@@ -1045,7 +1130,9 @@ def _generate_mock_stubs(
         actual_entity = entity_type
         if entity_type == "void" or not entity_type or _is_primitive_type(entity_type):
             # Try to infer entity from repo type (e.g., OwnerRepository -> Owner)
-            repo_type = next((d.get("type", "") for d in (dependencies or []) if d.get("name") == repo_name), "")
+            repo_type = next(
+                (d.get("type", "") for d in (dependencies or []) if d.get("name") == repo_name), ""
+            )
             if "Repository" in repo_type:
                 actual_entity = repo_type.replace("Repository", "")
 
@@ -1055,7 +1142,9 @@ def _generate_mock_stubs(
             id_param = next((p for p in parsed_params if "id" in p["name"].lower()), None)
             if id_param:
                 id_value = _generate_test_value(id_param["type"], id_param["name"])
-                stubs.append(f"Mockito.when({repo_name}.findById({id_value})).thenReturn(Optional.of(existingEntity));")
+                stubs.append(
+                    f"Mockito.when({repo_name}.findById({id_value})).thenReturn(Optional.of(existingEntity));"
+                )
 
     elif "find" in method_lower or "get" in method_lower:
         # For find methods, mock findById or findAll
@@ -1064,7 +1153,9 @@ def _generate_mock_stubs(
             id_param = next((p for p in parsed_params if "id" in p["name"].lower()), None)
             if id_param:
                 id_value = _generate_test_value(id_param["type"], id_param["name"])
-                stubs.append(f"Mockito.when({repo_name}.findById({id_value})).thenReturn(Optional.of(foundEntity));")
+                stubs.append(
+                    f"Mockito.when({repo_name}.findById({id_value})).thenReturn(Optional.of(foundEntity));"
+                )
         elif "List" in return_type:
             stubs.append(f"Mockito.when({repo_name}.findAll()).thenReturn(List.of());")
 
@@ -1143,11 +1234,11 @@ def _generate_invalid_data_from_description(
         if matched_method and matched_method.get("parsed_params"):
             param = matched_method["parsed_params"][0]
             param_type = param["type"]
-            arrange_lines.append(f'{param_type} request = new {param_type}();')
-            arrange_lines.append('request.setEmail(invalidEmail);')
+            arrange_lines.append(f"{param_type} request = new {param_type}();")
+            arrange_lines.append("request.setEmail(invalidEmail);")
             method_call = f"{matched_method['name']}(request)"
         else:
-            method_call = 'createOwner(request)'
+            method_call = "createOwner(request)"
 
     elif "duplicate" in combined or "already exists" in combined:
         # Duplicate entry
@@ -1155,12 +1246,12 @@ def _generate_invalid_data_from_description(
         if matched_method and matched_method.get("parsed_params"):
             param = matched_method["parsed_params"][0]
             param_type = param["type"]
-            arrange_lines.append(f'{param_type} request = new {param_type}();')
+            arrange_lines.append(f"{param_type} request = new {param_type}();")
             arrange_lines.append('request.setEmail("existing@example.com");')
-            arrange_lines.append('// Assume this email already exists in repository')
+            arrange_lines.append("// Assume this email already exists in repository")
             method_call = f"{matched_method['name']}(request)"
         else:
-            method_call = 'createOwner(request)'
+            method_call = "createOwner(request)"
 
     elif "null" in combined or "empty" in combined:
         # Null or empty input
@@ -1171,26 +1262,26 @@ def _generate_invalid_data_from_description(
 
     elif "past" in combined or "date" in combined:
         # Invalid date (in the past)
-        arrange_lines.append('LocalDate pastDate = LocalDate.now().minusDays(1);')
+        arrange_lines.append("LocalDate pastDate = LocalDate.now().minusDays(1);")
         if matched_method and matched_method.get("parsed_params"):
             param = matched_method["parsed_params"][0]
             param_type = param["type"]
-            arrange_lines.append(f'{param_type} request = new {param_type}();')
-            arrange_lines.append('request.setDate(pastDate);')
+            arrange_lines.append(f"{param_type} request = new {param_type}();")
+            arrange_lines.append("request.setDate(pastDate);")
             method_call = f"{matched_method['name']}(request)"
         else:
-            method_call = 'create(request)'
+            method_call = "create(request)"
 
     elif "maximum" in combined or "limit" in combined or "exceed" in combined:
         # Exceeds limit
         exception_type = "IllegalStateException"
-        arrange_lines.append('// Setup: already at maximum allowed')
+        arrange_lines.append("// Setup: already at maximum allowed")
         if matched_method and matched_method.get("parsed_params"):
             params = matched_method["parsed_params"]
             param_values = [_generate_test_value(p["type"], p["name"]) for p in params]
             method_call = f"{matched_method['name']}({', '.join(param_values)})"
         else:
-            method_call = 'create(request)'
+            method_call = "create(request)"
 
     elif "negative" in combined or "invalid" in combined:
         # Generic invalid value
@@ -1253,7 +1344,7 @@ def _extract_generic_type(param_type: str) -> str | None:
     Returns None if no generic type is found.
     """
     # Match patterns like Optional<Long>, List<Owner>, Set<Pet>
-    match = re.search(r'<\s*(\w+(?:\.\w+)*)\s*>', param_type)
+    match = re.search(r"<\s*(\w+(?:\.\w+)*)\s*>", param_type)
     if match:
         return match.group(1)
     return None

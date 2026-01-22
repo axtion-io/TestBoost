@@ -93,7 +93,13 @@ async def run_mutation_testing(
 
 async def _parse_pit_results(project_dir: Path) -> dict[str, Any]:
     """Parse PIT mutation testing results."""
-    mutations: dict[str, int] = {"total": 0, "killed": 0, "survived": 0, "no_coverage": 0, "timed_out": 0}
+    mutations: dict[str, int] = {
+        "total": 0,
+        "killed": 0,
+        "survived": 0,
+        "no_coverage": 0,
+        "timed_out": 0,
+    }
     by_class_list: list[dict[str, Any]] = []
     surviving_mutants: list[dict[str, Any]] = []
 
@@ -159,9 +165,7 @@ async def _parse_pit_results(project_dir: Path) -> dict[str, Any]:
 
         # Calculate scores
         if mutations["total"] > 0:
-            results["mutation_score"] = round(
-                (mutations["killed"] / mutations["total"]) * 100, 1
-            )
+            results["mutation_score"] = round((mutations["killed"] / mutations["total"]) * 100, 1)
 
         # Format by-class results
         for class_name, counts in by_class.items():

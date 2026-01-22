@@ -227,21 +227,21 @@ BUG_FIX_KEYWORDS = {"fix", "bug", "issue", "patch", "hotfix", "resolve", "correc
 # Patterns for extracting business rules from Java code
 BUSINESS_RULE_PATTERNS: list[tuple[str, str]] = [
     # Validation patterns
-    (r'if\s*\([^)]*\.(?:isEmpty|isBlank)\(\)', "empty value check"),
-    (r'if\s*\([^)]*(?:==|!=)\s*null', "null check"),
-    (r'if\s*\([^)]*\.matches\([^)]+\)', "format validation"),
-    (r'if\s*\([^)]*\.(?:length|size)\(\)\s*[<>=!]+', "length constraint"),
-    (r'if\s*\([^)]*[<>=!]+\s*\d+', "numeric boundary"),
-    (r'throw\s+new\s+Illegal\w+Exception', "validation exception"),
+    (r"if\s*\([^)]*\.(?:isEmpty|isBlank)\(\)", "empty value check"),
+    (r"if\s*\([^)]*(?:==|!=)\s*null", "null check"),
+    (r"if\s*\([^)]*\.matches\([^)]+\)", "format validation"),
+    (r"if\s*\([^)]*\.(?:length|size)\(\)\s*[<>=!]+", "length constraint"),
+    (r"if\s*\([^)]*[<>=!]+\s*\d+", "numeric boundary"),
+    (r"throw\s+new\s+Illegal\w+Exception", "validation exception"),
     # Business logic patterns
-    (r'\.(?:findBy|existsBy|countBy)\w+\(', "database lookup"),
-    (r'\.(?:save|delete)\(', "persistence operation"),
-    (r'BigDecimal\b', "financial calculation"),
-    (r'\.(?:add|subtract|multiply|divide)\(', "arithmetic"),
-    (r'LocalDate(?:Time)?\.now\(\)', "current date check"),
-    (r'\.(?:isBefore|isAfter)\(', "date comparison"),
-    (r'>=\s*\d+', "minimum limit"),
-    (r'<=\s*\d+', "maximum limit"),
+    (r"\.(?:findBy|existsBy|countBy)\w+\(", "database lookup"),
+    (r"\.(?:save|delete)\(", "persistence operation"),
+    (r"BigDecimal\b", "financial calculation"),
+    (r"\.(?:add|subtract|multiply|divide)\(", "arithmetic"),
+    (r"LocalDate(?:Time)?\.now\(\)", "current date check"),
+    (r"\.(?:isBefore|isAfter)\(", "date comparison"),
+    (r">=\s*\d+", "minimum limit"),
+    (r"<=\s*\d+", "maximum limit"),
 ]
 
 
@@ -261,7 +261,8 @@ def extract_business_rules(diff_content: str) -> list[str]:
 
     # Only analyze added lines
     added_lines = [
-        line[1:] for line in diff_content.splitlines()
+        line[1:]
+        for line in diff_content.splitlines()
         if line.startswith("+") and not line.startswith("+++")
     ]
     added_content = "\n".join(added_lines)
@@ -272,18 +273,13 @@ def extract_business_rules(diff_content: str) -> list[str]:
             rules.append(rule_type)
 
     # Extract validation error messages
-    exception_messages = re.findall(
-        r'throw\s+new\s+\w+\(\s*"([^"]{5,50})"',
-        added_content
-    )
+    exception_messages = re.findall(r'throw\s+new\s+\w+\(\s*"([^"]{5,50})"', added_content)
     for msg in exception_messages[:3]:
         rules.append(f"validate: {msg}")
 
     # Look for documented rules in comments
     comments = re.findall(
-        r'//\s*(?:Business rule|Fix|Security|Validation):\s*(.{5,60})',
-        added_content,
-        re.IGNORECASE
+        r"//\s*(?:Business rule|Fix|Security|Validation):\s*(.{5,60})", added_content, re.IGNORECASE
     )
     for comment in comments:
         rules.append(comment.strip())
@@ -295,7 +291,14 @@ def extract_business_rules(diff_content: str) -> list[str]:
 IMPACT_REPORT_SCHEMA: dict[str, Any] = {
     "$schema": "http://json-schema.org/draft-07/schema#",
     "type": "object",
-    "required": ["project_path", "git_ref", "generated_at", "impacts", "test_requirements", "summary"],
+    "required": [
+        "project_path",
+        "git_ref",
+        "generated_at",
+        "impacts",
+        "test_requirements",
+        "summary",
+    ],
     "properties": {
         "project_path": {"type": "string"},
         "git_ref": {"type": "string"},
@@ -893,7 +896,11 @@ def generate_test_requirements(impacts: list[Impact]) -> list[TestRequirement]:
                     test_type=impact.required_test_type,
                     scenario_type=scenario_type,
                     description=desc,
-                    priority=base_priority if scenario_type == ScenarioType.NOMINAL else base_priority + 1,
+                    priority=(
+                        base_priority
+                        if scenario_type == ScenarioType.NOMINAL
+                        else base_priority + 1
+                    ),
                     target_class=clean_component,
                     suggested_test_name=name,
                 )
@@ -985,80 +992,106 @@ def _generate_rule_based_tests(
         if "validate:" in rule_lower:
             # Extract validation message for specific test
             msg = rule.replace("validate:", "").strip()
-            tests.append((
-                f"Verify {component} rejects invalid input: {msg}",
-                f"shouldRejectWhen{_to_camel_case(msg[:30])}",
-                ScenarioType.EDGE_CASE,
-            ))
+            tests.append(
+                (
+                    f"Verify {component} rejects invalid input: {msg}",
+                    f"shouldRejectWhen{_to_camel_case(msg[:30])}",
+                    ScenarioType.EDGE_CASE,
+                )
+            )
         elif "format validation" in rule_lower:
-            tests.append((
-                f"Verify {component} validates input format",
-                "shouldRejectInvalidFormat",
-                ScenarioType.EDGE_CASE,
-            ))
+            tests.append(
+                (
+                    f"Verify {component} validates input format",
+                    "shouldRejectInvalidFormat",
+                    ScenarioType.EDGE_CASE,
+                )
+            )
         elif "null check" in rule_lower:
-            tests.append((
-                f"Verify {component} handles null input gracefully",
-                "shouldHandleNullInput",
-                ScenarioType.EDGE_CASE,
-            ))
+            tests.append(
+                (
+                    f"Verify {component} handles null input gracefully",
+                    "shouldHandleNullInput",
+                    ScenarioType.EDGE_CASE,
+                )
+            )
         elif "empty value check" in rule_lower:
-            tests.append((
-                f"Verify {component} rejects empty values",
-                "shouldRejectEmptyValues",
-                ScenarioType.EDGE_CASE,
-            ))
+            tests.append(
+                (
+                    f"Verify {component} rejects empty values",
+                    "shouldRejectEmptyValues",
+                    ScenarioType.EDGE_CASE,
+                )
+            )
         elif "database lookup" in rule_lower:
-            tests.append((
-                f"Verify {component} queries database correctly",
-                "shouldQueryDatabaseCorrectly",
-                ScenarioType.NOMINAL,
-            ))
-            tests.append((
-                f"Verify {component} handles record not found",
-                "shouldHandleRecordNotFound",
-                ScenarioType.EDGE_CASE,
-            ))
+            tests.append(
+                (
+                    f"Verify {component} queries database correctly",
+                    "shouldQueryDatabaseCorrectly",
+                    ScenarioType.NOMINAL,
+                )
+            )
+            tests.append(
+                (
+                    f"Verify {component} handles record not found",
+                    "shouldHandleRecordNotFound",
+                    ScenarioType.EDGE_CASE,
+                )
+            )
         elif "financial calculation" in rule_lower:
-            tests.append((
-                f"Verify {component} calculates amounts correctly",
-                "shouldCalculateAmountCorrectly",
-                ScenarioType.NOMINAL,
-            ))
-            tests.append((
-                f"Verify {component} handles zero amounts",
-                "shouldHandleZeroAmount",
-                ScenarioType.EDGE_CASE,
-            ))
+            tests.append(
+                (
+                    f"Verify {component} calculates amounts correctly",
+                    "shouldCalculateAmountCorrectly",
+                    ScenarioType.NOMINAL,
+                )
+            )
+            tests.append(
+                (
+                    f"Verify {component} handles zero amounts",
+                    "shouldHandleZeroAmount",
+                    ScenarioType.EDGE_CASE,
+                )
+            )
         elif "date comparison" in rule_lower or "current date" in rule_lower:
-            tests.append((
-                f"Verify {component} validates date constraints",
-                "shouldEnforceDateConstraints",
-                ScenarioType.NOMINAL,
-            ))
-            tests.append((
-                f"Verify {component} rejects past dates",
-                "shouldRejectPastDates",
-                ScenarioType.EDGE_CASE,
-            ))
+            tests.append(
+                (
+                    f"Verify {component} validates date constraints",
+                    "shouldEnforceDateConstraints",
+                    ScenarioType.NOMINAL,
+                )
+            )
+            tests.append(
+                (
+                    f"Verify {component} rejects past dates",
+                    "shouldRejectPastDates",
+                    ScenarioType.EDGE_CASE,
+                )
+            )
         elif "numeric boundary" in rule_lower or "minimum limit" in rule_lower:
-            tests.append((
-                f"Verify {component} enforces numeric limits",
-                "shouldEnforceNumericLimits",
-                ScenarioType.EDGE_CASE,
-            ))
+            tests.append(
+                (
+                    f"Verify {component} enforces numeric limits",
+                    "shouldEnforceNumericLimits",
+                    ScenarioType.EDGE_CASE,
+                )
+            )
         elif "maximum limit" in rule_lower:
-            tests.append((
-                f"Verify {component} respects maximum limits",
-                "shouldRespectMaximumLimit",
-                ScenarioType.EDGE_CASE,
-            ))
+            tests.append(
+                (
+                    f"Verify {component} respects maximum limits",
+                    "shouldRespectMaximumLimit",
+                    ScenarioType.EDGE_CASE,
+                )
+            )
         elif "persistence" in rule_lower:
-            tests.append((
-                f"Verify {component} persists data correctly",
-                "shouldPersistDataCorrectly",
-                ScenarioType.NOMINAL,
-            ))
+            tests.append(
+                (
+                    f"Verify {component} persists data correctly",
+                    "shouldPersistDataCorrectly",
+                    ScenarioType.NOMINAL,
+                )
+            )
 
     # Remove duplicates while preserving order
     seen = set()
@@ -1080,7 +1113,7 @@ def _extract_fix_description(impact: Impact) -> str:
     # Look for fix comments in diff
     for line in impact.diff_content.splitlines():
         if line.startswith("+") and "fix" in line.lower():
-            match = re.search(r'//.*fix[:\s]+(.+)', line, re.IGNORECASE)
+            match = re.search(r"//.*fix[:\s]+(.+)", line, re.IGNORECASE)
             if match:
                 return match.group(1).strip()[:40]
 
@@ -1099,10 +1132,10 @@ def _extract_invariant_description(impact: Impact) -> str:
 def _to_camel_case(text: str) -> str:
     """Convert text to CamelCase for test names."""
     # Remove special characters and split
-    words = re.sub(r'[^a-zA-Z0-9\s]', '', text).split()
+    words = re.sub(r"[^a-zA-Z0-9\s]", "", text).split()
     if not words:
         return "Rule"
-    return ''.join(word.capitalize() for word in words[:4])
+    return "".join(word.capitalize() for word in words[:4])
 
 
 def _generate_edge_cases(impact: Impact) -> list[tuple[str, str]]:
@@ -1132,9 +1165,7 @@ def _generate_edge_cases(impact: Impact) -> list[tuple[str, str]]:
             (f"Verify {component} handles empty result", f"shouldHandleEmptyResult{component}")
         )
     elif impact.category == ChangeCategory.DTO:
-        edge_cases.append(
-            (f"Verify {component} validation rules", f"shouldValidate{component}")
-        )
+        edge_cases.append((f"Verify {component} validation rules", f"shouldValidate{component}"))
     else:
         edge_cases.append(
             (f"Verify {component} handles edge conditions", f"shouldHandleEdgeCase{component}")

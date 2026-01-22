@@ -158,9 +158,7 @@ async def _analyze_mutations(report_file: Path, min_score: float) -> dict[str, A
         recommendations.extend(_generate_recommendations(analysis, surviving, no_coverage_list))
 
         # Identify priority improvements
-        priority_improvements.extend(_identify_priorities(
-            surviving, no_coverage_list, class_stats
-        ))
+        priority_improvements.extend(_identify_priorities(surviving, no_coverage_list, class_stats))
 
     except ET.ParseError as e:
         analysis["success"] = False
@@ -247,7 +245,9 @@ def _generate_recommendations(
 
 
 def _identify_priorities(
-    surviving: list[dict[str, Any]], no_coverage: list[dict[str, Any]], class_stats: dict[str, dict[str, Any]]
+    surviving: list[dict[str, Any]],
+    no_coverage: list[dict[str, Any]],
+    class_stats: dict[str, dict[str, Any]],
 ) -> list[dict[str, Any]]:
     """Identify priority test improvements."""
     priorities: list[dict[str, Any]] = []

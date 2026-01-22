@@ -70,7 +70,10 @@ def _is_retryable_error(exception: Exception) -> bool:
 
     # Check error message for authentication/auth errors (non-retryable)
     error_msg = str(exception).lower()
-    if any(keyword in error_msg for keyword in ["401", "403", "unauthorized", "forbidden", "invalid api key"]):
+    if any(
+        keyword in error_msg
+        for keyword in ["401", "403", "unauthorized", "forbidden", "invalid api key"]
+    ):
         return False
 
     # Check for rate limit errors (non-retryable, A1 edge case)
@@ -82,7 +85,9 @@ def _is_retryable_error(exception: Exception) -> bool:
     return "not configured" not in error_msg and "missing" not in error_msg
 
 
-async def _ping_llm_with_retry(llm: Any, timeout: int = STARTUP_TIMEOUT, max_retries: int = MAX_RETRIES) -> None:
+async def _ping_llm_with_retry(
+    llm: Any, timeout: int = STARTUP_TIMEOUT, max_retries: int = MAX_RETRIES
+) -> None:
     """
     Ping LLM with retry logic for intermittent connectivity (A4 edge case).
 
@@ -103,10 +108,7 @@ async def _ping_llm_with_retry(llm: Any, timeout: int = STARTUP_TIMEOUT, max_ret
             messages = [HumanMessage(content="ping")]
 
             # Invoke with timeout
-            response = await asyncio.wait_for(
-                llm.ainvoke(messages),
-                timeout=timeout
-            )
+            response = await asyncio.wait_for(llm.ainvoke(messages), timeout=timeout)
 
             if response is None:
                 raise LLMConnectionError("LLM returned None response")
@@ -115,7 +117,9 @@ async def _ping_llm_with_retry(llm: Any, timeout: int = STARTUP_TIMEOUT, max_ret
             return  # Success!
 
         except TimeoutError as e:
-            logger.warning("llm_ping_timeout", timeout=timeout, attempt=attempt, max_retries=max_retries)
+            logger.warning(
+                "llm_ping_timeout", timeout=timeout, attempt=attempt, max_retries=max_retries
+            )
             last_error = LLMTimeoutError(f"LLM ping timed out after {timeout}s")
 
             # Retry on timeout
@@ -127,7 +131,9 @@ async def _ping_llm_with_retry(llm: Any, timeout: int = STARTUP_TIMEOUT, max_ret
             raise last_error from e
 
         except ConnectionError as e:
-            logger.warning("llm_ping_connection_error", error=str(e), attempt=attempt, max_retries=max_retries)
+            logger.warning(
+                "llm_ping_connection_error", error=str(e), attempt=attempt, max_retries=max_retries
+            )
             last_error = e
 
             # Retry on connection errors
@@ -147,14 +153,14 @@ async def _ping_llm_with_retry(llm: Any, timeout: int = STARTUP_TIMEOUT, max_ret
                 if "retry after" in error_msg.lower():
                     # Try to extract number from error message
                     import re
+
                     match = re.search(r"retry after (\d+)", error_msg, re.IGNORECASE)
                     if match:
                         retry_after = f"{match.group(1)} seconds"
 
                 logger.error("llm_rate_limited", retry_after=retry_after, error=error_msg)
                 raise LLMConnectionError(
-                    f"LLM rate limit exceeded. Retry after {retry_after}. "
-                    f"Error: {error_msg}"
+                    f"LLM rate limit exceeded. Retry after {retry_after}. " f"Error: {error_msg}"
                 ) from e
 
             # Check for authentication errors (non-retryable)
@@ -224,7 +230,9 @@ async def check_llm_connection(model: str | None = None) -> None:
 
     except Exception as e:
         # Catch-all for unexpected errors
-        logger.error("llm_connection_failed", reason="unexpected", error=str(e), error_type=type(e).__name__)
+        logger.error(
+            "llm_connection_failed", reason="unexpected", error=str(e), error_type=type(e).__name__
+        )
         raise LLMError(f"LLM connection check failed: {e}") from e
 
 
@@ -278,7 +286,9 @@ def validate_agent_infrastructure() -> None:
             # T085: Validate system prompt exists
             prompt_path = Path(config.prompts.system)
             if not prompt_path.exists():
-                error_msg = f"Agent '{agent_name}' references missing prompt: {config.prompts.system}"
+                error_msg = (
+                    f"Agent '{agent_name}' references missing prompt: {config.prompts.system}"
+                )
                 logger.error("agent_prompt_missing", agent=agent_name, prompt=config.prompts.system)
                 errors.append(error_msg)
                 continue
@@ -288,7 +298,9 @@ def validate_agent_infrastructure() -> None:
             # T086: Validate MCP servers are registered
             for server_name in config.tools.mcp_servers:
                 if server_name not in TOOL_REGISTRY:
-                    error_msg = f"Agent '{agent_name}' references unregistered MCP server: {server_name}"
+                    error_msg = (
+                        f"Agent '{agent_name}' references unregistered MCP server: {server_name}"
+                    )
                     logger.error(
                         "agent_mcp_server_missing",
                         agent=agent_name,
@@ -312,7 +324,12 @@ def validate_agent_infrastructure() -> None:
 
         except Exception as e:
             error_msg = f"Agent validation failed: {agent_name} - {str(e)}"
-            logger.error("agent_validation_error", agent=agent_name, error=str(e), error_type=type(e).__name__)
+            logger.error(
+                "agent_validation_error",
+                agent=agent_name,
+                error=str(e),
+                error_type=type(e).__name__,
+            )
             errors.append(error_msg)
 
     # Report results

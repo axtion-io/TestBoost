@@ -11,7 +11,9 @@ from typing import Any
 
 
 async def prioritize_test_efforts(
-    project_path: str, recommendations: list[dict[str, Any]] | None = None, strategy: str = "balanced"
+    project_path: str,
+    recommendations: list[dict[str, Any]] | None = None,
+    strategy: str = "balanced",
 ) -> str:
     """
     Prioritize test improvement efforts.
@@ -73,7 +75,9 @@ async def prioritize_test_efforts(
     return json.dumps(results, indent=2)
 
 
-def _score_recommendations(recommendations: list[dict[str, Any]], strategy: str) -> list[dict[str, Any]]:
+def _score_recommendations(
+    recommendations: list[dict[str, Any]], strategy: str
+) -> list[dict[str, Any]]:
     """Score and sort recommendations based on strategy."""
     effort_scores = {"low": 1, "medium": 2, "high": 3}
     impact_scores = {"low": 1, "medium": 2, "high": 3}
@@ -190,7 +194,11 @@ def _get_strategy_description(strategy: str) -> str:
 def _estimate_timeline(phases: list[dict[str, Any]]) -> dict[str, Any]:
     """Estimate timeline for completing improvements."""
     breakdown: list[dict[str, Any]] = []
-    timeline: dict[str, Any] = {"quick_wins": "1-2 days", "all_phases": "1-3 weeks", "breakdown": breakdown}
+    timeline: dict[str, Any] = {
+        "quick_wins": "1-2 days",
+        "all_phases": "1-3 weeks",
+        "breakdown": breakdown,
+    }
 
     cumulative_days = 0
     for phase in phases:

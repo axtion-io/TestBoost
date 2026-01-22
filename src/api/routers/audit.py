@@ -48,7 +48,9 @@ class AuditScanRequest(BaseModel):
     """Request model for audit scan."""
 
     project_path: str = Field(..., description="Path to the Maven project")
-    severity: str = Field("all", description="Minimum severity to report (all, low, medium, high, critical)")
+    severity: str = Field(
+        "all", description="Minimum severity to report (all, low, medium, high, critical)"
+    )
     output_format: str = Field("json", description="Output format (json, sarif)")
 
 
@@ -112,7 +114,9 @@ async def scan_vulnerabilities(request: AuditScanRequest) -> AuditScanResponse:
     # Validate project path
     project_dir = Path(request.project_path).resolve()
     if not project_dir.exists():
-        raise HTTPException(status_code=404, detail=f"Project path not found: {request.project_path}")
+        raise HTTPException(
+            status_code=404, detail=f"Project path not found: {request.project_path}"
+        )
 
     pom_file = project_dir / "pom.xml"
     if not pom_file.exists():
@@ -149,7 +153,9 @@ async def scan_vulnerabilities(request: AuditScanRequest) -> AuditScanResponse:
 
         # Calculate summary
         summary = {
-            "critical": sum(1 for v in vulnerabilities if v.get("severity", "").lower() == "critical"),
+            "critical": sum(
+                1 for v in vulnerabilities if v.get("severity", "").lower() == "critical"
+            ),
             "high": sum(1 for v in vulnerabilities if v.get("severity", "").lower() == "high"),
             "medium": sum(1 for v in vulnerabilities if v.get("severity", "").lower() == "medium"),
             "low": sum(1 for v in vulnerabilities if v.get("severity", "").lower() == "low"),

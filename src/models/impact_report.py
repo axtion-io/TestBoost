@@ -48,9 +48,7 @@ class ImpactReport:
             "business_critical": sum(
                 1 for i in self.impacts if i.risk_level == RiskLevel.BUSINESS_CRITICAL
             ),
-            "non_critical": sum(
-                1 for i in self.impacts if i.risk_level == RiskLevel.NON_CRITICAL
-            ),
+            "non_critical": sum(1 for i in self.impacts if i.risk_level == RiskLevel.NON_CRITICAL),
             "tests_to_generate": len(self.test_requirements),
             "by_test_type": by_test_type,
         }

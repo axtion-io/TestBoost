@@ -79,10 +79,7 @@ class StepExecutor:
 
         # Validate step can be executed
         if step.status not in [StepStatus.PENDING.value, StepStatus.FAILED.value]:
-            raise StepExecutionError(
-                f"Cannot execute step: status is {step.status}",
-                step_code
-            )
+            raise StepExecutionError(f"Cannot execute step: status is {step.status}", step_code)
 
         logger.info(
             "step_execution_start",
@@ -92,16 +89,15 @@ class StepExecutor:
         )
 
         # Mark step as in progress
-        await self.session_service.update_step_status(
-            step.id,
-            StepStatus.IN_PROGRESS.value
-        )
+        await self.session_service.update_step_status(step.id, StepStatus.IN_PROGRESS.value)
 
         if run_in_background:
             # Create background task with a fresh DB session
             # This avoids DB connection conflicts when the HTTP request completes
             asyncio.create_task(
-                self._execute_step_in_background(session_id, step_code, session.session_type, inputs)
+                self._execute_step_in_background(
+                    session_id, step_code, session.session_type, inputs
+                )
             )
             return {
                 "status": "in_progress",
@@ -135,9 +131,7 @@ class StepExecutor:
         async with SessionLocal() as db_session:
             try:
                 executor = StepExecutor(db_session)
-                await executor._execute_step_async(
-                    session_id, step_code, session_type, inputs
-                )
+                await executor._execute_step_async(session_id, step_code, session_type, inputs)
                 await db_session.commit()
             except Exception as e:
                 # Rollback is safe here because this session is owned by this background task
@@ -234,7 +228,7 @@ class StepExecutor:
             record_workflow_duration(
                 workflow_type=f"{session_type}_{step_code}",
                 duration_seconds=duration,
-                status="success"
+                status="success",
             )
 
             # Check for auto-advance to next step
@@ -261,7 +255,7 @@ class StepExecutor:
             record_workflow_duration(
                 workflow_type=f"{session_type}_{step_code}",
                 duration_seconds=duration,
-                status="failed"
+                status="failed",
             )
 
             logger.error(
@@ -357,9 +351,7 @@ class StepExecutor:
         async with SessionLocal() as db_session:
             try:
                 executor = StepExecutor(db_session)
-                await executor._execute_step_async(
-                    session_id, step_code, session_type
-                )
+                await executor._execute_step_async(session_id, step_code, session_type)
                 await db_session.commit()
             except Exception as e:
                 # Rollback is safe here because this session is owned by this background task
@@ -371,9 +363,7 @@ class StepExecutor:
                     error=str(e),
                 )
 
-    def _get_step_definition(
-        self, session_type: str, step_code: str
-    ) -> dict[str, Any] | None:
+    def _get_step_definition(self, session_type: str, step_code: str) -> dict[str, Any] | None:
         """Get the step definition from WORKFLOW_STEPS.
 
         Args:
@@ -389,9 +379,7 @@ class StepExecutor:
                 return step_def
         return None
 
-    def _get_next_step_code(
-        self, session_type: str, current_step_code: str
-    ) -> str | None:
+    def _get_next_step_code(self, session_type: str, current_step_code: str) -> str | None:
         """Get the code of the next step in the workflow.
 
         Args:

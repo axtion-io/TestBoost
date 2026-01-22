@@ -311,8 +311,6 @@ def _run_analysis(project_dir: Path, verbose: bool) -> None:
 
         with create_progress(console) as progress:
 
-
-
             # Analyze project
             task = progress.add_task("Analyzing project structure...", total=None)
             result = await analyze_project_context(str(project_dir))
@@ -403,13 +401,17 @@ async def _run_test_generation(
                 progress.remove_task(task)
 
                 if test_requirements:
-                    console.print(f"[green]Found {len(test_requirements)} test requirements from impact analysis[/green]")
+                    console.print(
+                        f"[green]Found {len(test_requirements)} test requirements from impact analysis[/green]"
+                    )
                     for req in test_requirements[:5]:
                         console.print(f"  - {req.suggested_test_name}: {req.description[:60]}...")
                     if len(test_requirements) > 5:
                         console.print(f"  ... and {len(test_requirements) - 5} more")
                 else:
-                    console.print("[dim]No uncommitted changes - generating tests for uncovered code[/dim]")
+                    console.print(
+                        "[dim]No uncommitted changes - generating tests for uncovered code[/dim]"
+                    )
             except Exception as e:
                 progress.remove_task(task)
                 console.print(f"[yellow]Impact analysis skipped: {e}[/yellow]")
@@ -458,9 +460,13 @@ async def _run_test_generation(
             feedback_iterations = feedback_result.get("iterations", 0)
 
             if tests_passing:
-                console.print("\n[bold green]Test Generation Complete - All Tests Passing![/bold green]\n")
+                console.print(
+                    "\n[bold green]Test Generation Complete - All Tests Passing![/bold green]\n"
+                )
             else:
-                console.print("\n[bold yellow]Test Generation Complete - Some Tests Need Review[/bold yellow]\n")
+                console.print(
+                    "\n[bold yellow]Test Generation Complete - Some Tests Need Review[/bold yellow]\n"
+                )
 
             # Results table
             table = Table(title="Generation Results")
@@ -473,8 +479,7 @@ async def _run_test_generation(
             table.add_row("Tests Generated", str(metrics.get("tests_generated", 0)))
             table.add_row("Compilation Success", str(metrics.get("compilation_success", False)))
             table.add_row(
-                "Tests Passing",
-                "[green]Yes[/green]" if tests_passing else "[yellow]No[/yellow]"
+                "Tests Passing", "[green]Yes[/green]" if tests_passing else "[yellow]No[/yellow]"
             )
             table.add_row("Feedback Iterations", str(feedback_iterations))
             table.add_row("Coverage Target", f"{metrics.get('coverage_target', mutation_score)}%")
@@ -527,8 +532,6 @@ async def _run_mutation_testing(
 
     with create_progress(console) as progress:
 
-
-
         task = progress.add_task("Running mutation testing (this may take a while)...", total=None)
 
         classes = [target_classes] if target_classes else None
@@ -579,8 +582,6 @@ async def _show_recommendations(project_dir: Path, target_score: float, strategy
     from src.mcp_servers.pit_recommendations.tools.recommend import recommend_test_improvements
 
     with create_progress(console) as progress:
-
-
 
         task = progress.add_task("Analyzing mutation results...", total=None)
 
@@ -666,7 +667,9 @@ async def _run_impact_analysis(
         is_valid, validation_error = validate_impact_report(report_dict)
         if not is_valid:
             if verbose:
-                console.print(f"[yellow]Warning: Report validation failed: {validation_error}[/yellow]")
+                console.print(
+                    f"[yellow]Warning: Report validation failed: {validation_error}[/yellow]"
+                )
             logger.warning("impact_report_validation_failed", error=validation_error)
 
         json_output = json.dumps(report_dict, indent=2)
@@ -710,16 +713,12 @@ async def _run_impact_analysis(
                         if impact.risk_level.value == "business_critical"
                         else normal_mark
                     )
-                    console.print(
-                        f"  {risk_indicator} {impact.id}: {impact.change_summary}"
-                    )
+                    console.print(f"  {risk_indicator} {impact.id}: {impact.change_summary}")
 
         # Exit code logic (T032)
         if report.has_uncovered_critical_impacts():
             if verbose:
-                console.print(
-                    "\n[yellow]Warning: Business-critical impacts detected[/yellow]"
-                )
+                console.print("\n[yellow]Warning: Business-critical impacts detected[/yellow]")
             raise typer.Exit(1)
 
     except typer.Exit:

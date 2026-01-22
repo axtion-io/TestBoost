@@ -60,11 +60,7 @@ def _is_rate_limit_error(error_msg: str) -> bool:
 def _is_auth_error(error_msg: str) -> bool:
     """Check if error message indicates an authentication error."""
     error_lower = error_msg.lower()
-    return (
-        "401" in error_msg
-        or "403" in error_msg
-        or "unauthorized" in error_lower
-    )
+    return "401" in error_msg or "403" in error_msg or "unauthorized" in error_lower
 
 
 def _extract_ai_message(response: Any) -> AIMessage:
@@ -193,9 +189,7 @@ async def invoke_agent_with_retry(
                 wait_time = min(2 ** (attempt - 1), 10)
                 await asyncio.sleep(wait_time)
                 continue
-            raise LLMError(
-                f"Agent connection failed after {max_retries} attempts: {e}"
-            ) from e
+            raise LLMError(f"Agent connection failed after {max_retries} attempts: {e}") from e
 
         except Exception as e:
             error_msg = str(e)

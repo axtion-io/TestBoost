@@ -141,8 +141,12 @@ async def run_docker_deployment_with_agent(
 
         # Build context for the agent prompt
         project_name = project_dir.name
-        dependencies_str = ", ".join(service_dependencies) if service_dependencies else "auto-detect"
-        endpoints_str = json.dumps(health_endpoints) if health_endpoints else "Spring Boot Actuator default"
+        dependencies_str = (
+            ", ".join(service_dependencies) if service_dependencies else "auto-detect"
+        )
+        endpoints_str = (
+            json.dumps(health_endpoints) if health_endpoints else "Spring Boot Actuator default"
+        )
 
         # Create user message with project analysis request
         user_message = f"""
@@ -201,6 +205,7 @@ Please proceed with the deployment workflow.
 
         # Invoke agent with checkpointing enabled
         from langchain_core.runnables import RunnableConfig
+
         runnable_config = RunnableConfig(
             configurable={"thread_id": session_id},
             recursion_limit=100,
@@ -226,14 +231,14 @@ Please proceed with the deployment workflow.
         # Find the last AIMessage with actual content (not just tool calls)
         final_message = None
         for msg in reversed(messages):
-            if hasattr(msg, 'type') and msg.type == "ai" and msg.content:
+            if hasattr(msg, "type") and msg.type == "ai" and msg.content:
                 final_message = msg.content
                 break
 
         # If no AI message with content found, create a summary from tool results
         if not final_message:
             # Count tool calls to show activity
-            tool_calls = [m for m in messages if hasattr(m, 'type') and m.type == "tool"]
+            tool_calls = [m for m in messages if hasattr(m, "type") and m.type == "tool"]
 
             # Generate a summary message
             final_message = (
@@ -285,10 +290,3 @@ Please proceed with the deployment workflow.
 
 
 __all__ = ["run_docker_deployment_with_agent"]
-
-
-
-
-
-
-

@@ -12,9 +12,7 @@ from src.mcp_servers.pit_recommendations.tools.recommend import recommend_test_i
 
 @tool
 async def pit_analyze_hard_mutants(
-    project_path: str,
-    report_path: str | None = None,
-    group_by: str = "mutator"
+    project_path: str, report_path: str | None = None, group_by: str = "mutator"
 ) -> str:
     """
     Analyze mutation testing results to identify hard-to-kill mutants.
@@ -34,9 +32,7 @@ async def pit_analyze_hard_mutants(
         JSON with hard mutant analysis including summary, patterns, hot spots, and complexity indicators
     """
     return await analyze_hard_mutants(
-        project_path=project_path,
-        report_path=report_path,
-        group_by=group_by
+        project_path=project_path, report_path=report_path, group_by=group_by
     )
 
 
@@ -45,7 +41,7 @@ async def pit_recommend_test_improvements(
     project_path: str,
     mutation_analysis: dict[str, Any] | None = None,
     target_score: float = 80.0,
-    max_recommendations: int = 20
+    max_recommendations: int = 20,
 ) -> str:
     """
     Generate specific recommendations for improving test effectiveness.
@@ -69,7 +65,7 @@ async def pit_recommend_test_improvements(
         project_path=project_path,
         mutation_analysis=mutation_analysis,
         target_score=target_score,
-        max_recommendations=max_recommendations
+        max_recommendations=max_recommendations,
     )
 
 
@@ -77,7 +73,7 @@ async def pit_recommend_test_improvements(
 async def pit_prioritize_test_efforts(
     project_path: str,
     recommendations: list[dict[str, Any]] | None = None,
-    strategy: str = "balanced"
+    strategy: str = "balanced",
 ) -> str:
     """
     Prioritize test improvement efforts based on impact and effort.
@@ -97,9 +93,7 @@ async def pit_prioritize_test_efforts(
         JSON with prioritized test improvement roadmap
     """
     return await prioritize_test_efforts(
-        project_path=project_path,
-        recommendations=recommendations,
-        strategy=strategy
+        project_path=project_path, recommendations=recommendations, strategy=strategy
     )
 
 

@@ -142,9 +142,7 @@ class EventListResponse(BaseModel):
         ```
     """
 
-    items: list[EventResponse] = Field(
-        ..., description="List of events for the current page"
-    )
+    items: list[EventResponse] = Field(..., description="List of events for the current page")
 
     pagination: PaginationMeta = Field(..., description="Pagination metadata")
 

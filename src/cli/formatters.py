@@ -199,11 +199,13 @@ def format_cancel_result(session_id: str, console: Console) -> None:
         session_id: Cancelled session ID
         console: Rich console instance
     """
-    console.print(Panel(
-        f"Session [cyan]{session_id}[/cyan] has been cancelled.",
-        title="Session Cancelled",
-        border_style="red",
-    ))
+    console.print(
+        Panel(
+            f"Session [cyan]{session_id}[/cyan] has been cancelled.",
+            title="Session Cancelled",
+            border_style="red",
+        )
+    )
 
 
 def _style_status(status: str) -> str:

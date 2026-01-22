@@ -38,7 +38,11 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     logger.info("application_startup", version=app.version)
 
     # Check if startup checks should be skipped (already done by CLI)
-    skip_checks = os.environ.get("TESTBOOST_SKIP_API_STARTUP_CHECKS", "").lower() in ("1", "true", "yes")
+    skip_checks = os.environ.get("TESTBOOST_SKIP_API_STARTUP_CHECKS", "").lower() in (
+        "1",
+        "true",
+        "yes",
+    )
 
     if skip_checks:
         logger.info("startup_checks_skipped", reason="TESTBOOST_SKIP_API_STARTUP_CHECKS set")
@@ -58,6 +62,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     logger.info("application_shutdown_start")
     try:
         from src.db import engine
+
         await engine.dispose()
         logger.info("database_engine_disposed")
     except Exception as e:
@@ -111,10 +116,10 @@ class RequestIDMiddleware(BaseHTTPMiddleware):
 # So we add them in REVERSE order:
 
 app.middleware("http")(request_logging_middleware)  # Executes LAST (4th)
-app.middleware("http")(api_key_auth_middleware)      # Executes 3rd
+app.middleware("http")(api_key_auth_middleware)  # Executes 3rd
 
-app.add_middleware(ErrorHandlerMiddleware)           # Executes 2nd
-app.add_middleware(RequestIDMiddleware)              # Executes FIRST (1st)
+app.add_middleware(ErrorHandlerMiddleware)  # Executes 2nd
+app.add_middleware(RequestIDMiddleware)  # Executes FIRST (1st)
 
 # Include routers
 app.include_router(health.router)
@@ -153,7 +158,9 @@ async def value_error_handler(request: Request, exc: ValueError) -> JSONResponse
 
 
 @app.exception_handler(RequestValidationError)
-async def validation_exception_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
+async def validation_exception_handler(
+    request: Request, exc: RequestValidationError
+) -> JSONResponse:
     """
     Handle Pydantic validation errors with structured logging.
 

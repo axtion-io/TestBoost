@@ -16,9 +16,8 @@ logger = get_logger(__name__)
 
 def _is_polling_endpoint(request: Request) -> bool:
     """Check if request is a polling endpoint that should use DEBUG level logging."""
-    return (
-        request.method == "GET"
-        and ("/api/v2/sessions" in request.url.path or "/events" in request.url.path)
+    return request.method == "GET" and (
+        "/api/v2/sessions" in request.url.path or "/events" in request.url.path
     )
 
 

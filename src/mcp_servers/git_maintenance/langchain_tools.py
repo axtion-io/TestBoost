@@ -15,9 +15,7 @@ logger = get_logger(__name__)
 
 @tool
 async def git_create_maintenance_branch(
-    repo_path: str,
-    branch_name: str,
-    base_branch: str = "main"
+    repo_path: str, branch_name: str, base_branch: str = "main"
 ) -> str:
     """
     Create a new branch for maintenance work.
@@ -41,30 +39,22 @@ async def git_create_maintenance_branch(
         tool="git_create_maintenance_branch",
         repo_path=repo_path,
         branch_name=branch_name,
-        base_branch=base_branch
+        base_branch=base_branch,
     )
 
     result = await create_maintenance_branch(
-        repo_path=repo_path,
-        branch_name=branch_name,
-        base_branch=base_branch
+        repo_path=repo_path, branch_name=branch_name, base_branch=base_branch
     )
 
     logger.info(
-        "mcp_tool_completed",
-        tool="git_create_maintenance_branch",
-        result_length=len(result)
+        "mcp_tool_completed", tool="git_create_maintenance_branch", result_length=len(result)
     )
 
     return result
 
 
 @tool
-async def git_commit_changes(
-    repo_path: str,
-    message: str,
-    files: list[str] | None = None
-) -> str:
+async def git_commit_changes(repo_path: str, message: str, files: list[str] | None = None) -> str:
     """
     Commit staged changes with a descriptive message.
 
@@ -87,20 +77,12 @@ async def git_commit_changes(
         tool="git_commit_changes",
         repo_path=repo_path,
         message=message,
-        files=files
+        files=files,
     )
 
-    result = await commit_changes(
-        repo_path=repo_path,
-        message=message,
-        files=files or []
-    )
+    result = await commit_changes(repo_path=repo_path, message=message, files=files or [])
 
-    logger.info(
-        "mcp_tool_completed",
-        tool="git_commit_changes",
-        result_length=len(result)
-    )
+    logger.info("mcp_tool_completed", tool="git_commit_changes", result_length=len(result))
 
     return result
 
@@ -147,10 +129,7 @@ async def git_get_uncommitted_diff(
 
 
 @tool
-async def git_get_status(
-    repo_path: str,
-    include_untracked: bool = True
-) -> str:
+async def git_get_status(repo_path: str, include_untracked: bool = True) -> str:
     """
     Get the current git status of the repository.
 
@@ -171,19 +150,12 @@ async def git_get_status(
         "mcp_tool_called",
         tool="git_get_status",
         repo_path=repo_path,
-        include_untracked=include_untracked
+        include_untracked=include_untracked,
     )
 
-    result = await get_status(
-        repo_path=repo_path,
-        include_untracked=include_untracked
-    )
+    result = await get_status(repo_path=repo_path, include_untracked=include_untracked)
 
-    logger.info(
-        "mcp_tool_completed",
-        tool="git_get_status",
-        result_length=len(result)
-    )
+    logger.info("mcp_tool_completed", tool="git_get_status", result_length=len(result))
 
     return result
 

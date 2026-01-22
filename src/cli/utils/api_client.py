@@ -211,9 +211,7 @@ class APIClient:
             step_code=step_code,
         )
 
-    def get_artifacts(
-        self, session_id: str, artifact_type: str | None = None
-    ) -> dict[str, Any]:
+    def get_artifacts(self, session_id: str, artifact_type: str | None = None) -> dict[str, Any]:
         """Get artifacts for a session."""
         params = {"artifact_type": artifact_type} if artifact_type else None
         return self.get(Endpoints.SESSION_ARTIFACTS, params=params, session_id=session_id)
@@ -226,9 +224,7 @@ class APIClient:
             session_id=session_id,
         )
 
-    def resume_session(
-        self, session_id: str, checkpoint_id: str | None = None
-    ) -> dict[str, Any]:
+    def resume_session(self, session_id: str, checkpoint_id: str | None = None) -> dict[str, Any]:
         """Resume a paused session."""
         return self.post(
             Endpoints.SESSION_RESUME,

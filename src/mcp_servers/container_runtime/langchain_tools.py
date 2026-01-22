@@ -15,7 +15,7 @@ async def container_create_maven(
     java_version: str = "17",
     maven_version: str = "3.9.5",
     container_name: str = "testboost-maven",
-    memory_limit: str = "2g"
+    memory_limit: str = "2g",
 ) -> str:
     """
     Create a Docker container for Maven builds.
@@ -41,16 +41,13 @@ async def container_create_maven(
         java_version=java_version,
         maven_version=maven_version,
         container_name=container_name,
-        memory_limit=memory_limit
+        memory_limit=memory_limit,
     )
 
 
 @tool
 async def container_execute(
-    container_id: str,
-    command: list[str],
-    workdir: str = "/project",
-    timeout: int = 300
+    container_id: str, command: list[str], workdir: str = "/project", timeout: int = 300
 ) -> str:
     """
     Execute a command inside a running Docker container.
@@ -71,18 +68,13 @@ async def container_execute(
         Execution results with stdout, stderr, and exit code
     """
     return await execute_in_container(
-        container_id=container_id,
-        command=command,
-        workdir=workdir,
-        timeout=timeout
+        container_id=container_id, command=command, workdir=workdir, timeout=timeout
     )
 
 
 @tool
 async def container_destroy(
-    container_id: str,
-    force: bool = False,
-    remove_volumes: bool = False
+    container_id: str, force: bool = False, remove_volumes: bool = False
 ) -> str:
     """
     Stop and remove a Docker container.
@@ -102,9 +94,7 @@ async def container_destroy(
         Destruction status with cleanup details
     """
     return await destroy_container(
-        container_id=container_id,
-        force=force,
-        remove_volumes=remove_volumes
+        container_id=container_id, force=force, remove_volumes=remove_volumes
     )
 
 

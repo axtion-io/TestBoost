@@ -206,8 +206,12 @@ class FileModificationMetadata(BaseModel):
 
     file_path: str = Field(..., description="Path to the modified file (relative to project root)")
     operation: str = Field(..., description="Operation type: create, modify, or delete")
-    original_content: str | None = Field(None, description="Original file content (null for create)")
-    modified_content: str | None = Field(None, description="Modified file content (null for delete)")
+    original_content: str | None = Field(
+        None, description="Original file content (null for create)"
+    )
+    modified_content: str | None = Field(
+        None, description="Modified file content (null for delete)"
+    )
     diff: str = Field(..., description="Unified diff format showing changes")
 
 
@@ -773,7 +777,11 @@ async def update_session_step(
     # Only allow certain status transitions
     allowed_transitions = {
         StepStatus.PENDING.value: [StepStatus.IN_PROGRESS.value, StepStatus.SKIPPED.value],
-        StepStatus.IN_PROGRESS.value: [StepStatus.COMPLETED.value, StepStatus.FAILED.value, StepStatus.SKIPPED.value],
+        StepStatus.IN_PROGRESS.value: [
+            StepStatus.COMPLETED.value,
+            StepStatus.FAILED.value,
+            StepStatus.SKIPPED.value,
+        ],
         StepStatus.FAILED.value: [StepStatus.IN_PROGRESS.value, StepStatus.SKIPPED.value],
     }
 
@@ -992,7 +1000,9 @@ async def get_session_events(
         HTTPException 422: Invalid datetime format or event_type pattern
     """
     # Get request ID for logging
-    request_id = request.state.request_id if request and hasattr(request.state, "request_id") else "unknown"
+    request_id = (
+        request.state.request_id if request and hasattr(request.state, "request_id") else "unknown"
+    )
 
     # Log request start (DEBUG level to reduce log noise)
     logger.debug(

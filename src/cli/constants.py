@@ -5,6 +5,7 @@ import os
 # API Configuration
 API_BASE_URL = os.getenv("TESTBOOST_API_URL", "http://localhost:8000")
 
+
 # API Endpoints
 class Endpoints:
     """API endpoint paths."""

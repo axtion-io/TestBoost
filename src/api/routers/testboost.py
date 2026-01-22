@@ -210,6 +210,7 @@ async def _run_maintenance_task(session_id: str, request: MaintenanceRequest) ->
     try:
         # Initialize state
         from uuid import UUID as UUIDType
+
         initial_state = MavenMaintenanceState(
             session_id=UUIDType(session_id),
             project_path=request.project_path,
@@ -227,11 +228,12 @@ async def _run_maintenance_task(session_id: str, request: MaintenanceRequest) ->
         result_json = await run_maven_maintenance_with_agent(
             project_path=request.project_path,
             session_id=session_id,
-            mode="autonomous" if request.auto_approve else "interactive"
+            mode="autonomous" if request.auto_approve else "interactive",
         )
 
         # Parse result and update state
         import json as json_module
+
         result_data = json_module.loads(result_json)
 
         # Update state with results

@@ -1000,9 +1000,7 @@ async def get_session_events(
         HTTPException 422: Invalid datetime format or event_type pattern
     """
     # Get request ID for logging
-    request_id = (
-        request.state.request_id if hasattr(request.state, "request_id") else "unknown"
-    )
+    request_id = request.state.request_id if hasattr(request.state, "request_id") else "unknown"
 
     # Log request start (DEBUG level to reduce log noise)
     logger.debug(

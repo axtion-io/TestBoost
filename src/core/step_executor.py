@@ -11,8 +11,8 @@ Auto-advance logic:
 import asyncio
 import time
 import uuid
-from datetime import datetime
 from collections.abc import Awaitable, Callable
+from datetime import datetime
 from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession

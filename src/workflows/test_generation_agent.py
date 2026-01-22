@@ -1967,21 +1967,169 @@ def _parse_test_failures(maven_output: str) -> list[dict[str, Any]]:
                     "jpa_error": _categorize_jpa_error(error_line),
                 })
 
-    # Look for assertion failures with stack traces
-    assertion_pattern = re.compile(
+    # ===== JUNIT 5 ASSERTION FAILURE PARSING =====
+    # JUnit 5 uses org.opentest4j exceptions with various message formats
+
+    # Pattern for extracting test method from stack trace
+    stack_trace_method_pattern = re.compile(
+        r"\tat\s+([a-zA-Z_][\w.]*?)\.([a-zA-Z_]\w*)\(([^:]+):(\d+)\)"
+    )
+
+    def _extract_test_method_from_trace(output_text: str, start_pos: int) -> dict[str, Any] | None:
+        """Extract the first non-JDK test method from stack trace after assertion."""
+        # Look for stack trace lines after the assertion
+        trace_section = output_text[start_pos:start_pos + 2000]  # Reasonable limit
+        matches = stack_trace_method_pattern.findall(trace_section)
+        for class_name, method_name, file_name, line_num in matches:
+            # Skip JDK internal classes
+            if not class_name.startswith(("java.", "sun.", "jdk.", "org.junit.", "org.opentest4j.")):
+                return {
+                    "class": class_name,
+                    "method": method_name,
+                    "file": file_name,
+                    "line": int(line_num),
+                }
+        return None
+
+    # Pattern 1: JUnit 5 assertion failures with expected/actual values
+    # org.opentest4j.AssertionFailedError: expected: <true> but was: <false>
+    # org.opentest4j.AssertionFailedError: custom message ==> expected: <1> but was: <2>
+    assertion_expected_actual_pattern = re.compile(
+        r"(org\.opentest4j\.\w+|java\.lang\.AssertionError):\s*"
+        r"(?:(.+?)\s*==>\s*)?"  # Optional custom message before ==>
+        r"expected:\s*<([^>]*)>\s*but was:\s*<([^>]*)>",
+        re.DOTALL
+    )
+
+    for match in assertion_expected_actual_pattern.finditer(maven_output):
+        error_type = match.group(1)
+        custom_message = match.group(2).strip() if match.group(2) else None
+        expected_value = match.group(3)
+        actual_value = match.group(4)
+
+        # Build error message
+        error_msg = f"expected: <{expected_value}> but was: <{actual_value}>"
+        if custom_message:
+            error_msg = f"{custom_message} ==> {error_msg}"
+
+        # Skip if already captured
+        if any(f.get("error") == error_msg for f in failures):
+            continue
+
+        failure = {
+            "type": "assertion",
+            "error_type": error_type,
+            "error": error_msg,
+            "expected": expected_value,
+            "actual": actual_value,
+        }
+        if custom_message:
+            failure["custom_message"] = custom_message
+
+        # Try to extract test method from stack trace
+        test_method = _extract_test_method_from_trace(maven_output, match.end())
+        if test_method:
+            failure["test_method"] = test_method
+
+        failures.append(failure)
+
+    # Pattern 2: JUnit 5 null assertion failures
+    # org.opentest4j.AssertionFailedError: expected: not <null>
+    # org.opentest4j.AssertionFailedError: expected: <null>
+    null_assertion_pattern = re.compile(
+        r"(org\.opentest4j\.AssertionFailedError):\s*"
+        r"expected:\s*(not\s+)?<null>",
+        re.DOTALL
+    )
+
+    for match in null_assertion_pattern.finditer(maven_output):
+        error_type = match.group(1)
+        not_null = bool(match.group(2))
+        error_msg = f"expected: {'not ' if not_null else ''}<null>"
+
+        # Skip if already captured
+        if any(f.get("error") == error_msg for f in failures):
+            continue
+
+        failure = {
+            "type": "assertion",
+            "error_type": error_type,
+            "error": error_msg,
+            "null_assertion": True,
+            "expected_not_null": not_null,
+        }
+
+        # Try to extract test method from stack trace
+        test_method = _extract_test_method_from_trace(maven_output, match.end())
+        if test_method:
+            failure["test_method"] = test_method
+
+        failures.append(failure)
+
+    # Pattern 3: JUnit 5 MultipleFailuresError from assertAll
+    # org.opentest4j.MultipleFailuresError: Multiple Failures (3 failures)
+    multiple_failures_pattern = re.compile(
+        r"(org\.opentest4j\.MultipleFailuresError):\s*"
+        r"(?:Multiple Failures)?\s*\((\d+)\s*failures?\)",
+        re.DOTALL
+    )
+
+    for match in multiple_failures_pattern.finditer(maven_output):
+        error_type = match.group(1)
+        failure_count = int(match.group(2))
+        error_msg = f"Multiple Failures ({failure_count} failures)"
+
+        # Skip if already captured
+        if any(f.get("error") == error_msg for f in failures):
+            continue
+
+        failure = {
+            "type": "assertion",
+            "error_type": error_type,
+            "error": error_msg,
+            "multiple_failures": True,
+            "failure_count": failure_count,
+        }
+
+        # Try to extract test method from stack trace
+        test_method = _extract_test_method_from_trace(maven_output, match.end())
+        if test_method:
+            failure["test_method"] = test_method
+
+        failures.append(failure)
+
+    # Pattern 4: Generic assertion failures (fallback for other formats)
+    # org.opentest4j.AssertionFailedError: any message
+    # java.lang.AssertionError: any message
+    assertion_generic_pattern = re.compile(
         r"(org\.opentest4j\.\w+|java\.lang\.AssertionError):\s*(.+?)(?=\n\tat|\n\n|$)",
         re.DOTALL
     )
 
-    for match in assertion_pattern.finditer(maven_output):
+    for match in assertion_generic_pattern.finditer(maven_output):
         error_type = match.group(1)
         message = match.group(2).strip()
-        if message and not any(f.get("error") == message for f in failures):
-            failures.append({
-                "type": "assertion",
-                "error_type": error_type,
-                "error": message,
-            })
+
+        # Skip empty messages or already captured
+        if not message or any(f.get("error") == message for f in failures):
+            continue
+
+        # Skip if this looks like an expected/actual pattern (already handled above)
+        if "expected:" in message and "but was:" in message:
+            continue
+
+        failure = {
+            "type": "assertion",
+            "error_type": error_type,
+            "error": message,
+        }
+
+        # Try to extract test method from stack trace
+        test_method = _extract_test_method_from_trace(maven_output, match.end())
+        if test_method:
+            failure["test_method"] = test_method
+
+        failures.append(failure)
 
     return failures
 

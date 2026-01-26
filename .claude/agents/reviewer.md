@@ -124,13 +124,13 @@ Quand tu es invoqué:
 git diff HEAD~1
 
 # Linting
-"c:/Users/jfran/axtion/TestBoost/.venv/Scripts/python.exe" -m ruff check src/
+poetry run ruff check src/
 
 # Type checking
-"c:/Users/jfran/axtion/TestBoost/.venv/Scripts/python.exe" -m mypy src/
+poetry run mypy src/
 
 # Formatage
-"c:/Users/jfran/axtion/TestBoost/.venv/Scripts/python.exe" -m ruff format src/
+poetry run ruff format src/
 ```
 
 ## Règles Strictes

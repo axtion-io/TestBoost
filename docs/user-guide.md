@@ -28,7 +28,7 @@ Ce guide vous accompagne pas à pas dans l'utilisation de TestBoost, un outil d'
 ### Étape 1 : Cloner le Repository
 
 ```bash
-git clone https://github.com/cheche71/TestBoost.git
+git clone https://github.com/axtion-io/TestBoost.git
 cd TestBoost
 ```
 
@@ -652,6 +652,6 @@ tail -f logs/testboost.log | jq .
 
 ## Support
 
-- GitHub Issues : [github.com/cheche71/TestBoost/issues](https://github.com/cheche71/TestBoost/issues)
+- GitHub Issues : [github.com/cheche71/TestBoost/issues](https://github.com/axtion-io/TestBoost/issues)
 - Documentation : [docs/](../docs/)
 

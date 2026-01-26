@@ -77,7 +77,7 @@ jobs:
             --cov=src \
             --cov-report=xml \
             --cov-report=term-missing \
-            --cov-fail-under=20 \
+            --cov-fail-under=36 \
             -v \
             --tb=short \
             --reruns=2 \

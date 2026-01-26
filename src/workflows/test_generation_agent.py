@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 TestBoost Contributors
+
 """
 Test Generation Workflow with DeepAgents LLM Integration.
 

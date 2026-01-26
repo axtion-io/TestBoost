@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 TestBoost Contributors
+
 """Typer CLI application for TestBoost."""
 
 # CRITICAL: Load .env file BEFORE any imports that use config

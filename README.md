@@ -6,6 +6,8 @@ AI-powered Java/Spring Boot test generation and maintenance automation platform.
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.121-green.svg)](https://fastapi.tiangolo.com)
 [![LangGraph](https://img.shields.io/badge/LangGraph-1.0-purple.svg)](https://langchain.com)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-15-blue.svg)](https://postgresql.org)
+[![CI](https://github.com/cheche71/TestBoost/workflows/CI/badge.svg)](https://github.com/cheche71/TestBoost/actions/workflows/ci.yml)
+[![Coverage](https://img.shields.io/badge/coverage-36%25-orange)](https://github.com/cheche71/TestBoost)
 
 ## Overview
 
@@ -75,7 +77,7 @@ TestBoost uses real LLM agents (not mocks) for all workflows. You must configure
 
 1. **Clone the repository**
 ```bash
-git clone <repository-url>
+git clone https://github.com/cheche71/TestBoost.git
 cd TestBoost
 ```
 
@@ -437,7 +439,9 @@ python -m src.cli.main config reload --all
 
 ## License
 
-[Your License Here]
+This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENSE) file for details.
+
+Copyright 2026 TestBoost Contributors
 
 ## Acknowledgments
 

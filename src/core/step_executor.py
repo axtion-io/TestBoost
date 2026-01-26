@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 TestBoost Contributors
+
 """Step executor for running workflow steps.
 
 Bridges the gap between API step management and actual workflow execution.

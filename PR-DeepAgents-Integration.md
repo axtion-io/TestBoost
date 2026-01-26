@@ -3,7 +3,7 @@
 ## Branch Information
 - **From:** `002-deepagents-integration`
 - **To:** `001-testboost-core`
-- **Repository:** https://github.com/cheche71/TestBoost
+- **Repository:** https://github.com/axtion-io/TestBoost
 
 ## Summary
 

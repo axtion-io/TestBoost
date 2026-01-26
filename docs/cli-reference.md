@@ -9,7 +9,7 @@
 
 ```bash
 # Clone the repository
-git clone https://github.com/cheche71/TestBoost.git
+git clone https://github.com/axtion-io/TestBoost.git
 cd TestBoost
 
 # Install in development mode

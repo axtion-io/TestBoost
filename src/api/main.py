@@ -30,6 +30,25 @@ logger = get_logger(__name__)
 settings = get_settings()
 
 
+def _initialize_langsmith_tracing() -> None:
+    """
+    Initialize LangSmith tracing if configured.
+
+    Sets required environment variables for LangChain tracing integration.
+    Implements 002-deepagents-integration tracing requirement.
+    """
+    if settings.langsmith_tracing and settings.langsmith_api_key:
+        os.environ["LANGCHAIN_TRACING_V2"] = "true"
+        os.environ["LANGCHAIN_API_KEY"] = settings.langsmith_api_key
+        os.environ["LANGCHAIN_PROJECT"] = settings.langsmith_project
+        logger.info(
+            "langsmith_tracing_enabled",
+            project=settings.langsmith_project,
+        )
+    else:
+        logger.debug("langsmith_tracing_disabled")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """
@@ -39,6 +58,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     Constitutional principle: "Zéro Complaisance" - No workflows execute without LLM.
     """
     logger.info("application_startup", version=app.version)
+
+    # Initialize LangSmith tracing before any LLM operations
+    _initialize_langsmith_tracing()
 
     # Check if startup checks should be skipped (already done by CLI)
     skip_checks = os.environ.get("TESTBOOST_SKIP_API_STARTUP_CHECKS", "").lower() in ("1", "true", "yes")

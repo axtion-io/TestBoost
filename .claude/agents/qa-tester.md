@@ -81,19 +81,19 @@ Quand tu es invoqué:
 
 ```bash
 # Tests unitaires complets
-"c:/Users/jfran/axtion/TestBoost/.venv/Scripts/python.exe" -m pytest tests/unit/ -v --tb=short
+poetry run pytest tests/unit/ -v --tb=short
 
 # Tests avec couverture
-"c:/Users/jfran/axtion/TestBoost/.venv/Scripts/python.exe" -m pytest tests/ --cov=src --cov-report=term-missing
+poetry run pytest tests/ --cov=src --cov-report=term-missing
 
 # Tests d'un module spécifique
-"c:/Users/jfran/axtion/TestBoost/.venv/Scripts/python.exe" -m pytest tests/unit/test_xxx.py -v
+poetry run pytest tests/unit/test_xxx.py -v
 
 # Tests en parallèle (plus rapide)
-"c:/Users/jfran/axtion/TestBoost/.venv/Scripts/python.exe" -m pytest tests/ -n auto
+poetry run pytest tests/ -n auto
 
 # Tests avec re-run des flaky tests
-"c:/Users/jfran/axtion/TestBoost/.venv/Scripts/python.exe" -m pytest tests/ --reruns 2 --reruns-delay 1
+poetry run pytest tests/ --reruns 2 --reruns-delay 1
 ```
 
 ## Règles Strictes

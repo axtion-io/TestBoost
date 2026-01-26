@@ -17,6 +17,7 @@ get_settings.cache_clear()
 
 # IMPORTANT: Must be imported early to patch DeepAgents before any other module uses it
 import asyncio  # noqa: E402
+import os  # noqa: E402
 
 import typer  # noqa: E402
 
@@ -30,6 +31,26 @@ from src.lib.logging import get_logger  # noqa: E402
 from src.lib.startup_checks import StartupCheckError, run_all_startup_checks  # noqa: E402
 
 logger = get_logger(__name__)
+settings = get_settings()
+
+
+def _initialize_langsmith_tracing() -> None:
+    """
+    Initialize LangSmith tracing if configured.
+
+    Sets required environment variables for LangChain tracing integration.
+    Implements 002-deepagents-integration tracing requirement.
+    """
+    if settings.langsmith_tracing and settings.langsmith_api_key:
+        os.environ["LANGCHAIN_TRACING_V2"] = "true"
+        os.environ["LANGCHAIN_API_KEY"] = settings.langsmith_api_key
+        os.environ["LANGCHAIN_PROJECT"] = settings.langsmith_project
+        logger.info(
+            "langsmith_tracing_enabled",
+            project=settings.langsmith_project,
+        )
+    else:
+        logger.debug("langsmith_tracing_disabled")
 
 app = typer.Typer(
     name="testboost",
@@ -67,6 +88,9 @@ def main(
     # Skip if only version flag is provided
     if version:
         return
+
+    # Initialize LangSmith tracing before any LLM operations
+    _initialize_langsmith_tracing()
 
     try:
         # Run startup checks synchronously in CLI context

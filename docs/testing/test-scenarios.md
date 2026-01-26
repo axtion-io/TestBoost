@@ -234,4 +234,3 @@ cp ./project-with-updates/pom.xml.backup ./project-with-updates/pom.xml
 ### Environment
 - GitHub Actions runner: 2 vCPU, 7GB RAM
 - Local development: Minimum 8GB RAM recommended
-

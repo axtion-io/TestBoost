@@ -161,7 +161,14 @@
       "Bash(do if grep -q -i -E \"\\(AIzaSy|gho_|ghp_|sk-|xox[baprs]-\\)\" \"$file\")",
       "Bash(then echo \"$file\")",
       "Bash([ -f .env ])",
-      "Bash(git check-ignore:*)"
+      "Bash(git check-ignore:*)",
+      "Bash(git remote set-url:*)",
+      "Bash(gh pr close:*)",
+      "Bash(gh api:*)",
+      "Bash(gh pr view:*)",
+      "Bash(pip install:*)",
+      "Bash(pre-commit install:*)",
+      "Bash(pre-commit run:*)"
     ],
     "deny": [],
     "ask": []

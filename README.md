@@ -132,6 +132,48 @@ ruff check src/
 mypy src/
 ```
 
+## Edge Cases & Error Handling
+
+TestBoost handles common edge cases automatically:
+
+| Scenario | Behavior |
+|----------|----------|
+| **LLM Rate Limit (429)** | Automatic retry with exponential backoff (max 3 attempts) |
+| **LLM Timeout** | Configurable timeout (default 120s), retry on transient failures |
+| **Invalid API Key** | Startup validation fails with clear error message |
+| **Network Errors** | Automatic retry with backoff for transient failures |
+| **Malformed LLM Response** | Retry with modified prompt (max 3 attempts) |
+
+For detailed edge case handling, see [LLM Providers](./docs/llm-providers.md#gestion-des-erreurs).
+
+## Troubleshooting
+
+### Common Issues
+
+**LLM not available at startup**
+```
+Error: LLM not available: GOOGLE_API_KEY not configured
+```
+Solution: Set your LLM API key in `.env` file.
+
+**Database connection failed**
+```
+Error: Connection refused on port 5433
+```
+Solution: Start PostgreSQL with `docker compose up -d postgres`.
+
+**Tests not found (collected 0 items)**
+- Verify test files match pattern `test_*.py`
+- Check pytest configuration in `pyproject.toml`
+
+**Rate limit exceeded**
+```
+LLM rate limit exceeded. Retry after 60 seconds.
+```
+Solution: Wait for the indicated duration or switch to a provider with higher quota.
+
+For more troubleshooting help, see [Operations Guide](./docs/operations.md).
+
 ## Contributing
 
 1. Fork the repository

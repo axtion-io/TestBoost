@@ -2,6 +2,7 @@
 
 AI-powered Java/Spring Boot test generation and maintenance automation platform.
 
+[![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 [![Python](https://img.shields.io/badge/Python-3.11+-blue.svg)](https://python.org)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.121-green.svg)](https://fastapi.tiangolo.com)
 [![LangGraph](https://img.shields.io/badge/LangGraph-1.0-purple.svg)](https://langchain.com)
@@ -437,7 +438,9 @@ python -m src.cli.main config reload --all
 
 ## License
 
-[Your License Here]
+This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENSE) file for details.
+
+Copyright 2024-2026 Jean-Francois Chevalier / Axtion
 
 ## Acknowledgments
 

@@ -43,8 +43,8 @@ LANGSMITH_PROJECT=testboost-dev
 ### Step 1: Start API Server
 
 ```bash
-cd C:\Users\jfran\axtion\TestBoost
-.venv\Scripts\python -m uvicorn src.api.main:app --host 0.0.0.0 --port 8000
+cd /path/to/TestBoost
+poetry run uvicorn src.api.main:app --host 0.0.0.0 --port 8000
 ```
 
 **Expected Output** (success):

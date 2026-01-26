@@ -4,7 +4,7 @@
 
 **TestBoost** is an LLM-powered automation tool for Java/Spring Boot project maintenance. It automates dependency updates, test generation, and Docker deployment while ensuring zero regression through comprehensive testing.
 
-**Repository**: https://github.com/cheche71/TestBoost
+**Repository**: https://github.com/axtion-io/TestBoost
 **Current Branch**: `001-testboost-core`
 **Status**: Core implementation complete
 

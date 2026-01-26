@@ -87,10 +87,10 @@ Quand tu es invoqué:
 
 ```bash
 # Lancer les tests Python
-"c:/Users/jfran/axtion/TestBoost/.venv/Scripts/python.exe" -m pytest tests/ -v --tb=long
+poetry run pytest tests/ -v --tb=long
 
 # Vérifier le linting
-"c:/Users/jfran/axtion/TestBoost/.venv/Scripts/python.exe" -m ruff check src/
+poetry run ruff check src/
 
 # Voir les dernières modifications
 git diff HEAD~5

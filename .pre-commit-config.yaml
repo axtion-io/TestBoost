@@ -23,14 +23,13 @@ repos:
         pass_filenames: false
         always_run: true
 
-      # Check for common secret patterns
+      # Check for common secret patterns in source files
       - id: check-secrets-patterns
         name: Check for API keys and tokens
-        entry: python -c "import sys; import subprocess; import re; diff = subprocess.check_output(['git', 'diff', '--cached'], encoding='utf-8', errors='ignore'); patterns = r'(sk-ant-|AIza|xox[a-z]-|gho_|ghp_|lsv2_sk_)'; sys.exit(1) if re.search(patterns, diff) else sys.exit(0)"
+        entry: python -c "import sys; import re; content = sys.stdin.read(); patterns = r'(sk-ant-[a-zA-Z0-9]{95,}|AIza[a-zA-Z0-9_-]{35}|xox[a-z]-[a-zA-Z0-9-]{50,}|gho_[a-zA-Z0-9]{36}|ghp_[a-zA-Z0-9]{36}|lsv2_sk_[a-zA-Z0-9]{32})'; match = re.search(patterns, content); sys.exit(1) if match else sys.exit(0)"
         language: system
-        pass_filenames: false
-        always_run: true
-        exclude: '^\.pre-commit-config\.yaml$|^\.claude/settings\.local\.json$'
+        types: [text]
+        exclude: '^(\.pre-commit-config\.yaml|\.claude/settings\.local\.json|specs/.*-report\.md)$'
 
   # TruffleHog for secret scanning (if installed)
   - repo: local

@@ -84,7 +84,14 @@ done
 
 ### TruffleHog + Gitleaks Comparison
 
-**Note**: Automated Docker-based scans encountered Windows path mounting issues. Manual pattern-based inspection was performed instead.
+**TruffleHog Status**: ✅ **Active in CI** - Free for all repository types, verifies secrets in real-time
+
+**Gitleaks Status**: ⚠️ **Optional in CI** - Requires paid license for GitHub organizations
+- **For personal repos**: Works without license
+- **For organizations** (like axtion-io): Requires Gitleaks license
+- **CI Configuration**: Marked as `continue-on-error: true` to allow workflow to pass
+
+**Initial Scan Note**: Automated Docker-based scans encountered Windows path mounting issues during initial setup. Manual pattern-based inspection was performed instead.
 
 **Manual Inspection Methodology**:
 1. Grep-based pattern matching on all source files
@@ -92,7 +99,7 @@ done
 3. Verification of .gitignore coverage
 4. .env.example placeholder validation
 
-**Equivalent Coverage**: Manual inspection covered all high-risk patterns that TruffleHog and Gitleaks would detect.
+**Equivalent Coverage**: Manual inspection + TruffleHog CI provide comprehensive secret detection without requiring paid licenses.
 
 ## Remediation Plan
 

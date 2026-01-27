@@ -8,8 +8,8 @@ groups:
       - alert: HighLLMErrorRate
         expr: |
           (
-            sum(rate(testboost_llm_errors_total[5m])) 
-            / 
+            sum(rate(testboost_llm_errors_total[5m]))
+            /
             sum(rate(testboost_llm_calls_total[5m]))
           ) > 0.05
         for: 5m
@@ -22,7 +22,7 @@ groups:
       # Workflow Duration Alert
       - alert: SlowWorkflowExecution
         expr: |
-          histogram_quantile(0.95, 
+          histogram_quantile(0.95,
             sum(rate(testboost_workflow_duration_seconds_bucket[5m])) by (le, workflow_type)
           ) > 300
         for: 10m
@@ -55,7 +55,7 @@ groups:
       # API Response Time Alert
       - alert: SlowAPIResponse
         expr: |
-          histogram_quantile(0.95, 
+          histogram_quantile(0.95,
             sum(rate(testboost_http_request_duration_seconds_bucket[5m])) by (le)
           ) > 5
         for: 5m
@@ -164,4 +164,3 @@ groups:
         annotations:
           summary: "High memory usage on {{ $labels.instance }}"
           description: "Memory usage is {{ $value | humanizePercentage }}"
-

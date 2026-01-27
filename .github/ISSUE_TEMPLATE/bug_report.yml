@@ -1,0 +1,147 @@
+name: Bug Report
+description: Report a bug or unexpected behavior in TestBoost
+title: "[Bug]: "
+labels: ["bug"]
+assignees: []
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a bug! Please fill out the information below to help us understand and fix the issue.
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: A clear and concise description of the bug
+      placeholder: What went wrong?
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps-to-reproduce
+    attributes:
+      label: Steps to Reproduce
+      description: Detailed steps to reproduce the issue
+      placeholder: |
+        1. Run command '...'
+        2. Configure settings '...'
+        3. See error
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected-behavior
+    attributes:
+      label: Expected Behavior
+      description: What did you expect to happen?
+      placeholder: The workflow should complete successfully...
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual-behavior
+    attributes:
+      label: Actual Behavior
+      description: What actually happened?
+      placeholder: Instead, I got an error...
+    validations:
+      required: true
+
+  - type: input
+    id: testboost-version
+    attributes:
+      label: TestBoost Version
+      description: What version of TestBoost are you using?
+      placeholder: "0.2.0"
+    validations:
+      required: true
+
+  - type: input
+    id: python-version
+    attributes:
+      label: Python Version
+      description: What version of Python are you using?
+      placeholder: "3.11.5"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating System
+      description: What OS are you using?
+      options:
+        - Linux
+        - macOS
+        - Windows
+        - Docker
+        - Other
+    validations:
+      required: true
+
+  - type: input
+    id: os-version
+    attributes:
+      label: OS Version
+      description: What version of your OS? (e.g., Ubuntu 22.04, macOS 13.2, Windows 11)
+      placeholder: "Ubuntu 22.04"
+
+  - type: dropdown
+    id: component
+    attributes:
+      label: Affected Component
+      description: Which part of TestBoost is affected?
+      multiple: true
+      options:
+        - API Server
+        - CLI
+        - Test Generation Workflow
+        - Maven Maintenance Workflow
+        - Docker Deployment Workflow
+        - Database/PostgreSQL
+        - LLM Integration
+        - MCP Servers
+        - Configuration Management
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs and Error Messages
+      description: Please paste any relevant log output or error messages
+      placeholder: |
+        Paste logs here (use code blocks for better readability)
+      render: shell
+
+  - type: textarea
+    id: screenshots
+    attributes:
+      label: Screenshots
+      description: If applicable, add screenshots to help explain the problem
+      placeholder: Drag and drop images here or paste URLs
+
+  - type: textarea
+    id: additional-context
+    attributes:
+      label: Additional Context
+      description: Add any other context about the problem
+      placeholder: This started happening after...
+
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Pre-submission Checklist
+      description: Please verify these items before submitting
+      options:
+        - label: I have searched existing issues to ensure this bug hasn't been reported
+          required: true
+        - label: I have included all required information above
+          required: true
+        - label: I am using a supported version of TestBoost (see SECURITY.md)
+          required: false
+        - label: This is not a security vulnerability (those should be reported privately - see SECURITY.md)
+          required: true

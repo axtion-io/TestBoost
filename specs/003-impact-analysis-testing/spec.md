@@ -161,4 +161,3 @@ As a team lead, I want the CI pipeline to block merges when impact tests are mis
 - UI/visual testing
 - Cross-browser testing
 - Security penetration testing
-

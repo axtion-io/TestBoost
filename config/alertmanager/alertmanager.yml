@@ -9,16 +9,16 @@ global:
 route:
   # Default receiver
   receiver: 'default-receiver'
-  
+
   # Group alerts by these labels
   group_by: ['alertname', 'severity']
-  
+
   # Wait before sending first notification
   group_wait: 30s
-  
+
   # Wait before sending updated notification
   group_interval: 5m
-  
+
   # Wait before re-sending same alert
   repeat_interval: 4h
 
@@ -110,4 +110,3 @@ inhibit_rules:
     target_match:
       severity: 'warning'
     equal: ['alertname']
-

@@ -7,6 +7,8 @@ AI-powered Java/Spring Boot test generation and maintenance automation platform.
 [![LangGraph](https://img.shields.io/badge/LangGraph-1.0-purple.svg)](https://langchain.com)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-15-blue.svg)](https://postgresql.org)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
+[![CI](https://github.com/axtion-io/TestBoost/workflows/CI/badge.svg)](https://github.com/axtion-io/TestBoost/actions/workflows/ci.yml)
+[![Coverage](https://img.shields.io/badge/coverage-36%25-orange)](https://github.com/axtion-io/TestBoost)
 
 ## Overview
 
@@ -187,6 +189,8 @@ See [CONTRIBUTING.md](./CONTRIBUTING.md) for detailed guidelines.
 ## License
 
 This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENSE) file for details.
+
+Copyright 2026 TestBoost Contributors
 
 ## Acknowledgments
 

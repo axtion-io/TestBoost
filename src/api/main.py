@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 TestBoost Contributors
+
 """FastAPI application with CORS, middleware, and exception handlers."""
 
 import json

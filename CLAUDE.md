@@ -1,16 +1,17 @@
 ﻿# TestBoost Development Guidelines
 
-Auto-generated from all feature plans. Last updated: 2025-11-23
+Auto-generated from all feature plans. Last updated: 2026-01-26
 
 ## Active Technologies
-- Python 3.11+ (already required by DeepAgents 0.2.7) + DeepAgents 0.2.7, LangChain Core 1.1+, LangGraph 1.0+, FastAPI 0.121 (002-deepagents-integration)
-- PostgreSQL 15 on port 5433 (existing, no schema changes needed) (002-deepagents-integration)
-- Python 3.11+ + LangGraph 1.0+, LangChain Core 1.1+, FastAPI 0.121, Typer (CLI) (003-impact-analysis-testing)
-- PostgreSQL 15 (existing, port 5433) (003-impact-analysis-testing)
-- Python 3.11+ + pytest, pytest-asyncio, pytest-cov, pytest-xdist, httpx (for API testing), respx (for HTTP mocking) (004-test-plan-documentation)
-- PostgreSQL 15 (port 5433) - existing schema, no changes needed (004-test-plan-documentation)
-
-- Python 3.11+ (001-testboost-core)
+- Python 3.11+
+- FastAPI 0.121+ for REST API
+- SQLAlchemy 2.x (async) + PostgreSQL 15 (port 5433)
+- LangGraph 1.0+ and LangChain Core 1.1+ for AI workflows
+- DeepAgents 0.2.7+ for LLM integration
+- Pydantic for data validation
+- structlog for structured logging
+- pytest, pytest-asyncio, pytest-cov for testing
+- Typer for CLI interface
 
 ## Project Structure
 
@@ -26,15 +27,19 @@ cd src; pytest; ruff check .
 
 ## Code Style
 
-Python 3.11+: Follow standard conventions
+- Follow PEP 8 conventions (100 character line length)
+- Use type hints for all function signatures
+- Use async/await for I/O operations
+- Use structlog for structured logging (no print statements)
+- Follow Conventional Commits format for commit messages
 
-## Recent Changes
-- 007-session-events-api: Added Python 3.11+ + FastAPI 0.121, SQLAlchemy 2.x (async), Pydantic, structlog
-- 006-file-modifications-api: Added Python 3.11+ + FastAPI 0.121, SQLAlchemy (async), Pydantic, structlog
-- 004-test-plan-documentation: Added Python 3.11+ + pytest, pytest-asyncio, pytest-cov, pytest-xdist, httpx (for API testing), respx (for HTTP mocking)
-- 003-impact-analysis-testing: Added Python 3.11+ + LangGraph 1.0+, LangChain Core 1.1+, FastAPI 0.121, Typer (CLI)
-- 002-deepagents-integration: Added Python 3.11+ (already required by DeepAgents 0.2.7) + DeepAgents 0.2.7, LangChain Core 1.1+, LangGraph 1.0+, FastAPI 0.121
+## Contributing
 
+See [CONTRIBUTING.md](CONTRIBUTING.md) for detailed guidelines on:
+- Development setup
+- Coding standards
+- Testing requirements
+- Pull request process
 
 <!-- MANUAL ADDITIONS START -->
 <!-- MANUAL ADDITIONS END -->

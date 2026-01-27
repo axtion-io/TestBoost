@@ -177,8 +177,17 @@ class TestCodeDocumentation:
                 continue
 
             content = py_file.read_text()
-            # Check for module docstring (triple quotes at start)
-            assert content.strip().startswith('"""'), f"{py_file.name} missing module docstring"
+            # Skip SPDX headers if present
+            lines = content.strip().split('\n')
+            first_non_comment_idx = 0
+            for i, line in enumerate(lines):
+                if not line.strip().startswith('#') and line.strip():
+                    first_non_comment_idx = i
+                    break
+
+            # Check for module docstring (triple quotes at first non-comment line)
+            if first_non_comment_idx < len(lines):
+                assert lines[first_non_comment_idx].strip().startswith('"""'), f"{py_file.name} missing module docstring"
 
     def test_workflow_modules_have_docstrings(self):
         """Test that workflow modules have module docstrings."""
@@ -186,7 +195,17 @@ class TestCodeDocumentation:
 
         for py_file in workflows_path.glob("*_agent.py"):
             content = py_file.read_text()
-            assert content.strip().startswith('"""'), f"{py_file.name} missing module docstring"
+            # Skip SPDX headers if present
+            lines = content.strip().split('\n')
+            first_non_comment_idx = 0
+            for i, line in enumerate(lines):
+                if not line.strip().startswith('#') and line.strip():
+                    first_non_comment_idx = i
+                    break
+
+            # Check for module docstring (triple quotes at first non-comment line)
+            if first_non_comment_idx < len(lines):
+                assert lines[first_non_comment_idx].strip().startswith('"""'), f"{py_file.name} missing module docstring"
 
 
 class TestAPIDocumentation:

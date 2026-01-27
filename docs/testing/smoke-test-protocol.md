@@ -107,4 +107,3 @@ After successful smoke test:
 - [ ] Database migrations applied (if any)
 - [ ] Environment variables correct for target environment
 - [ ] External integrations accessible (LLM API, etc.)
-

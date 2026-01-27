@@ -49,7 +49,7 @@ Analyser et mettre à jour automatiquement les dépendances d'un projet. Donner 
 
 **Critères de succès :**
 - Analyse complète de la release note entre 2 versions de dépendances
-- Workflow complet (analyse → commit) 
+- Workflow complet (analyse → commit)
 
 ---
 

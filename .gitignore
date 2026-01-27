@@ -73,7 +73,8 @@ nul
 *.sqlite3
 
 # Docker
-docker/maven-builder/target/
+docker/maven-builder/
+docker/maven-cache/
 
 # Alembic
 alembic/versions/__pycache__/
@@ -81,14 +82,19 @@ alembic/versions/__pycache__/
 # Jupyter
 .ipynb_checkpoints/
 
-# Local settings
-.claude/settings.local.json
+# Local settings and development tools
+.claude/
+.specify/
 
 # Test projects (cloned Maven projects)
 test-projects/
 
-# Docker build artifacts
-docker/maven-cache/
+# Internal development documentation
+specs/
+CLAUDE.md
+CONTEXT.md
+OPEN_SOURCE_AUDIT_REPORT.md
+PR-*.md
 
 # Config backups
 config/agents/.backups/

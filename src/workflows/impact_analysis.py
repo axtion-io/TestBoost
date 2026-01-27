@@ -27,9 +27,9 @@ from src.lib.risk_keywords import (
 from src.models.impact import (
     ChangeCategory,
     Impact,
+    PyramidLevel,
     RiskLevel,
     ScenarioType,
-    TestKind,
     TestRequirement,
 )
 from src.models.impact_report import ImpactReport
@@ -203,16 +203,16 @@ CATEGORY_PATTERNS: dict[ChangeCategory, list[str]] = {
 }
 
 # Test type mapping per change category (FR-005 - test pyramid)
-TEST_TYPE_MAPPING: dict[ChangeCategory, TestKind] = {
-    ChangeCategory.BUSINESS_RULE: TestKind.UNIT,
-    ChangeCategory.ENDPOINT: TestKind.CONTROLLER,
-    ChangeCategory.DTO: TestKind.UNIT,
-    ChangeCategory.QUERY: TestKind.DATA_LAYER,
-    ChangeCategory.MIGRATION: TestKind.INTEGRATION,
-    ChangeCategory.API_CONTRACT: TestKind.CONTRACT,
-    ChangeCategory.CONFIGURATION: TestKind.INTEGRATION,
-    ChangeCategory.TEST: TestKind.UNIT,  # Test file changes
-    ChangeCategory.OTHER: TestKind.UNIT,
+TEST_TYPE_MAPPING: dict[ChangeCategory, PyramidLevel] = {
+    ChangeCategory.BUSINESS_RULE: PyramidLevel.UNIT,
+    ChangeCategory.ENDPOINT: PyramidLevel.CONTROLLER,
+    ChangeCategory.DTO: PyramidLevel.UNIT,
+    ChangeCategory.QUERY: PyramidLevel.DATA_LAYER,
+    ChangeCategory.MIGRATION: PyramidLevel.INTEGRATION,
+    ChangeCategory.API_CONTRACT: PyramidLevel.CONTRACT,
+    ChangeCategory.CONFIGURATION: PyramidLevel.INTEGRATION,
+    ChangeCategory.TEST: PyramidLevel.UNIT,  # Test file changes
+    ChangeCategory.OTHER: PyramidLevel.UNIT,
 }
 
 # Regex patterns for extracting class/method names from Java diffs
@@ -454,7 +454,7 @@ def categorize_change(file_path: str) -> ChangeCategory:
     return ChangeCategory.OTHER
 
 
-def select_test_type(category: ChangeCategory) -> TestKind:
+def select_test_type(category: ChangeCategory) -> PyramidLevel:
     """
     Select the appropriate test type for a change category (T018, FR-005).
 
@@ -464,9 +464,9 @@ def select_test_type(category: ChangeCategory) -> TestKind:
         category: The change category
 
     Returns:
-        The recommended TestKind
+        The recommended PyramidLevel
     """
-    return TEST_TYPE_MAPPING.get(category, TestKind.UNIT)
+    return TEST_TYPE_MAPPING.get(category, PyramidLevel.UNIT)
 
 
 def identify_affected_components(

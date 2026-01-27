@@ -4,20 +4,24 @@ from src.models.impact import (
     ChangeCategory,
     DiffChunk,
     Impact,
+    PyramidLevel,
     RiskLevel,
     ScenarioType,
-    TestKind,
     TestRequirement,
 )
 from src.models.impact_report import ImpactReport
 
+# Backward compatibility alias
+TestKind = PyramidLevel
+
 __all__ = [
     "ChangeCategory",
-    "RiskLevel",
-    "TestKind",
-    "ScenarioType",
-    "Impact",
-    "TestRequirement",
-    "ImpactReport",
     "DiffChunk",
+    "Impact",
+    "ImpactReport",
+    "PyramidLevel",
+    "RiskLevel",
+    "ScenarioType",
+    "TestKind",  # Backward compatibility alias
+    "TestRequirement",
 ]

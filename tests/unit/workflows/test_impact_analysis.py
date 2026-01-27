@@ -11,7 +11,7 @@ Tests cover:
 """
 
 
-from src.models.impact import ChangeCategory, Impact, RiskLevel, ScenarioType, TestKind
+from src.models.impact import ChangeCategory, Impact, PyramidLevel, RiskLevel, ScenarioType
 from src.workflows.impact_analysis import (
     _generate_edge_cases,
     _to_camel_case,
@@ -434,7 +434,7 @@ class TestGenerateTestRequirements:
             category=ChangeCategory.TEST,
             risk_level=RiskLevel.NON_CRITICAL,
             affected_components=["TestFile"],
-            required_test_type=TestKind.UNIT,
+            required_test_type=PyramidLevel.UNIT,
             change_summary="Test file change",
             is_bug_fix=False,
         )
@@ -563,17 +563,17 @@ class TestHelperFunctions:
     def test_select_test_type_business_rule(self):
         """BUSINESS_RULE should map to UNIT test type."""
         result = select_test_type(ChangeCategory.BUSINESS_RULE)
-        assert result == TestKind.UNIT
+        assert result == PyramidLevel.UNIT
 
     def test_select_test_type_endpoint(self):
         """ENDPOINT should map to CONTROLLER test type."""
         result = select_test_type(ChangeCategory.ENDPOINT)
-        assert result == TestKind.CONTROLLER
+        assert result == PyramidLevel.CONTROLLER
 
     def test_select_test_type_query(self):
         """QUERY should map to DATA_LAYER test type."""
         result = select_test_type(ChangeCategory.QUERY)
-        assert result == TestKind.DATA_LAYER
+        assert result == PyramidLevel.DATA_LAYER
 
     def test_generate_change_summary(self):
         """Should generate readable summary."""
@@ -608,7 +608,7 @@ class TestHelperFunctions:
             category=ChangeCategory.ENDPOINT,
             risk_level=RiskLevel.NON_CRITICAL,
             affected_components=["UserController"],
-            required_test_type=TestKind.CONTROLLER,
+            required_test_type=PyramidLevel.CONTROLLER,
             change_summary="test",
             is_bug_fix=False,
         )
@@ -624,7 +624,7 @@ class TestHelperFunctions:
             category=ChangeCategory.BUSINESS_RULE,
             risk_level=RiskLevel.BUSINESS_CRITICAL,
             affected_components=["PaymentService"],
-            required_test_type=TestKind.UNIT,
+            required_test_type=PyramidLevel.UNIT,
             change_summary="test",
             is_bug_fix=False,
         )

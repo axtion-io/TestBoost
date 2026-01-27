@@ -30,7 +30,7 @@ class RiskLevel(str, Enum):
     NON_CRITICAL = "non_critical"  # Logging, formatting, docs
 
 
-class TestKind(str, Enum):
+class PyramidLevel(str, Enum):
     """Test level selection per FR-005 (test pyramid)."""
 
     UNIT = "unit"  # JUnit, pure logic
@@ -38,6 +38,10 @@ class TestKind(str, Enum):
     DATA_LAYER = "data_layer"  # @DataJpaTest
     INTEGRATION = "integration"  # @SpringBootTest
     CONTRACT = "contract"  # Pact, Spring Cloud Contract
+
+
+# Backward compatibility alias
+TestKind = PyramidLevel
 
 
 class ScenarioType(str, Enum):

@@ -273,7 +273,7 @@ diff --git a/src/main/java/com/example/repository/UserRepository.java b/src/main
 @pytest.fixture
 def sample_impact():
     """Pre-generated Impact object for testing."""
-    from src.models.impact import ChangeCategory, Impact, RiskLevel, TestKind
+    from src.models.impact import ChangeCategory, Impact, PyramidLevel, RiskLevel
 
     return Impact(
         id="IMP-001",
@@ -281,7 +281,7 @@ def sample_impact():
         category=ChangeCategory.BUSINESS_RULE,
         risk_level=RiskLevel.BUSINESS_CRITICAL,
         affected_components=["PaymentService", "processPayment"],
-        required_test_type=TestKind.UNIT,
+        required_test_type=PyramidLevel.UNIT,
         change_summary="Added payment processing method with validation",
         is_bug_fix=False,
     )
@@ -290,7 +290,7 @@ def sample_impact():
 @pytest.fixture
 def sample_bugfix_impact():
     """Impact object representing a bug fix."""
-    from src.models.impact import ChangeCategory, Impact, RiskLevel, TestKind
+    from src.models.impact import ChangeCategory, Impact, PyramidLevel, RiskLevel
 
     return Impact(
         id="IMP-002",
@@ -298,7 +298,7 @@ def sample_bugfix_impact():
         category=ChangeCategory.BUSINESS_RULE,
         risk_level=RiskLevel.BUSINESS_CRITICAL,
         affected_components=["OrderService", "calculateTotal"],
-        required_test_type=TestKind.UNIT,
+        required_test_type=PyramidLevel.UNIT,
         change_summary="Fixed calculation error in order total",
         is_bug_fix=True,
     )

@@ -652,5 +652,5 @@ tail -f logs/testboost.log | jq .
 
 ## Support
 
-- GitHub Issues : [github.com/cheche71/TestBoost/issues](https://github.com/axtion-io/TestBoost/issues)
+- GitHub Issues : [github.com/axtion-io/TestBoost/issues](https://github.com/axtion-io/TestBoost/issues)
 - Documentation : [docs/](../docs/)

@@ -183,9 +183,9 @@ ruff check . && mypy src/ && pytest
 ### Step 1: Find an Issue
 
 Look for issues labeled:
-- [`good first issue`](https://github.com/cheche71/TestBoost/labels/good%20first%20issue) - Perfect for newcomers
-- [`help wanted`](https://github.com/cheche71/TestBoost/labels/help%20wanted) - Community contributions welcome
-- [`documentation`](https://github.com/cheche71/TestBoost/labels/documentation) - Easy entry point
+- [`good first issue`](https://github.com/axtion-io/TestBoost/labels/good%20first%20issue) - Perfect for newcomers
+- [`help wanted`](https://github.com/axtion-io/TestBoost/labels/help%20wanted) - Community contributions welcome
+- [`documentation`](https://github.com/axtion-io/TestBoost/labels/documentation) - Easy entry point
 
 Or report a bug/suggest a feature by creating an issue.
 
@@ -568,8 +568,8 @@ python -c "from src.lib.llm import create_llm; llm = create_llm('google-genai');
 ### Resources
 
 - **Documentation**: Check `docs/` folder for detailed guides
-- **GitHub Discussions**: [Discussions](https://github.com/cheche71/TestBoost/discussions) - Ask questions, share ideas
-- **GitHub Issues**: [Issues](https://github.com/cheche71/TestBoost/issues) - Report bugs, request features
+- **GitHub Discussions**: [Discussions](https://github.com/axtion-io/TestBoost/discussions) - Ask questions, share ideas
+- **GitHub Issues**: [Issues](https://github.com/axtion-io/TestBoost/issues) - Report bugs, request features
 - **CONTRIBUTING.md**: Detailed contribution guidelines
 
 ### Communication

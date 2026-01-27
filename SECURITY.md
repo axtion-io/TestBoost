@@ -126,7 +126,7 @@ We believe in responsible disclosure and appreciate security researchers who rep
 ## Security Updates
 
 Security updates will be released as PATCH versions (e.g., 0.2.1, 0.2.2) and documented in:
-- **GitHub Security Advisories**: https://github.com/cheche71/TestBoost/security/advisories
+- **GitHub Security Advisories**: https://github.com/axtion-io/TestBoost/security/advisories
 - **CHANGELOG.md**: With `### Security` section
 - **Release notes**: With clear upgrade instructions
 
@@ -135,8 +135,8 @@ Subscribe to **GitHub repository notifications** to receive security update aler
 ## Contact
 
 For non-security-related questions, please use:
-- **GitHub Issues**: https://github.com/cheche71/TestBoost/issues
-- **GitHub Discussions**: https://github.com/cheche71/TestBoost/discussions
+- **GitHub Issues**: https://github.com/axtion-io/TestBoost/issues
+- **GitHub Discussions**: https://github.com/axtion-io/TestBoost/discussions
 
 For security-related concerns **only**, contact: security@testboost.dev
 

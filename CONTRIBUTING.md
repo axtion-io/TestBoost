@@ -27,9 +27,9 @@ This project and everyone participating in it is governed by the [TestBoost Code
 ### Good First Issues
 
 Looking for a place to start? Check out issues labeled:
-- [`good first issue`](https://github.com/cheche71/TestBoost/labels/good%20first%20issue) - Perfect for newcomers
-- [`help wanted`](https://github.com/cheche71/TestBoost/labels/help%20wanted) - Community contributions welcome
-- [`documentation`](https://github.com/cheche71/TestBoost/labels/documentation) - Easy entry point
+- [`good first issue`](https://github.com/axtion-io/TestBoost/labels/good%20first%20issue) - Perfect for newcomers
+- [`help wanted`](https://github.com/axtion-io/TestBoost/labels/help%20wanted) - Community contributions welcome
+- [`documentation`](https://github.com/axtion-io/TestBoost/labels/documentation) - Easy entry point
 
 ### Ways to Contribute
 
@@ -419,12 +419,12 @@ We aim to provide timely feedback on contributions:
 
 ### Communication Channels
 
-- **GitHub Discussions**: https://github.com/cheche71/TestBoost/discussions
+- **GitHub Discussions**: https://github.com/axtion-io/TestBoost/discussions
   - Ask questions
   - Share ideas
   - Show off your projects using TestBoost
 
-- **GitHub Issues**: https://github.com/cheche71/TestBoost/issues
+- **GitHub Issues**: https://github.com/axtion-io/TestBoost/issues
   - Report bugs
   - Request features
   - Track work in progress
@@ -478,4 +478,4 @@ Thank you for making TestBoost better! 🚀
 
 ---
 
-**Questions?** Feel free to ask in [GitHub Discussions](https://github.com/cheche71/TestBoost/discussions) or open an issue with the `question` label.
+**Questions?** Feel free to ask in [GitHub Discussions](https://github.com/axtion-io/TestBoost/discussions) or open an issue with the `question` label.

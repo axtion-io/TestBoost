@@ -7,14 +7,14 @@ from src.models.impact import (
     RiskLevel,
     ScenarioType,
     TestRequirement,
-    TestType,
+    TestKind,
 )
 from src.models.impact_report import ImpactReport
 
 __all__ = [
     "ChangeCategory",
     "RiskLevel",
-    "TestType",
+    "TestKind",
     "ScenarioType",
     "Impact",
     "TestRequirement",

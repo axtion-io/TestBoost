@@ -11,7 +11,7 @@ from fastapi import APIRouter, BackgroundTasks, HTTPException
 from pydantic import BaseModel, Field
 
 from src.lib.logging import get_logger
-from src.workflows.state import MavenMaintenanceState, TestGenerationStateModel
+from src.workflows.state import MavenMaintenanceState, GeneratedTestsStateModel
 
 logger = get_logger(__name__)
 
@@ -496,7 +496,7 @@ class TestGenerationStatus(BaseModel):
 
 
 # Test generation session storage
-_test_sessions: dict[str, TestGenerationStateModel] = {}
+_test_sessions: dict[str, GeneratedTestsStateModel] = {}
 
 
 async def _run_test_generation_task(session_id: str, request: TestGenerateRequest) -> None:
@@ -507,7 +507,7 @@ async def _run_test_generation_task(session_id: str, request: TestGenerateReques
         from src.workflows.test_generation_agent import run_test_generation_with_agent
 
         session_uuid = UUIDType(session_id)
-        initial_state = TestGenerationStateModel(
+        initial_state = GeneratedTestsStateModel(
             session_id=session_uuid,
             project_path=request.project_path,
             target_mutation_score=request.target_mutation_score,

@@ -30,7 +30,7 @@ from src.models.impact import (
     RiskLevel,
     ScenarioType,
     TestRequirement,
-    TestType,
+    TestKind,
 )
 from src.models.impact_report import ImpactReport
 
@@ -203,16 +203,16 @@ CATEGORY_PATTERNS: dict[ChangeCategory, list[str]] = {
 }
 
 # Test type mapping per change category (FR-005 - test pyramid)
-TEST_TYPE_MAPPING: dict[ChangeCategory, TestType] = {
-    ChangeCategory.BUSINESS_RULE: TestType.UNIT,
-    ChangeCategory.ENDPOINT: TestType.CONTROLLER,
-    ChangeCategory.DTO: TestType.UNIT,
-    ChangeCategory.QUERY: TestType.DATA_LAYER,
-    ChangeCategory.MIGRATION: TestType.INTEGRATION,
-    ChangeCategory.API_CONTRACT: TestType.CONTRACT,
-    ChangeCategory.CONFIGURATION: TestType.INTEGRATION,
-    ChangeCategory.TEST: TestType.UNIT,  # Test file changes
-    ChangeCategory.OTHER: TestType.UNIT,
+TEST_TYPE_MAPPING: dict[ChangeCategory, TestKind] = {
+    ChangeCategory.BUSINESS_RULE: TestKind.UNIT,
+    ChangeCategory.ENDPOINT: TestKind.CONTROLLER,
+    ChangeCategory.DTO: TestKind.UNIT,
+    ChangeCategory.QUERY: TestKind.DATA_LAYER,
+    ChangeCategory.MIGRATION: TestKind.INTEGRATION,
+    ChangeCategory.API_CONTRACT: TestKind.CONTRACT,
+    ChangeCategory.CONFIGURATION: TestKind.INTEGRATION,
+    ChangeCategory.TEST: TestKind.UNIT,  # Test file changes
+    ChangeCategory.OTHER: TestKind.UNIT,
 }
 
 # Regex patterns for extracting class/method names from Java diffs
@@ -454,7 +454,7 @@ def categorize_change(file_path: str) -> ChangeCategory:
     return ChangeCategory.OTHER
 
 
-def select_test_type(category: ChangeCategory) -> TestType:
+def select_test_type(category: ChangeCategory) -> TestKind:
     """
     Select the appropriate test type for a change category (T018, FR-005).
 
@@ -464,9 +464,9 @@ def select_test_type(category: ChangeCategory) -> TestType:
         category: The change category
 
     Returns:
-        The recommended TestType
+        The recommended TestKind
     """
-    return TEST_TYPE_MAPPING.get(category, TestType.UNIT)
+    return TEST_TYPE_MAPPING.get(category, TestKind.UNIT)
 
 
 def identify_affected_components(

@@ -28,7 +28,7 @@ class TestImpactModel:
 
     def test_impact_no_invariant_for_non_critical(self):
         """Non-critical change should not require invariant test."""
-        from src.models.impact import ChangeCategory, Impact, RiskLevel, TestType
+        from src.models.impact import ChangeCategory, Impact, RiskLevel, TestKind
 
         impact = Impact(
             id="IMP-003",
@@ -36,7 +36,7 @@ class TestImpactModel:
             category=ChangeCategory.CONFIGURATION,
             risk_level=RiskLevel.NON_CRITICAL,
             affected_components=["AppConfig"],
-            required_test_type=TestType.UNIT,
+            required_test_type=TestKind.UNIT,
             change_summary="Updated logging configuration",
             is_bug_fix=False,
         )
@@ -56,7 +56,7 @@ class TestImpactModel:
 
     def test_impact_diff_lines_default(self):
         """Impact should have default diff_lines."""
-        from src.models.impact import ChangeCategory, Impact, RiskLevel, TestType
+        from src.models.impact import ChangeCategory, Impact, RiskLevel, TestKind
 
         impact = Impact(
             id="IMP-004",
@@ -64,7 +64,7 @@ class TestImpactModel:
             category=ChangeCategory.OTHER,
             risk_level=RiskLevel.NON_CRITICAL,
             affected_components=[],
-            required_test_type=TestType.UNIT,
+            required_test_type=TestKind.UNIT,
             change_summary="Test",
         )
 
@@ -77,12 +77,12 @@ class TestTestRequirementModel:
 
     def test_test_requirement_to_dict(self):
         """TestRequirement should serialize to dict correctly."""
-        from src.models.impact import ScenarioType, TestRequirement, TestType
+        from src.models.impact import ScenarioType, TestRequirement, TestKind
 
         req = TestRequirement(
             id="TEST-001",
             impact_id="IMP-001",
-            test_type=TestType.UNIT,
+            test_type=TestKind.UNIT,
             scenario_type=ScenarioType.NOMINAL,
             description="Test payment processing",
             priority=1,
@@ -104,12 +104,12 @@ class TestTestRequirementModel:
 
     def test_test_requirement_to_dict_optional_fields(self):
         """TestRequirement should handle optional fields in serialization."""
-        from src.models.impact import ScenarioType, TestRequirement, TestType
+        from src.models.impact import ScenarioType, TestRequirement, TestKind
 
         req = TestRequirement(
             id="TEST-002",
             impact_id="IMP-001",
-            test_type=TestType.CONTROLLER,
+            test_type=TestKind.CONTROLLER,
             scenario_type=ScenarioType.EDGE_CASE,
             description="Test edge case",
             priority=2,
@@ -366,14 +366,14 @@ class TestRiskLevelEnum:
 
 
 @pytest.mark.integration
-class TestTestTypeEnum:
-    """Tests for TestType enum."""
+class TestTestKindEnum:
+    """Tests for TestKind enum."""
 
     def test_all_test_types(self):
         """Should have expected test types."""
-        from src.models.impact import TestType
+        from src.models.impact import TestKind
 
-        test_types = [t.value for t in TestType]
+        test_types = [t.value for t in TestKind]
 
         assert "unit" in test_types
         assert "controller" in test_types

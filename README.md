@@ -8,7 +8,7 @@ AI-powered Java/Spring Boot test generation and maintenance automation platform.
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-15-blue.svg)](https://postgresql.org)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 
-[![CI](https://github.com/axtion-io/TestBoost/workflows/CI/badge.svg)](https://github.com/axtion-io/TestBoost/actions/workflows/ci.yml)
+[![CI](https://github.com/axtion-io/TestBoost/actions/workflows/ci.yml/badge.svg)](https://github.com/axtion-io/TestBoost/actions/workflows/ci.yml)
 [![Coverage](https://img.shields.io/badge/coverage-36%25-orange)](https://github.com/axtion-io/TestBoost)
 [![Code style: ruff](https://img.shields.io/badge/code%20style-ruff-000000.svg)](https://github.com/astral-sh/ruff)
 [![pre-commit](https://img.shields.io/badge/pre--commit-enabled-brightgreen?logo=pre-commit)](https://github.com/pre-commit/pre-commit)

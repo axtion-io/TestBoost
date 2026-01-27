@@ -85,6 +85,7 @@ alembic/versions/__pycache__/
 # Local settings and development tools
 .claude/
 .specify/
+.github/README.md
 
 # Test projects (cloned Maven projects)
 test-projects/

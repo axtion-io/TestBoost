@@ -6,8 +6,8 @@ from src.models.impact import (
     Impact,
     RiskLevel,
     ScenarioType,
-    TestRequirement,
     TestKind,
+    TestRequirement,
 )
 from src.models.impact_report import ImpactReport
 

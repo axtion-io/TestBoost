@@ -12,8 +12,8 @@ import pytest
 from pydantic import ValidationError
 
 from src.workflows.state import (
-    MavenMaintenanceState,
     GeneratedTestsStateModel,
+    MavenMaintenanceState,
     WorkflowStateModel,
 )
 

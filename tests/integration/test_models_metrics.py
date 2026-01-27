@@ -77,7 +77,7 @@ class TestTestRequirementModel:
 
     def test_test_requirement_to_dict(self):
         """TestRequirement should serialize to dict correctly."""
-        from src.models.impact import ScenarioType, TestRequirement, TestKind
+        from src.models.impact import ScenarioType, TestKind, TestRequirement
 
         req = TestRequirement(
             id="TEST-001",
@@ -104,7 +104,7 @@ class TestTestRequirementModel:
 
     def test_test_requirement_to_dict_optional_fields(self):
         """TestRequirement should handle optional fields in serialization."""
-        from src.models.impact import ScenarioType, TestRequirement, TestKind
+        from src.models.impact import ScenarioType, TestKind, TestRequirement
 
         req = TestRequirement(
             id="TEST-002",

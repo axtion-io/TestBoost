@@ -96,7 +96,7 @@ warn_required_dynamic_aliases = true
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
 testpaths = ["tests"]
-addopts = "-v --cov=src --cov-report=term-missing --cov-report=xml --durations=0 --durations-min=0.1"
+addopts = "-v --cov=src --cov-report=term-missing --cov-report=xml --durations=50 --durations-min=0.01"
 markers = [
     "unit: mark test as unit test",
     "integration: mark test as integration test (may require database)",

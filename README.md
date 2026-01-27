@@ -13,11 +13,13 @@ AI-powered Java/Spring Boot test generation and maintenance automation platform.
 [![Code style: ruff](https://img.shields.io/badge/code%20style-ruff-000000.svg)](https://github.com/astral-sh/ruff)
 [![pre-commit](https://img.shields.io/badge/pre--commit-enabled-brightgreen?logo=pre-commit)](https://github.com/pre-commit/pre-commit)
 
+<!-- GitHub Stats badges (uncomment after making repository public)
 ![GitHub stars](https://img.shields.io/github/stars/axtion-io/TestBoost?style=social)
 ![GitHub forks](https://img.shields.io/github/forks/axtion-io/TestBoost?style=social)
 ![GitHub issues](https://img.shields.io/github/issues/axtion-io/TestBoost)
 ![GitHub pull requests](https://img.shields.io/github/issues-pr/axtion-io/TestBoost)
 ![GitHub last commit](https://img.shields.io/github/last-commit/axtion-io/TestBoost)
+-->
 
 ## Overview
 

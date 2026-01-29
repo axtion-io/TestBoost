@@ -30,7 +30,7 @@ class RiskLevel(str, Enum):
     NON_CRITICAL = "non_critical"  # Logging, formatting, docs
 
 
-class TestType(str, Enum):
+class PyramidLevel(str, Enum):
     """Test level selection per FR-005 (test pyramid)."""
 
     UNIT = "unit"  # JUnit, pure logic
@@ -38,6 +38,10 @@ class TestType(str, Enum):
     DATA_LAYER = "data_layer"  # @DataJpaTest
     INTEGRATION = "integration"  # @SpringBootTest
     CONTRACT = "contract"  # Pact, Spring Cloud Contract
+
+
+# Backward compatibility alias
+TestKind = PyramidLevel
 
 
 class ScenarioType(str, Enum):
@@ -70,7 +74,7 @@ class Impact:
     category: ChangeCategory
     risk_level: RiskLevel
     affected_components: list[str]
-    required_test_type: TestType
+    required_test_type: TestKind
     change_summary: str
     diff_lines: tuple[int, int] = (0, 0)
     is_bug_fix: bool = False
@@ -123,7 +127,7 @@ class TestRequirement:
 
     id: str
     impact_id: str
-    test_type: TestType
+    test_type: TestKind
     scenario_type: ScenarioType
     description: str
     priority: int

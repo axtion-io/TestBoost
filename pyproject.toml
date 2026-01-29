@@ -1,8 +1,9 @@
 [tool.poetry]
 name = "testboost"
-version = "0.1.0"
+version = "0.2.0"
 description = "Automated Java/Spring Boot maintenance with test generation, Maven updates, and Docker deployment"
 authors = ["TestBoost Team"]
+license = "Apache-2.0"
 readme = "README.md"
 packages = [{include = "src"}]
 
@@ -26,6 +27,7 @@ deepagents = "^0.2.7"
 typer = "^0.20"
 httpx = "^0.28"
 structlog = "^25.5"
+greenlet = "^3.3.1"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.2"
@@ -95,7 +97,7 @@ warn_required_dynamic_aliases = true
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
 testpaths = ["tests"]
-addopts = "-v --cov=src --cov-report=term-missing --cov-report=xml"
+addopts = "-v --cov=src --cov-report=term-missing --cov-report=xml --durations=50 --durations-min=0.01"
 markers = [
     "unit: mark test as unit test",
     "integration: mark test as integration test (may require database)",
@@ -118,4 +120,4 @@ exclude_lines = [
     "raise NotImplementedError",
     "if TYPE_CHECKING:",
 ]
-fail_under = 20
+fail_under = 33

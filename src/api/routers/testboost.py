@@ -11,7 +11,7 @@ from fastapi import APIRouter, BackgroundTasks, HTTPException
 from pydantic import BaseModel, Field
 
 from src.lib.logging import get_logger
-from src.workflows.state import MavenMaintenanceState, TestGenerationStateModel
+from src.workflows.state import GeneratedTestsStateModel, MavenMaintenanceState
 
 logger = get_logger(__name__)
 
@@ -496,7 +496,7 @@ class TestGenerationStatus(BaseModel):
 
 
 # Test generation session storage
-_test_sessions: dict[str, TestGenerationStateModel] = {}
+_test_sessions: dict[str, GeneratedTestsStateModel] = {}
 
 
 async def _run_test_generation_task(session_id: str, request: TestGenerateRequest) -> None:
@@ -507,7 +507,7 @@ async def _run_test_generation_task(session_id: str, request: TestGenerateReques
         from src.workflows.test_generation_agent import run_test_generation_with_agent
 
         session_uuid = UUIDType(session_id)
-        initial_state = TestGenerationStateModel(
+        initial_state = GeneratedTestsStateModel(
             session_id=session_uuid,
             project_path=request.project_path,
             target_mutation_score=request.target_mutation_score,
@@ -691,10 +691,10 @@ async def analyze_impact(request: ImpactAnalysisRequest) -> ImpactAnalysisRespon
             ImpactInfo(
                 id=impact.id,
                 file_path=impact.file_path,
-                change_category=impact.change_category.value,
+                change_category=impact.category.value,
                 risk_level=impact.risk_level.value,
-                affected_methods=impact.affected_methods,
-                change_description=impact.change_description if request.verbose else "",
+                affected_methods=impact.affected_components,
+                change_description=impact.change_summary if request.verbose else "",
             )
             for impact in report.impacts
         ]
@@ -704,9 +704,9 @@ async def analyze_impact(request: ImpactAnalysisRequest) -> ImpactAnalysisRespon
                 id=req.id,
                 impact_id=req.impact_id,
                 test_type=req.test_type.value,
-                scenario=req.scenario.value,
-                priority=req.priority,
-                suggested_assertions=req.suggested_assertions if request.verbose else [],
+                scenario=req.scenario_type.value,
+                priority=str(req.priority),
+                suggested_assertions=[req.suggested_test_name] if request.verbose and req.suggested_test_name else [],
             )
             for req in report.test_requirements
         ]

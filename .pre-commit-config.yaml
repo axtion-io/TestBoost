@@ -1,0 +1,52 @@
+repos:
+  # Standard pre-commit hooks
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.5.0
+    hooks:
+      - id: check-added-large-files
+        args: ['--maxkb=1000']
+      - id: check-merge-conflict
+      - id: detect-private-key
+        exclude: 'specs/008-opensource-release/secret-scan-report\.md'
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+      - id: check-yaml
+      - id: check-json
+
+  # Prevent .env files from being committed
+  - repo: local
+    hooks:
+      - id: check-env-files
+        name: Block .env files
+        entry: python -c "import sys; import subprocess; files = subprocess.check_output(['git', 'diff', '--cached', '--name-only'], encoding='utf-8', errors='ignore'); sys.exit(1) if any(f.strip() in ['.env', '.env.local', '.env.production'] for f in files.split('\n')) else sys.exit(0)"
+        language: system
+        pass_filenames: false
+        always_run: true
+
+      # Check for common secret patterns in source files
+      - id: check-secrets-patterns
+        name: Check for API keys and tokens
+        entry: python -c "import sys; import re; content = sys.stdin.read(); patterns = r'(sk-ant-[a-zA-Z0-9]{95,}|AIza[a-zA-Z0-9_-]{35}|xox[a-z]-[a-zA-Z0-9-]{50,}|gho_[a-zA-Z0-9]{36}|ghp_[a-zA-Z0-9]{36}|lsv2_sk_[a-zA-Z0-9]{32})'; match = re.search(patterns, content); sys.exit(1) if match else sys.exit(0)"
+        language: system
+        types: [text]
+        exclude: '^(\.pre-commit-config\.yaml|\.claude/settings\.local\.json|specs/.*-report\.md)$'
+
+  # TruffleHog for secret scanning (if installed)
+  - repo: local
+    hooks:
+      - id: trufflehog
+        name: TruffleHog Secret Scan
+        entry: python -c "import sys; import subprocess; import shutil; sys.exit(0) if not shutil.which('trufflehog') else subprocess.call(['trufflehog', 'git', 'file://.', '--since-commit', 'HEAD', '--only-verified', '--fail'])"
+        language: system
+        pass_filenames: false
+        always_run: true
+
+  # Python code quality
+  - repo: local
+    hooks:
+      - id: ruff
+        name: Ruff Linter
+        entry: python -c "import sys; import subprocess; import shutil; sys.exit(0) if not shutil.which('ruff') else subprocess.call(['ruff', 'check', '.'])"
+        language: system
+        pass_filenames: false
+        always_run: false  # Only run if files changed

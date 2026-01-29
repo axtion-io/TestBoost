@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 TestBoost Contributors
+
 """LangChain BaseTool wrappers for Test Generator MCP tools."""
 
 from typing import Any

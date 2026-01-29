@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 TestBoost Contributors
+
 """
 Maven Maintenance Workflow using DeepAgents LLM framework.
 
@@ -274,11 +277,3 @@ __all__ = [
     # Backward compatibility export
     "_invoke_agent_with_retry",
 ]
-
-
-
-
-
-
-
-

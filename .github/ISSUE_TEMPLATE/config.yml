@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Ask a Question
+    url: https://github.com/axtion-io/TestBoost/discussions
+    about: Please use GitHub Discussions for questions about usage, features, or general inquiries
+  - name: Security Vulnerability
+    url: https://github.com/axtion-io/TestBoost/security/policy
+    about: Please report security issues privately - see SECURITY.md for instructions (DO NOT create a public issue)

@@ -28,7 +28,7 @@ Ce guide vous accompagne pas à pas dans l'utilisation de TestBoost, un outil d'
 ### Étape 1 : Cloner le Repository
 
 ```bash
-git clone https://github.com/cheche71/TestBoost.git
+git clone https://github.com/axtion-io/TestBoost.git
 cd TestBoost
 ```
 
@@ -416,7 +416,7 @@ on:
 jobs:
   maintenance:
     runs-on: ubuntu-latest
-    
+
     services:
       postgres:
         image: postgres:15
@@ -426,20 +426,20 @@ jobs:
           POSTGRES_DB: testboost
         ports:
           - 5433:5432
-    
+
     steps:
       - uses: actions/checkout@v4
-      
+
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      
+
       - name: Install TestBoost
         run: |
           pip install poetry
           poetry install
-      
+
       - name: Run Maintenance
         env:
           DATABASE_URL: postgresql+asyncpg://testboost:testboost@localhost:5433/testboost
@@ -448,7 +448,7 @@ jobs:
         run: |
           poetry run alembic upgrade head
           poetry run python -m src.cli.main maintenance run . --mode autonomous
-      
+
       - name: Create Pull Request
         if: success()
         uses: peter-evans/create-pull-request@v5
@@ -504,18 +504,18 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      
+
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      
+
       - name: Check Impact Coverage
         run: |
           pip install poetry
           poetry install
           poetry run python -m src.cli.main tests impact . --output impact.json
-          
+
           # Fail if business-critical impacts are uncovered
           if jq -e '.uncovered_critical | length > 0' impact.json; then
             echo "ERROR: Uncovered business-critical impacts detected"
@@ -652,6 +652,5 @@ tail -f logs/testboost.log | jq .
 
 ## Support
 
-- GitHub Issues : [github.com/cheche71/TestBoost/issues](https://github.com/cheche71/TestBoost/issues)
+- GitHub Issues : [github.com/axtion-io/TestBoost/issues](https://github.com/axtion-io/TestBoost/issues)
 - Documentation : [docs/](../docs/)
-

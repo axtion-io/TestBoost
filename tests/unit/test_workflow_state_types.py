@@ -12,8 +12,8 @@ import pytest
 from pydantic import ValidationError
 
 from src.workflows.state import (
+    GeneratedTestsStateModel,
     MavenMaintenanceState,
-    TestGenerationStateModel,
     WorkflowStateModel,
 )
 
@@ -201,11 +201,11 @@ class TestApiRouterCompatibility:
 
 
 class TestTestGenerationState:
-    """Tests for TestGenerationStateModel."""
+    """Tests for GeneratedTestsStateModel."""
 
     def test_instantiation(self) -> None:
-        """Test TestGenerationStateModel instantiation."""
-        state = TestGenerationStateModel(
+        """Test GeneratedTestsStateModel instantiation."""
+        state = GeneratedTestsStateModel(
             session_id=uuid.uuid4(),
             project_path="/test/path",
             target_mutation_score=85.0,
@@ -217,7 +217,7 @@ class TestTestGenerationState:
 
     def test_generated_tests_tracking(self) -> None:
         """Test tracking generated tests."""
-        state = TestGenerationStateModel(
+        state = GeneratedTestsStateModel(
             session_id=uuid.uuid4(),
             project_path="/test/path",
         )

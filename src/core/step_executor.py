@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 TestBoost Contributors
+
 """Step executor for running workflow steps.
 
 Bridges the gap between API step management and actual workflow execution.
@@ -11,6 +14,7 @@ Auto-advance logic:
 import asyncio
 import time
 import uuid
+from collections.abc import Awaitable, Callable
 from datetime import datetime
 from typing import Any
 
@@ -407,12 +411,17 @@ class StepExecutor:
             if step_def.get("code") == current_step_code:
                 # Check if there's a next step
                 if i + 1 < len(steps):
-                    return steps[i + 1].get("code")
+                    next_code = steps[i + 1].get("code")
+                    return str(next_code) if next_code else None
                 return None
 
         return None
 
-    def _get_workflow_function(self, session_type: str, step_code: str):
+    def _get_workflow_function(
+        self, session_type: str, step_code: str
+    ) -> Callable[
+        [uuid.UUID, str, AsyncSession, dict[str, Any]], Awaitable[dict[str, Any]]
+    ] | None:
         """Get the workflow function for a step.
 
         Maps session_type + step_code to actual workflow functions.

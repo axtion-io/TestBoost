@@ -13,4 +13,3 @@ datasources:
     jsonData:
       timeInterval: "15s"
       httpMethod: POST
-

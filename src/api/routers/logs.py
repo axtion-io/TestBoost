@@ -97,7 +97,8 @@ def _parse_log_line(line: str) -> dict[str, Any] | None:
         Parsed log dictionary, or None if parsing fails
     """
     try:
-        return json.loads(line.strip())
+        result: dict[str, Any] = json.loads(line.strip())
+        return result
     except (json.JSONDecodeError, AttributeError):
         # Skip non-JSON lines (shouldn't happen with structlog, but defensive)
         return None

@@ -139,7 +139,6 @@ Use this checklist before releases and for QA validation.
 - [ ] Performance acceptable on standard hardware
 - [ ] Documentation reflects current behavior
 
-**Tested by:** _______________  
-**Date:** _______________  
+**Tested by:** _______________
+**Date:** _______________
 **Version:** _______________
-

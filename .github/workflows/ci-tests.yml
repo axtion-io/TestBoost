@@ -77,9 +77,11 @@ jobs:
             --cov=src \
             --cov-report=xml \
             --cov-report=term-missing \
-            --cov-fail-under=20 \
+            --cov-fail-under=33 \
             -v \
             --tb=short \
+            --durations=50 \
+            --durations-min=0.01 \
             --reruns=2 \
             --reruns-delay=1
 
@@ -149,6 +151,8 @@ jobs:
           poetry run pytest tests/integration/ \
             -v \
             --tb=short \
+            --durations=0 \
+            --durations-min=0.1 \
             --reruns=2 \
             --no-cov \
             -m "not slow"
@@ -168,4 +172,3 @@ jobs:
             exit 1
           fi
           echo "All tests passed!"
-

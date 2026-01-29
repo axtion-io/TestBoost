@@ -219,9 +219,19 @@ class TestAnalyzeDependencies:
         """Should extract dependencies from pom.xml."""
         from src.mcp_servers.maven_maintenance.tools.analyze import analyze_dependencies
 
-        # The function parses pom.xml directly, no subprocess needed
-        result_json = await analyze_dependencies(str(temp_project_dir))
-        result = json.loads(result_json)
+        # Mock the subprocess calls to avoid actual Maven execution (which takes 60+ seconds)
+        with patch(
+            "src.mcp_servers.maven_maintenance.tools.analyze._check_dependency_updates",
+            return_value=[],
+        ), patch(
+            "src.mcp_servers.maven_maintenance.tools.analyze._check_vulnerabilities",
+            return_value=[],
+        ), patch(
+            "src.mcp_servers.maven_maintenance.tools.analyze._check_compatibility",
+            return_value=[],
+        ):
+            result_json = await analyze_dependencies(str(temp_project_dir))
+            result = json.loads(result_json)
 
         # Basic pom.xml has no dependencies, but function should succeed
         assert result["success"] is True

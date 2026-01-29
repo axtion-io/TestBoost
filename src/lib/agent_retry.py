@@ -72,7 +72,8 @@ def _extract_ai_message(response: Any) -> AIMessage:
     if isinstance(response, dict) and "messages" in response:
         agent_messages = response["messages"]
         if agent_messages:
-            return agent_messages[-1]
+            last_message: AIMessage = agent_messages[-1]
+            return last_message
         raise AgentInvocationError("Agent returned empty messages list")
     elif isinstance(response, AIMessage):
         return response
@@ -84,7 +85,8 @@ def _get_called_tools(ai_message: AIMessage) -> list[str]:
     """Extract list of called tool names from an AI message."""
     if not hasattr(ai_message, "tool_calls") or not ai_message.tool_calls:
         return []
-    return [tc.get("name") or tc.get("tool") for tc in ai_message.tool_calls]
+    tools = [tc.get("name") or tc.get("tool") for tc in ai_message.tool_calls]
+    return [t for t in tools if t is not None]
 
 
 async def invoke_agent_with_retry(

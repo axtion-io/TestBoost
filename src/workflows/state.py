@@ -156,7 +156,7 @@ class MavenMaintenanceState(WorkflowStateModel):
     maintenance_branch: str | None = None
 
 
-class TestGenerationStateModel(WorkflowStateModel):
+class GeneratedTestsStateModel(WorkflowStateModel):
     """State for test generation workflow."""
 
     # Source analysis
@@ -204,7 +204,7 @@ class DockerDeploymentStateModel(WorkflowStateModel):
 
 # Aliases for backward compatibility
 WorkflowState = WorkflowStateModel
-TestGenerationState = TestGenerationStateModel
+TestGenerationState = GeneratedTestsStateModel
 DockerDeploymentState = DockerDeploymentStateModel
 
 
@@ -365,7 +365,7 @@ __all__ = [
     "WorkflowStateModel",
     "MavenMaintenanceState",
     "TestGenerationState",
-    "TestGenerationStateModel",
+    "GeneratedTestsStateModel",
     "DockerDeploymentState",
     "DockerDeploymentStateModel",
     "create_initial_state",

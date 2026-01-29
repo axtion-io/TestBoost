@@ -204,4 +204,3 @@ Cela permet de visualiser :
 - Les tokens utilisés
 - Les latences détaillées
 - Les erreurs et retries
-

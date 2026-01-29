@@ -253,4 +253,3 @@ docker compose -f docker-compose.yaml -f docker-compose.monitoring.yaml down -v
 - [Prometheus Documentation](https://prometheus.io/docs/)
 - [Grafana Documentation](https://grafana.com/docs/)
 - [Alertmanager Documentation](https://prometheus.io/docs/alerting/latest/alertmanager/)
-

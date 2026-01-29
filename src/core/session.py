@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 TestBoost Contributors
+
 """Session management service for workflow tracking."""
 
 import uuid
@@ -281,10 +284,10 @@ class SessionService:
         for sequence, step_def in enumerate(step_definitions, start=1):
             step = await self.create_step(
                 session_id=session_id,
-                code=step_def["code"],
-                name=step_def["name"],
+                code=str(step_def["code"]),
+                name=str(step_def["name"]),
                 sequence=sequence,
-                inputs={"description": step_def.get("description", "")},
+                inputs={"description": str(step_def.get("description", ""))},
             )
             created_steps.append(step)
 

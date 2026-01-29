@@ -1,0 +1,120 @@
+name: Feature Request
+description: Suggest a new feature or enhancement for TestBoost
+title: "[Feature]: "
+labels: ["enhancement"]
+assignees: []
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for suggesting a feature! Please describe the problem you're trying to solve and your proposed solution.
+
+  - type: textarea
+    id: problem-statement
+    attributes:
+      label: Problem Statement
+      description: What problem does this feature solve? What use case does it address?
+      placeholder: |
+        As a [type of user], I want to [accomplish goal] because [reason].
+
+        Currently, I have to [workaround], which is [difficult/time-consuming/error-prone].
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposed-solution
+    attributes:
+      label: Proposed Solution
+      description: How would you like this feature to work?
+      placeholder: |
+        Describe your ideal solution. Focus on what you want to achieve, not necessarily how to implement it.
+
+        Example: "Add a CLI command that allows..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternative Solutions
+      description: Have you considered any alternative approaches?
+      placeholder: |
+        What other solutions have you thought about?
+        What are the pros and cons of each?
+
+  - type: dropdown
+    id: component
+    attributes:
+      label: Affected Component
+      description: Which part of TestBoost would this feature enhance?
+      multiple: true
+      options:
+        - API Server
+        - CLI
+        - Test Generation Workflow
+        - Maven Maintenance Workflow
+        - Docker Deployment Workflow
+        - Database/PostgreSQL
+        - LLM Integration
+        - MCP Servers
+        - Configuration Management
+        - Documentation
+        - Other
+    validations:
+      required: true
+
+  - type: dropdown
+    id: priority
+    attributes:
+      label: Priority/Impact
+      description: How important is this feature to you?
+      options:
+        - Critical - Blocking my work
+        - High - Would significantly improve my workflow
+        - Medium - Nice to have
+        - Low - Minor improvement
+    validations:
+      required: true
+
+  - type: textarea
+    id: use-cases
+    attributes:
+      label: Use Cases
+      description: Describe specific scenarios where this feature would be useful
+      placeholder: |
+        1. When I need to...
+        2. When working with...
+        3. During the process of...
+
+  - type: textarea
+    id: mockups
+    attributes:
+      label: Mockups/Examples
+      description: If applicable, provide mockups, examples, or references
+      placeholder: |
+        - Link to similar feature in another tool
+        - Code example of how you'd like to use it
+        - Screenshot or diagram
+
+  - type: textarea
+    id: additional-context
+    attributes:
+      label: Additional Context
+      description: Any other information that might help us understand your request
+      placeholder: Related issues, external requirements, etc.
+
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Pre-submission Checklist
+      description: Please verify these items before submitting
+      options:
+        - label: I have searched existing issues and discussions to ensure this hasn't been requested
+          required: true
+        - label: I have described the problem, not just the solution
+          required: true
+        - label: I am willing to help test this feature if implemented
+          required: false
+        - label: I am willing to contribute to implementing this feature
+          required: false

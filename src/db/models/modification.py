@@ -19,7 +19,7 @@ if TYPE_CHECKING:
     from src.db.models.project import Project
 
 
-class ModificationType(str, enum.Enum):
+class ModificationType(enum.StrEnum):
     """Type of modification."""
 
     DEPENDENCY_UPDATE = "dependency_update"
@@ -30,7 +30,7 @@ class ModificationType(str, enum.Enum):
     CONFIG_CHANGE = "config_change"
 
 
-class ModificationStatus(str, enum.Enum):
+class ModificationStatus(enum.StrEnum):
     """Status of the modification."""
 
     PENDING = "pending"

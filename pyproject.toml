@@ -27,6 +27,7 @@ deepagents = "^0.2.7"
 typer = "^0.20"
 httpx = "^0.28"
 structlog = "^25.5"
+greenlet = "^3.3.1"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.2"

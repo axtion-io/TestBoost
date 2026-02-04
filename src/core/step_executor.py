@@ -102,6 +102,9 @@ class StepExecutor:
         )
 
         if run_in_background:
+            # Commit before creating background task to ensure the step exists
+            # in the database when the background task starts with a new session
+            await self.db_session.commit()
             # Create background task with a fresh DB session
             # This avoids DB connection conflicts when the HTTP request completes
             asyncio.create_task(

@@ -301,6 +301,7 @@ async def _generate_tests_directly(
     project_path: str,
     source_files: list[str],
     test_requirements: list[TestRequirement] | None = None,
+    use_llm: bool = True,
 ) -> list[dict[str, Any]]:
     """
     Generate tests directly by calling the generator tool for each source file.
@@ -312,6 +313,8 @@ async def _generate_tests_directly(
         project_path: Path to the Java project
         source_files: List of source files to generate tests for
         test_requirements: Optional test requirements from impact analysis
+        use_llm: If True (default), use LLM for intelligent test generation.
+                 If False, use template-based generation (for CI without LLM).
 
     Returns:
         List of generated test info dicts
@@ -346,6 +349,7 @@ async def _generate_tests_directly(
                 project_path=project_path,
                 source_file=source_file,
                 test_requirements=file_requirements,
+                use_llm=use_llm,
             )
 
             result = json.loads(result_json)

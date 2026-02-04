@@ -2,7 +2,7 @@
 
 import uuid
 from datetime import datetime
-from enum import Enum
+from enum import StrEnum
 from typing import Any
 
 from sqlalchemy import DateTime, ForeignKey, Index, Integer, String, Text
@@ -12,7 +12,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from src.db.base import Base
 
 
-class StepStatus(str, Enum):
+class StepStatus(StrEnum):
     """Step status enumeration."""
 
     PENDING = "pending"

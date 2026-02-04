@@ -5,11 +5,11 @@ risk classification, and test requirements.
 """
 
 from dataclasses import dataclass, field
-from enum import Enum
+from enum import StrEnum
 from typing import Any
 
 
-class ChangeCategory(str, Enum):
+class ChangeCategory(StrEnum):
     """Classification of code change types per FR-002."""
 
     BUSINESS_RULE = "business_rule"  # Service logic, domain rules
@@ -23,14 +23,14 @@ class ChangeCategory(str, Enum):
     OTHER = "other"  # Unclassified changes
 
 
-class RiskLevel(str, Enum):
+class RiskLevel(StrEnum):
     """Risk classification per FR-004."""
 
     BUSINESS_CRITICAL = "business_critical"  # Payment, auth, security
     NON_CRITICAL = "non_critical"  # Logging, formatting, docs
 
 
-class PyramidLevel(str, Enum):
+class PyramidLevel(StrEnum):
     """Test level selection per FR-005 (test pyramid)."""
 
     UNIT = "unit"  # JUnit, pure logic
@@ -44,7 +44,7 @@ class PyramidLevel(str, Enum):
 TestKind = PyramidLevel
 
 
-class ScenarioType(str, Enum):
+class ScenarioType(StrEnum):
     """Test scenario classification per FR-006/007/008."""
 
     NOMINAL = "nominal"  # Happy path (FR-006)

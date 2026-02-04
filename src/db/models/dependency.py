@@ -19,7 +19,7 @@ if TYPE_CHECKING:
     from src.db.models.project import Project
 
 
-class DependencyScope(str, enum.Enum):
+class DependencyScope(enum.StrEnum):
     """Maven dependency scope."""
 
     COMPILE = "compile"
@@ -30,7 +30,7 @@ class DependencyScope(str, enum.Enum):
     IMPORT = "import"
 
 
-class UpdateStatus(str, enum.Enum):
+class UpdateStatus(enum.StrEnum):
     """Status of dependency update."""
 
     CURRENT = "current"

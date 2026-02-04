@@ -2,7 +2,7 @@
 
 import uuid
 from datetime import datetime
-from enum import Enum
+from enum import StrEnum
 from typing import Any
 
 from sqlalchemy import DateTime, Index, String, Text
@@ -12,7 +12,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from src.db.base import Base
 
 
-class SessionStatus(str, Enum):
+class SessionStatus(StrEnum):
     """Session status enumeration."""
 
     PENDING = "pending"
@@ -23,7 +23,7 @@ class SessionStatus(str, Enum):
     CANCELLED = "cancelled"
 
 
-class SessionType(str, Enum):
+class SessionType(StrEnum):
     """Session type enumeration."""
 
     MAVEN_MAINTENANCE = "maven_maintenance"
@@ -31,7 +31,7 @@ class SessionType(str, Enum):
     DOCKER_DEPLOYMENT = "docker_deployment"
 
 
-class SessionMode(str, Enum):
+class SessionMode(StrEnum):
     """Execution mode enumeration."""
 
     INTERACTIVE = "interactive"

@@ -31,6 +31,20 @@ async def db_session():
     session.rollback = AsyncMock()
     session.close = AsyncMock()
 
+    # Mock execute to return proper SQLAlchemy Result structure
+    mock_scalars = MagicMock()
+    mock_scalars.all = MagicMock(return_value=[])
+    mock_scalars.first = MagicMock(return_value=None)
+    mock_scalars.one = MagicMock(return_value=None)
+    mock_scalars.one_or_none = MagicMock(return_value=None)
+
+    mock_result = MagicMock()
+    mock_result.scalars = MagicMock(return_value=mock_scalars)
+    mock_result.scalar_one_or_none = MagicMock(return_value=None)
+    mock_result.scalar = MagicMock(return_value=None)
+
+    session.execute = AsyncMock(return_value=mock_result)
+
     yield session
 
     # Rollback any changes

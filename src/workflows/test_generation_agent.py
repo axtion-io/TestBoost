@@ -745,13 +745,26 @@ async def _compile_with_auto_correction(
         logger.warning("test_compilation_failed", test_path=test_path, attempt=attempt, errors=errors)
 
         # Store compilation error artifact
+        # Write file to disk FIRST (critical for artifact retrieval)
+        file_path = f"artifacts/{session_id}/compilation_errors/{Path(test_path).stem}_{attempt}.json"
+        path = Path(file_path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+
+        error_content = json.dumps(errors, indent=2)
+        path.write_text(error_content, encoding="utf-8")
+
+        # Calculate actual file size
+        size_bytes = path.stat().st_size
+
+        # Create database record AFTER file exists
         await artifact_repo.create(
             session_id=session_id,
             name=f"compilation_error_{Path(test_path).stem}_attempt_{attempt}",
             artifact_type="compilation_error",
             content_type="application/json",
-            file_path=f"artifacts/{session_id}/compilation_errors/{Path(test_path).stem}_{attempt}.json",
-            size_bytes=len(json.dumps(errors)),
+            file_path=file_path,
+            size_bytes=size_bytes,
+            file_format="json",  # T078: JSON format for errors (changed from txt)
         )
 
         # If max attempts reached, return failure
@@ -812,10 +825,10 @@ Please fix these compilation errors while maintaining test logic and coverage.""
 
 def _check_test_syntax(test_content: str) -> dict[str, Any]:
     """
-    Basic syntax validation for Java test files.
+    Comprehensive syntax validation for Java test files.
 
-    In production, this would call Maven/Gradle to compile.
-    For now, checks basic Java syntax patterns.
+    Uses advanced Java syntax validation to detect common issues like
+    unbalanced braces, incomplete statements, and malformed methods.
 
     Args:
         test_content: Java test content
@@ -831,9 +844,10 @@ def _check_test_syntax(test_content: str) -> dict[str, Any]:
     if "@Test" not in test_content and "@ParameterizedTest" not in test_content:
         errors.append({"line": 0, "message": "No test methods found"})
 
-    # Check for balanced braces
-    if test_content.count("{") != test_content.count("}"):
-        errors.append({"line": 0, "message": "Unbalanced braces"})
+    # Advanced syntax validation (detects truncation, unbalanced braces, incomplete statements)
+    is_valid, error_msg = _validate_java_syntax(test_content)
+    if not is_valid:
+        errors.append({"line": 0, "message": error_msg})
 
     return {"success": len(errors) == 0, "errors": errors}
 
@@ -902,13 +916,74 @@ def _extract_generated_tests(response: dict[str, Any] | AIMessage) -> list[dict[
     return tests
 
 
+def _validate_java_syntax(code: str) -> tuple[bool, str | None]:
+    """
+    Validate Java code syntax for common truncation issues.
+
+    Args:
+        code: Java source code to validate
+
+    Returns:
+        Tuple of (is_valid, error_message)
+    """
+    # Check 1: Balanced braces
+    open_braces = code.count("{")
+    close_braces = code.count("}")
+    if open_braces != close_braces:
+        return False, f"Unbalanced braces: {open_braces} open, {close_braces} close"
+
+    # Check 2: Balanced parentheses
+    open_parens = code.count("(")
+    close_parens = code.count(")")
+    if open_parens != close_parens:
+        return False, f"Unbalanced parentheses: {open_parens} open, {close_parens} close"
+
+    # Check 3: Class declaration is closed
+    if "class " in code and not code.rstrip().endswith("}"):
+        return False, "Class declaration not properly closed (missing final })"
+
+    # Check 4: No incomplete statements at end (common truncation pattern)
+    last_line = code.strip().split("\n")[-1].strip()
+    incomplete_patterns = [
+        "assertThrows(",  # Incomplete assertThrows
+        "assertEquals(",  # Incomplete assertion
+        "assertTrue(",
+        "assertFalse(",
+        "assertNotNull(",
+        "verify(",  # Incomplete Mockito verify
+        "when(",  # Incomplete Mockito when
+        "throws ",  # Incomplete throws clause
+        "= ",  # Incomplete assignment
+    ]
+    for pattern in incomplete_patterns:
+        if last_line.endswith(pattern) or (pattern in last_line and not last_line.endswith(";")):
+            return False, f"Incomplete statement detected at end: '{last_line[:50]}...'"
+
+    # Check 5: Method declarations have opening brace
+    import re
+    method_pattern = r'(@Test|@BeforeEach|@AfterEach|@ParameterizedTest)\s*\n\s*(?:public|private|protected)?\s*\w+\s+\w+\s*\([^)]*\)'
+    for match in re.finditer(method_pattern, code):
+        # Find if there's a '{' after the method declaration within next 100 chars
+        snippet = code[match.end():match.end() + 100]
+        if '{' not in snippet:
+            return False, f"Test method missing opening brace: {match.group()[:50]}"
+
+    return True, None
+
+
 def _is_valid_test_code(code: str) -> bool:
     """Check if code is valid Java test code."""
-    return (
-        "class " in code
-        and ("@Test" in code or "@ParameterizedTest" in code)
-        and len(code) > 100  # Minimum reasonable test size
-    )
+    # Basic content checks
+    if not ("class " in code and ("@Test" in code or "@ParameterizedTest" in code) and len(code) > 100):
+        return False
+
+    # Syntax validation
+    is_valid, error = _validate_java_syntax(code)
+    if not is_valid:
+        logger.warning("invalid_java_syntax", error=error, code_length=len(code))
+        return False
+
+    return True
 
 
 def _extract_test_info(code: str) -> dict[str, Any] | None:
@@ -1159,16 +1234,29 @@ async def _store_agent_reasoning(
         "timestamp": time.time(),
     }
 
+    # Write file to disk FIRST (critical for artifact retrieval)
+    file_path = f"artifacts/{session_id}/reasoning/{agent_name}.json"
+    path = Path(file_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+
+    content_json = json.dumps(reasoning_content, indent=2)
+    path.write_text(content_json, encoding="utf-8")
+
+    # Calculate actual file size
+    size_bytes = path.stat().st_size
+
+    # Create database record AFTER file exists
     await artifact_repo.create(
         session_id=session_id,
         name=f"agent_reasoning_{agent_name}",
         artifact_type="agent_reasoning",
         content_type="application/json",
-        file_path=f"artifacts/{session_id}/reasoning/{agent_name}.json",
-        size_bytes=len(json.dumps(reasoning_content)),
+        file_path=file_path,
+        size_bytes=size_bytes,
+        file_format="json",  # T079: JSON format for agent reasoning
     )
 
-    logger.debug("agent_reasoning_stored", session_id=str(session_id))
+    logger.debug("agent_reasoning_stored", session_id=str(session_id), file_path=file_path)
 
 
 async def _store_tool_calls(
@@ -1184,13 +1272,26 @@ async def _store_tool_calls(
             "timestamp": time.time(),
         }
 
+        # Write file to disk FIRST (critical for artifact retrieval)
+        file_path = f"artifacts/{session_id}/tool_calls/call_{i}.json"
+        path = Path(file_path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+
+        content_json = json.dumps(tool_content, indent=2)
+        path.write_text(content_json, encoding="utf-8")
+
+        # Calculate actual file size
+        size_bytes = path.stat().st_size
+
+        # Create database record AFTER file exists
         await artifact_repo.create(
             session_id=session_id,
             name=f"tool_call_{i}_{tool_content['tool_name']}",
             artifact_type="llm_tool_call",
             content_type="application/json",
-            file_path=f"artifacts/{session_id}/tool_calls/call_{i}.json",
-            size_bytes=len(json.dumps(tool_content)),
+            file_path=file_path,
+            size_bytes=size_bytes,
+            file_format="json",  # T079: JSON format for tool calls
         )
 
     logger.debug("tool_calls_stored", session_id=str(session_id), count=len(tool_calls))
@@ -1243,15 +1344,26 @@ async def _store_test_file_artifacts(
             "diff": diff,
         }
 
-        # Create artifact
+        # Write file to disk FIRST (critical for artifact retrieval)
+        artifact_file_path = f"artifacts/{session_id}/tests/{Path(file_path).name}"
+        artifact_path = Path(artifact_file_path)
+        artifact_path.parent.mkdir(parents=True, exist_ok=True)
+
+        artifact_path.write_text(content, encoding="utf-8")
+
+        # Calculate actual file size
+        size_bytes = artifact_path.stat().st_size
+
+        # Create database record AFTER file exists
         await artifact_repo.create(
             session_id=session_id,
             name=f"test_file_{Path(file_path).stem}",
             artifact_type="file_modification",
             content_type="text/x-java",
-            file_path=f"artifacts/{session_id}/tests/{Path(file_path).name}",
-            size_bytes=len(content),
+            file_path=artifact_file_path,
+            size_bytes=size_bytes,
             artifact_metadata=metadata,
+            file_format="java",  # T077: Java source files
         )
 
     logger.info(
@@ -1272,16 +1384,29 @@ async def _store_generation_metrics(
         "timestamp": time.time(),
     }
 
+    # Write file to disk FIRST (critical for artifact retrieval)
+    file_path = f"artifacts/{session_id}/metrics/generation_metrics.json"
+    path = Path(file_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+
+    content_json = json.dumps(metrics_content, indent=2)
+    path.write_text(content_json, encoding="utf-8")
+
+    # Calculate actual file size
+    size_bytes = path.stat().st_size
+
+    # Create database record AFTER file exists
     await artifact_repo.create(
         session_id=session_id,
         name="generation_metrics",
         artifact_type="generation_metrics",
         content_type="application/json",
-        file_path=f"artifacts/{session_id}/metrics/generation_metrics.json",
-        size_bytes=len(json.dumps(metrics_content)),
+        file_path=file_path,
+        size_bytes=size_bytes,
+        file_format="json",  # T079: JSON format for metrics
     )
 
-    logger.debug("generation_metrics_stored", session_id=str(session_id))
+    logger.debug("generation_metrics_stored", session_id=str(session_id), file_path=file_path)
 
 
 async def _store_llm_metrics(
@@ -1317,16 +1442,29 @@ async def _store_llm_metrics(
         "timestamp": time.time(),
     }
 
+    # Write file to disk FIRST (critical for artifact retrieval)
+    file_path = f"artifacts/{session_id}/metrics/llm_metrics.json"
+    path = Path(file_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+
+    content_json = json.dumps(metrics_content, indent=2)
+    path.write_text(content_json, encoding="utf-8")
+
+    # Calculate actual file size
+    size_bytes = path.stat().st_size
+
+    # Create database record AFTER file exists
     await artifact_repo.create(
         session_id=session_id,
         name="llm_metrics",
         artifact_type="llm_metrics",
         content_type="application/json",
-        file_path=f"artifacts/{session_id}/metrics/llm_metrics.json",
-        size_bytes=len(json.dumps(metrics_content)),
+        file_path=file_path,
+        size_bytes=size_bytes,
+        file_format="json",  # T079: JSON format for LLM metrics
     )
 
-    logger.debug("llm_metrics_stored", session_id=str(session_id))
+    logger.debug("llm_metrics_stored", session_id=str(session_id), file_path=file_path)
 
 
 async def _run_test_feedback_loop(
@@ -1420,13 +1558,26 @@ async def _run_test_feedback_loop(
         )
 
         # Store failure artifact
+        # Write file to disk FIRST (critical for artifact retrieval)
+        file_path = f"artifacts/{session_id}/test_failures/iteration_{iteration}.json"
+        path = Path(file_path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+
+        failures_content = json.dumps(failures, indent=2)
+        path.write_text(failures_content, encoding="utf-8")
+
+        # Calculate actual file size
+        size_bytes = path.stat().st_size
+
+        # Create database record AFTER file exists
         await artifact_repo.create(
             session_id=session_id,
             name=f"test_failures_iteration_{iteration}",
             artifact_type="test_failure",
             content_type="application/json",
-            file_path=f"artifacts/{session_id}/test_failures/iteration_{iteration}.json",
-            size_bytes=len(json.dumps(failures)),
+            file_path=file_path,
+            size_bytes=size_bytes,
+            file_format="json",  # T079: JSON format for test failures
         )
 
         # Step 3: Ask agent to fix failures
@@ -1743,6 +1894,41 @@ def _categorize_jpa_error(error_msg: str) -> dict[str, Any] | None:
     return None
 
 
+def _find_source_file_for_test(test_path: str, project_path: str) -> str | None:
+    """
+    Find the source file corresponding to a test file.
+
+    Args:
+        test_path: Path to test file (e.g., src/test/java/com/example/FooTest.java)
+        project_path: Project root path
+
+    Returns:
+        Path to source file or None if not found
+    """
+    from pathlib import Path
+
+    # Extract class name from test path
+    test_file = Path(test_path)
+    test_class_name = test_file.stem  # e.g., "FooTest"
+
+    # Remove "Test" suffix to get source class name
+    if test_class_name.endswith("Test"):
+        source_class_name = test_class_name[:-4]  # "Foo"
+    else:
+        source_class_name = test_class_name
+
+    # Convert test path to source path
+    # src/test/java/com/example/FooTest.java -> src/main/java/com/example/Foo.java
+    source_path = test_path.replace("/test/", "/main/").replace("\\test\\", "\\main\\")
+    source_path = source_path.replace(test_class_name + ".java", source_class_name + ".java")
+
+    full_source_path = Path(project_path) / source_path
+    if full_source_path.exists():
+        return str(full_source_path.relative_to(project_path))
+
+    return None
+
+
 def _build_fix_prompt(
     failures: list[dict[str, Any]],
     current_tests: dict[str, str],
@@ -1759,18 +1945,30 @@ def _build_fix_prompt(
     Returns:
         Prompt string for the agent
     """
+    from pathlib import Path
+
+    # Limit number of failures to avoid context overflow
+    MAX_FAILURES_IN_PROMPT = 20
+    failures_to_show = failures[:MAX_FAILURES_IN_PROMPT]
+    has_more_failures = len(failures) > MAX_FAILURES_IN_PROMPT
+
     prompt = f"""The following tests have failures that need to be fixed.
 
 ## Project: {project_path}
 
-## Failures:
+## Failures{f' (showing {MAX_FAILURES_IN_PROMPT} of {len(failures)})' if has_more_failures else ''}:
 """
 
-    for i, failure in enumerate(failures, 1):
+    for i, failure in enumerate(failures_to_show, 1):
         prompt += f"\n### Failure {i}:\n"
         if failure.get("type") == "compilation":
+            # Truncate very long error messages
+            error_msg = failure.get('error', '')
+            if len(error_msg) > 500:
+                error_msg = error_msg[:500] + "... (truncated)"
+
             prompt += f"**Compilation Error** in `{failure.get('file')}` line {failure.get('line')}:\n"
-            prompt += f"```\n{failure.get('error')}\n```\n"
+            prompt += f"```\n{error_msg}\n```\n"
             # Include JPA-specific fix suggestion if available
             jpa_error = failure.get("jpa_error")
             if jpa_error:
@@ -1780,10 +1978,45 @@ def _build_fix_prompt(
                 if jpa_error.get("import_needed"):
                     prompt += f"- Required import: `{jpa_error['import_needed']}`\n"
         elif failure.get("method"):
+            # Truncate long error messages
+            error_msg = failure.get('error', '')
+            if len(error_msg) > 300:
+                error_msg = error_msg[:300] + "... (truncated)"
+
             prompt += f"**Test**: `{failure.get('class')}.{failure.get('method')}()`\n"
-            prompt += f"**Error**: {failure.get('error')}\n"
+            prompt += f"**Error**: {error_msg}\n"
         else:
-            prompt += f"**Error**: {failure.get('error')}\n"
+            # Truncate generic errors
+            error_msg = failure.get('error', '')
+            if len(error_msg) > 300:
+                error_msg = error_msg[:300] + "... (truncated)"
+            prompt += f"**Error**: {error_msg}\n"
+
+    if has_more_failures:
+        prompt += f"\n_Note: {len(failures) - MAX_FAILURES_IN_PROMPT} additional failures not shown. Fix the above first._\n"
+
+    # Add source code context
+    prompt += "\n## Source Code Context:\n"
+    prompt += "\nHere are the actual implementations of the classes being tested:\n"
+
+    source_files_added = set()
+    project_dir = Path(project_path)
+
+    for test_path in current_tests:
+        source_path = _find_source_file_for_test(test_path, project_path)
+        if source_path and source_path not in source_files_added:
+            try:
+                full_source_path = project_dir / source_path
+                if full_source_path.exists():
+                    source_content = full_source_path.read_text(encoding="utf-8")
+                    # Limit source code to avoid context overflow (max 500 lines)
+                    lines = source_content.split("\n")
+                    if len(lines) > 500:
+                        source_content = "\n".join(lines[:500]) + "\n... (truncated)"
+                    prompt += f"\n### {source_path}\n```java\n{source_content}\n```\n"
+                    source_files_added.add(source_path)
+            except Exception as e:
+                logger.debug("source_file_read_error", path=source_path, error=str(e))
 
     prompt += "\n## Current Test Files:\n"
 

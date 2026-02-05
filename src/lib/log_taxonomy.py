@@ -4,10 +4,10 @@ This module defines the semantic categories and severity levels used for
 intelligent log classification and filtering.
 """
 
-from enum import Enum
+from enum import StrEnum
 
 
-class LogCategory(str, Enum):
+class LogCategory(StrEnum):
     """Semantic categories for log classification.
 
     Categories represent the domain or purpose of the log event:
@@ -25,7 +25,7 @@ class LogCategory(str, Enum):
     AUDIT = "audit"
 
 
-class LogSeverity(str, Enum):
+class LogSeverity(StrEnum):
     """Log severity levels (log4j-style).
 
     Levels indicate the importance/urgency of the log event:

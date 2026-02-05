@@ -374,3 +374,77 @@ public class OrderService {
     // ...
 }
 ```
+
+## Artifact Storage Pattern
+
+### Write-Before-Register Pattern
+
+**Critical requirement**: All workflow artifacts (test failures, metrics, compilation errors, agent reasoning) must be written to disk BEFORE creating database records.
+
+#### Correct Pattern
+
+```python
+# 1. Write file to disk FIRST
+file_path = f"artifacts/{session_id}/metrics/file.json"
+path = Path(file_path)
+path.parent.mkdir(parents=True, exist_ok=True)
+path.write_text(json.dumps(content, indent=2), encoding="utf-8")
+
+# 2. Calculate actual file size
+size_bytes = path.stat().st_size
+
+# 3. Create database record AFTER file exists
+await artifact_repo.create(
+    session_id=session_id,
+    name="artifact_name",
+    artifact_type="artifact_type",
+    file_path=file_path,
+    size_bytes=size_bytes,
+)
+```
+
+#### Anti-Pattern (Bug)
+
+```python
+# ❌ WRONG: Creating DB record without writing file
+await artifact_repo.create(
+    file_path=f"artifacts/{session_id}/metrics/file.json",
+    size_bytes=len(json.dumps(content)),  # calculated but not written!
+)
+# Result: 404 errors when retrieving artifact content
+```
+
+### Why This Matters
+
+The `ArtifactRepository.create()` method only creates database records—it does NOT write files. The workflow code is responsible for:
+
+1. Creating the directory structure (`mkdir -p`)
+2. Writing the file content to disk
+3. Getting the actual file size (not estimated)
+4. Creating the database record with the correct path and size
+
+### Locations Using This Pattern
+
+All artifact storage in `test_generation_agent.py`:
+- `_store_generation_metrics()` - Test generation summary
+- `_store_llm_metrics()` - LLM usage statistics
+- `_store_agent_reasoning()` - Agent decision logs
+- `_store_tool_calls()` - MCP tool invocation history
+- `_store_test_file_artifacts()` - Generated test files
+- Compilation error storage - Compiler output
+- Test failure storage - Test execution results
+
+### Verification
+
+To verify artifacts are properly stored:
+
+```bash
+# Check DB records exist
+curl http://localhost:8000/api/v2/sessions/{id}/artifacts
+
+# Check files exist on disk
+ls -la artifacts/{session_id}/
+
+# Test retrieval (should NOT return 404)
+curl http://localhost:8000/api/v2/sessions/{id}/artifacts/{artifact_id}/content
+```

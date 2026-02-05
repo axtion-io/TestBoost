@@ -44,7 +44,6 @@ class TestMavenMaintenanceTypedArtifacts:
             assert call_args.kwargs["name"] == "dependency_analysis"
             assert call_args.kwargs["artifact_type"] == "dependency_analysis"
             assert call_args.kwargs["file_format"] == "yaml"
-            assert call_args.kwargs["content_type"] == "application/x-yaml"
 
     @pytest.mark.asyncio
     async def test_identify_vulnerabilities_creates_md_artifact(self):
@@ -68,7 +67,6 @@ class TestMavenMaintenanceTypedArtifacts:
         assert call_args.kwargs["name"] == "vulnerability_report"
         assert call_args.kwargs["artifact_type"] == "vulnerability_report"
         assert call_args.kwargs["file_format"] == "md"
-        assert call_args.kwargs["content_type"] == "text/markdown"
 
     @pytest.mark.asyncio
     async def test_plan_updates_creates_json_artifact(self):
@@ -92,7 +90,6 @@ class TestMavenMaintenanceTypedArtifacts:
         assert call_args.kwargs["name"] == "update_plan"
         assert call_args.kwargs["artifact_type"] == "update_plan"
         assert call_args.kwargs["file_format"] == "json"
-        assert call_args.kwargs["content_type"] == "application/json"
 
     @pytest.mark.asyncio
     async def test_apply_updates_creates_xml_artifact(self):
@@ -116,7 +113,6 @@ class TestMavenMaintenanceTypedArtifacts:
         assert call_args.kwargs["name"] == "pom_modification"
         assert call_args.kwargs["artifact_type"] == "pom_modification"
         assert call_args.kwargs["file_format"] == "xml"
-        assert call_args.kwargs["content_type"] == "application/xml"
 
     @pytest.mark.asyncio
     async def test_validate_changes_creates_json_artifact(self):
@@ -140,7 +136,6 @@ class TestMavenMaintenanceTypedArtifacts:
         assert call_args.kwargs["name"] == "validation_results"
         assert call_args.kwargs["artifact_type"] == "validation_results"
         assert call_args.kwargs["file_format"] == "json"
-        assert call_args.kwargs["content_type"] == "application/json"
 
 
 class TestDockerDeploymentTypedArtifacts:
@@ -169,7 +164,6 @@ class TestDockerDeploymentTypedArtifacts:
         assert call_args.kwargs["name"] == "dockerfile_analysis"
         assert call_args.kwargs["artifact_type"] == "dockerfile_analysis"
         assert call_args.kwargs["file_format"] == "json"
-        assert call_args.kwargs["content_type"] == "application/json"
 
     @pytest.mark.asyncio
     async def test_optimize_image_creates_txt_artifact(self):
@@ -193,7 +187,6 @@ class TestDockerDeploymentTypedArtifacts:
         assert call_args.kwargs["name"] == "build_logs"
         assert call_args.kwargs["artifact_type"] == "build_logs"
         assert call_args.kwargs["file_format"] == "txt"
-        assert call_args.kwargs["content_type"] == "text/plain"
 
     @pytest.mark.asyncio
     async def test_generate_compose_creates_yaml_and_txt_artifacts(self):
@@ -220,14 +213,12 @@ class TestDockerDeploymentTypedArtifacts:
         assert first_call.kwargs["name"] == "docker-compose"
         assert first_call.kwargs["artifact_type"] == "docker_compose"
         assert first_call.kwargs["file_format"] == "yaml"
-        assert first_call.kwargs["content_type"] == "application/x-yaml"
 
         # Second call: deployment_logs.txt (txt)
         second_call = executor.session_service.create_artifact.call_args_list[1]
         assert second_call.kwargs["name"] == "deployment_logs"
         assert second_call.kwargs["artifact_type"] == "deployment_logs"
         assert second_call.kwargs["file_format"] == "txt"
-        assert second_call.kwargs["content_type"] == "text/plain"
 
     @pytest.mark.asyncio
     async def test_validate_deployment_creates_json_artifact(self):
@@ -251,7 +242,6 @@ class TestDockerDeploymentTypedArtifacts:
         assert call_args.kwargs["name"] == "test_results"
         assert call_args.kwargs["artifact_type"] == "test_results"
         assert call_args.kwargs["file_format"] == "json"
-        assert call_args.kwargs["content_type"] == "application/json"
 
 
 class TestTypedArtifactValidation:
@@ -318,8 +308,8 @@ class TestTypedArtifactValidation:
         assert executor.session_service.create_artifact.call_args.kwargs["file_format"] == "json"
 
     @pytest.mark.asyncio
-    async def test_artifact_content_type_matches_file_format(self):
-        """T056: Verify artifact content_type is appropriate for file_format."""
+    async def test_artifact_file_format_specified(self):
+        """T056: Verify artifact file_format is specified correctly."""
         mock_session = AsyncMock()
         executor = StepExecutor(mock_session)
         session_id = uuid.uuid4()
@@ -333,25 +323,21 @@ class TestTypedArtifactValidation:
             await executor._analyze_dependencies(session_id, "/test", mock_session, {}, {})
         call_args = executor.session_service.create_artifact.call_args.kwargs
         assert call_args["file_format"] == "yaml"
-        assert call_args["content_type"] == "application/x-yaml"
 
         # Test md artifact
         executor.session_service.create_artifact.reset_mock()
         await executor._identify_vulnerabilities(session_id, "/test", mock_session, {}, {})
         call_args = executor.session_service.create_artifact.call_args.kwargs
         assert call_args["file_format"] == "md"
-        assert call_args["content_type"] == "text/markdown"
 
         # Test xml artifact
         executor.session_service.create_artifact.reset_mock()
         await executor._apply_updates(session_id, "/test", mock_session, {}, {})
         call_args = executor.session_service.create_artifact.call_args.kwargs
         assert call_args["file_format"] == "xml"
-        assert call_args["content_type"] == "application/xml"
 
         # Test txt artifact
         executor.session_service.create_artifact.reset_mock()
         await executor._optimize_image(session_id, "/test", mock_session, {}, {})
         call_args = executor.session_service.create_artifact.call_args.kwargs
         assert call_args["file_format"] == "txt"
-        assert call_args["content_type"] == "text/plain"

@@ -156,6 +156,53 @@ class StepExecutor:
                     error=str(e),
                 )
 
+    async def _build_previous_outputs(
+        self,
+        session_id: uuid.UUID,
+    ) -> dict[str, dict[str, Any]]:
+        """Build previous_outputs dict from completed steps.
+
+        Retrieves all completed steps for the session and builds a dictionary
+        mapping step codes to their outputs.
+
+        Args:
+            session_id: Session UUID
+
+        Returns:
+            Dictionary mapping step codes to outputs.
+            Example:
+            {
+                "analyze_project": {"source_files": [...], "file_count": 250},
+                "identify_coverage_gaps": {"files_needing_tests": 10, ...}
+            }
+
+        Notes:
+            - Only includes steps with status="completed"
+            - Only includes steps that have outputs (Step.outputs is not None)
+            - Returns empty dict if no completed steps with outputs
+        """
+        # Get all completed steps
+        completed_steps = await self.session_service.get_steps(
+            session_id=session_id,
+            status=StepStatus.COMPLETED.value
+        )
+
+        # Build mapping: step_code -> outputs
+        previous_outputs: dict[str, dict[str, Any]] = {}
+        for step in completed_steps:
+            if step.outputs:  # Only include steps with outputs
+                previous_outputs[step.code] = step.outputs
+
+        # Log for debugging
+        logger.debug(
+            "built_previous_outputs",
+            session_id=str(session_id),
+            step_count=len(previous_outputs),
+            step_codes=list(previous_outputs.keys()),
+        )
+
+        return previous_outputs
+
     async def _execute_step_async(
         self,
         session_id: uuid.UUID,
@@ -210,6 +257,9 @@ class StepExecutor:
 
                 return {"status": "completed", "outputs": outputs}
 
+            # Build previous_outputs dict from completed steps
+            previous_outputs = await self._build_previous_outputs(session_id)
+
             # Execute the workflow function
             session = await self.session_service.get_session(session_id)
             result = await workflow_fn(
@@ -217,6 +267,7 @@ class StepExecutor:
                 project_path=session.project_path if session else "",
                 db_session=self.db_session,
                 inputs=inputs or {},
+                previous_outputs=previous_outputs,
             )
 
             # Mark step as completed
@@ -423,11 +474,18 @@ class StepExecutor:
     def _get_workflow_function(
         self, session_type: str, step_code: str
     ) -> Callable[
-        [uuid.UUID, str, AsyncSession, dict[str, Any]], Awaitable[dict[str, Any]]
+        [uuid.UUID, str, AsyncSession, dict[str, Any], dict[str, Any]], Awaitable[dict[str, Any]]
     ] | None:
         """Get the workflow function for a step.
 
         Maps session_type + step_code to actual workflow functions.
+
+        All workflow functions must accept 5 parameters:
+        1. session_id: uuid.UUID
+        2. project_path: str
+        3. db_session: AsyncSession
+        4. inputs: dict[str, Any]
+        5. previous_outputs: dict[str, Any]  # NEW: outputs from previous steps
 
         Args:
             session_type: Session type (maven_maintenance, test_generation, docker_deployment)
@@ -473,8 +531,20 @@ class StepExecutor:
         project_path: str,
         db_session: AsyncSession,
         inputs: dict[str, Any],
+        previous_outputs: dict[str, Any],
     ) -> dict[str, Any]:
-        """Analyze project structure for test generation."""
+        """Analyze project structure for test generation.
+
+        Args:
+            session_id: Session UUID
+            project_path: Project root path
+            db_session: Database session
+            inputs: Current step inputs
+            previous_outputs: Outputs from previously completed steps
+
+        Returns:
+            Analysis results with source files
+        """
         from src.workflows.test_generation_agent import _find_source_files
 
         source_files = _find_source_files(project_path)
@@ -491,12 +561,43 @@ class StepExecutor:
         project_path: str,
         db_session: AsyncSession,
         inputs: dict[str, Any],
+        previous_outputs: dict[str, Any],
     ) -> dict[str, Any]:
-        """Identify coverage gaps in the project."""
-        # Get source files from previous step or re-analyze
+        """Identify coverage gaps in the project.
+
+        Args:
+            session_id: Session UUID
+            project_path: Project root path
+            db_session: Database session
+            inputs: Current step inputs
+            previous_outputs: Outputs from previously completed steps
+
+        Returns:
+            Coverage gaps analysis
+        """
+        from src.lib.logging import log_data_source_decision
         from src.workflows.test_generation_agent import _find_source_files
 
-        source_files = _find_source_files(project_path)
+        # Try to reuse previous step outputs
+        analyze_outputs = previous_outputs.get("analyze_project", {})
+        source_files = analyze_outputs.get("source_files")
+
+        if source_files:
+            # REUSE: Log decision and use previous outputs
+            log_data_source_decision(
+                step_code="identify_coverage_gaps",
+                data_source="previous_outputs",
+                reason=f"source_files found in previous step outputs ({len(source_files)} files)",
+                reused_from_step="analyze_project"
+            )
+        else:
+            # FALLBACK: Log decision and re-analyze
+            log_data_source_decision(
+                step_code="identify_coverage_gaps",
+                data_source="fresh_compute",
+                reason="source_files not found in previous_outputs"
+            )
+            source_files = _find_source_files(project_path)
 
         # In a full implementation, would run coverage analysis here
         # For now, return all source files as needing tests
@@ -511,15 +612,53 @@ class StepExecutor:
         project_path: str,
         db_session: AsyncSession,
         inputs: dict[str, Any],
+        previous_outputs: dict[str, Any],
     ) -> dict[str, Any]:
-        """Generate tests for the project."""
+        """Generate tests for the project.
+
+        Args:
+            session_id: Session UUID
+            project_path: Project root path
+            db_session: Database session
+            inputs: Current step inputs
+            previous_outputs: Outputs from previously completed steps
+
+        Returns:
+            Test generation results
+        """
+        from src.lib.logging import log_data_source_decision
         from src.workflows.test_generation_agent import run_test_generation_with_agent
+
+        # Try to reuse coverage gaps from previous step
+        coverage_gaps_outputs = previous_outputs.get("identify_coverage_gaps", {})
+        coverage_gaps = coverage_gaps_outputs.get("coverage_gaps")
+
+        if coverage_gaps:
+            # REUSE: Log decision and use previous coverage gaps
+            log_data_source_decision(
+                step_code="generate_tests",
+                data_source="previous_outputs",
+                reason=f"coverage_gaps found in previous step outputs ({len(coverage_gaps)} files)",
+                reused_from_step="identify_coverage_gaps",
+                coverage_gaps_count=len(coverage_gaps),
+            )
+            # Use the coverage gaps to focus test generation
+            source_files = coverage_gaps
+        else:
+            # FALLBACK: Log decision - will analyze during generation
+            log_data_source_decision(
+                step_code="generate_tests",
+                data_source="fresh_compute",
+                reason="coverage_gaps not found in previous_outputs, will analyze during generation",
+            )
+            source_files = None
 
         # Run the full test generation workflow
         result = await run_test_generation_with_agent(
             session_id=session_id,
             project_path=project_path,
             db_session=db_session,
+            source_files=source_files,
             use_llm=inputs.get("use_llm", True),
         )
 
@@ -535,8 +674,20 @@ class StepExecutor:
         project_path: str,
         db_session: AsyncSession,
         inputs: dict[str, Any],
+        previous_outputs: dict[str, Any],
     ) -> dict[str, Any]:
-        """Validate generated tests by running them."""
+        """Validate generated tests by running them.
+
+        Args:
+            session_id: Session UUID
+            project_path: Project root path
+            db_session: Database session
+            inputs: Current step inputs
+            previous_outputs: Outputs from previously completed steps
+
+        Returns:
+            Validation results
+        """
         import subprocess
         from pathlib import Path
 
@@ -573,14 +724,37 @@ class StepExecutor:
         project_path: str,
         db_session: AsyncSession,
         inputs: dict[str, Any],
+        previous_outputs: dict[str, Any],
     ) -> dict[str, Any]:
-        """Analyze Maven dependencies."""
+        """Analyze Maven dependencies.
+
+        Args:
+            session_id: Session UUID
+            project_path: Project root path
+            db_session: Database session
+            inputs: Current step inputs
+            previous_outputs: Outputs from previously completed steps
+
+        Returns:
+            Dependency analysis results
+        """
         import json
 
         from src.mcp_servers.maven_maintenance.tools.analyze import analyze_dependencies
 
         result_json = await analyze_dependencies(project_path)
         result = json.loads(result_json)
+
+        # Create dependency_analysis artifact (T059: file_format="yaml")
+        artifact_content = result_json
+        await self.session_service.create_artifact(
+            session_id=session_id,
+            name="dependency_analysis",
+            artifact_type="dependency_analysis",
+            content=artifact_content,
+            file_path=f"artifacts/{session_id}/maven/dependency_analysis.yaml",
+            file_format="yaml",
+        )
 
         return {
             "success": result.get("success", False),
@@ -594,11 +768,36 @@ class StepExecutor:
         project_path: str,
         db_session: AsyncSession,
         inputs: dict[str, Any],
+        previous_outputs: dict[str, Any],
     ) -> dict[str, Any]:
-        """Identify security vulnerabilities in dependencies."""
+        """Identify security vulnerabilities in dependencies.
+
+        Args:
+            session_id: Session UUID
+            project_path: Project root path
+            db_session: Database session
+            inputs: Current step inputs
+            previous_outputs: Outputs from previously completed steps
+
+        Returns:
+            Vulnerability scan results
+        """
         # In full implementation, would scan for CVEs
+        vulnerabilities_found = 0
+
+        # Create vulnerability_report artifact (T062: file_format="md")
+        report_content = f"# Vulnerability Scan Report\n\nVulnerabilities found: {vulnerabilities_found}\n\nScanning not yet fully implemented.\n"
+        await self.session_service.create_artifact(
+            session_id=session_id,
+            name="vulnerability_report",
+            artifact_type="vulnerability_report",
+            content=report_content,
+            file_path=f"artifacts/{session_id}/maven/vulnerability_report.md",
+            file_format="md",
+        )
+
         return {
-            "vulnerabilities_found": 0,
+            "vulnerabilities_found": vulnerabilities_found,
             "message": "Vulnerability scanning not yet implemented",
         }
 
@@ -608,10 +807,42 @@ class StepExecutor:
         project_path: str,
         db_session: AsyncSession,
         inputs: dict[str, Any],
+        previous_outputs: dict[str, Any],
     ) -> dict[str, Any]:
-        """Plan dependency updates."""
+        """Plan dependency updates.
+
+        Args:
+            session_id: Session UUID
+            project_path: Project root path
+            db_session: Database session
+            inputs: Current step inputs
+            previous_outputs: Outputs from previously completed steps
+
+        Returns:
+            Update plan
+        """
+        import json
+
+        updates_planned = 0
+        plan = {
+            "updates_planned": updates_planned,
+            "message": "Update planning completed",
+            "updates": [],
+        }
+
+        # Create update_plan artifact (T064: file_format="json")
+        plan_content = json.dumps(plan, indent=2)
+        await self.session_service.create_artifact(
+            session_id=session_id,
+            name="update_plan",
+            artifact_type="update_plan",
+            content=plan_content,
+            file_path=f"artifacts/{session_id}/maven/update_plan.json",
+            file_format="json",
+        )
+
         return {
-            "updates_planned": 0,
+            "updates_planned": updates_planned,
             "message": "Update planning completed",
         }
 
@@ -621,8 +852,32 @@ class StepExecutor:
         project_path: str,
         db_session: AsyncSession,
         inputs: dict[str, Any],
+        previous_outputs: dict[str, Any],
     ) -> dict[str, Any]:
-        """Apply planned dependency updates."""
+        """Apply planned dependency updates.
+
+        Args:
+            session_id: Session UUID
+            project_path: Project root path
+            db_session: Database session
+            inputs: Current step inputs
+            previous_outputs: Outputs from previously completed steps
+
+        Returns:
+            Update results
+        """
+        # Create pom_modification artifact (T066: file_format="xml")
+        # In full implementation, this would be the modified pom.xml content
+        pom_content = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<project>\n  <!-- Modified POM - dry run mode -->\n</project>\n"
+        await self.session_service.create_artifact(
+            session_id=session_id,
+            name="pom_modification",
+            artifact_type="pom_modification",
+            content=pom_content,
+            file_path=f"artifacts/{session_id}/maven/pom_modification.xml",
+            file_format="xml",
+        )
+
         return {
             "updates_applied": 0,
             "message": "No updates applied (dry run)",
@@ -634,8 +889,40 @@ class StepExecutor:
         project_path: str,
         db_session: AsyncSession,
         inputs: dict[str, Any],
+        previous_outputs: dict[str, Any],
     ) -> dict[str, Any]:
-        """Validate changes by running tests."""
+        """Validate changes by running tests.
+
+        Args:
+            session_id: Session UUID
+            project_path: Project root path
+            db_session: Database session
+            inputs: Current step inputs
+            previous_outputs: Outputs from previously completed steps
+
+        Returns:
+            Validation results
+        """
+        import json
+
+        validation_results = {
+            "success": True,
+            "message": "Validation completed",
+            "tests_passed": 0,
+            "tests_failed": 0,
+        }
+
+        # Create validation_results artifact (T068: file_format="json")
+        results_content = json.dumps(validation_results, indent=2)
+        await self.session_service.create_artifact(
+            session_id=session_id,
+            name="validation_results",
+            artifact_type="validation_results",
+            content=results_content,
+            file_path=f"artifacts/{session_id}/maven/validation_results.json",
+            file_format="json",
+        )
+
         return {
             "success": True,
             "message": "Validation completed",
@@ -651,16 +938,45 @@ class StepExecutor:
         project_path: str,
         db_session: AsyncSession,
         inputs: dict[str, Any],
+        previous_outputs: dict[str, Any],
     ) -> dict[str, Any]:
-        """Analyze existing Dockerfile."""
+        """Analyze existing Dockerfile.
+
+        Args:
+            session_id: Session UUID
+            project_path: Project root path
+            db_session: Database session
+            inputs: Current step inputs
+            previous_outputs: Outputs from previously completed steps
+
+        Returns:
+            Dockerfile analysis
+        """
+        import json
         from pathlib import Path
 
         dockerfile = Path(project_path) / "Dockerfile"
         has_dockerfile = dockerfile.exists()
+        dockerfile_content = dockerfile.read_text()[:2000] if has_dockerfile else None
+
+        # Create dockerfile_analysis artifact (T070: file_format="json")
+        analysis = {
+            "has_dockerfile": has_dockerfile,
+            "content_preview": dockerfile_content,
+        }
+        analysis_content = json.dumps(analysis, indent=2)
+        await self.session_service.create_artifact(
+            session_id=session_id,
+            name="dockerfile_analysis",
+            artifact_type="dockerfile_analysis",
+            content=analysis_content,
+            file_path=f"artifacts/{session_id}/docker/dockerfile_analysis.json",
+            file_format="json",
+        )
 
         return {
             "has_dockerfile": has_dockerfile,
-            "dockerfile_content": dockerfile.read_text()[:2000] if has_dockerfile else None,
+            "dockerfile_content": dockerfile_content,
         }
 
     async def _optimize_image(
@@ -669,8 +985,31 @@ class StepExecutor:
         project_path: str,
         db_session: AsyncSession,
         inputs: dict[str, Any],
+        previous_outputs: dict[str, Any],
     ) -> dict[str, Any]:
-        """Optimize Docker image."""
+        """Optimize Docker image.
+
+        Args:
+            session_id: Session UUID
+            project_path: Project root path
+            db_session: Database session
+            inputs: Current step inputs
+            previous_outputs: Outputs from previously completed steps
+
+        Returns:
+            Optimization results
+        """
+        # Create build_logs artifact (T072: file_format="txt")
+        build_log = "Docker image optimization\n\nOptimization not yet implemented.\n"
+        await self.session_service.create_artifact(
+            session_id=session_id,
+            name="build_logs",
+            artifact_type="build_logs",
+            content=build_log,
+            file_path=f"artifacts/{session_id}/docker/build_logs.txt",
+            file_format="txt",
+        )
+
         return {
             "optimizations": [],
             "message": "Image optimization not yet implemented",
@@ -682,8 +1021,42 @@ class StepExecutor:
         project_path: str,
         db_session: AsyncSession,
         inputs: dict[str, Any],
+        previous_outputs: dict[str, Any],
     ) -> dict[str, Any]:
-        """Generate docker-compose configuration."""
+        """Generate docker-compose configuration.
+
+        Args:
+            session_id: Session UUID
+            project_path: Project root path
+            db_session: Database session
+            inputs: Current step inputs
+            previous_outputs: Outputs from previously completed steps
+
+        Returns:
+            Compose generation results
+        """
+        # Create docker-compose.yml artifact (T074: file_format="yaml")
+        compose_content = "version: '3.8'\nservices:\n  # Services not yet implemented\n"
+        await self.session_service.create_artifact(
+            session_id=session_id,
+            name="docker-compose",
+            artifact_type="docker_compose",
+            content=compose_content,
+            file_path=f"artifacts/{session_id}/docker/docker-compose.yml",
+            file_format="yaml",
+        )
+
+        # Create deployment_logs artifact (T074: file_format="txt")
+        deployment_log = "Docker compose generation\n\nGeneration not yet fully implemented.\n"
+        await self.session_service.create_artifact(
+            session_id=session_id,
+            name="deployment_logs",
+            artifact_type="deployment_logs",
+            content=deployment_log,
+            file_path=f"artifacts/{session_id}/docker/deployment_logs.txt",
+            file_format="txt",
+        )
+
         return {
             "compose_generated": False,
             "message": "Compose generation not yet implemented",
@@ -695,8 +1068,40 @@ class StepExecutor:
         project_path: str,
         db_session: AsyncSession,
         inputs: dict[str, Any],
+        previous_outputs: dict[str, Any],
     ) -> dict[str, Any]:
-        """Validate deployment configuration."""
+        """Validate deployment configuration.
+
+        Args:
+            session_id: Session UUID
+            project_path: Project root path
+            db_session: Database session
+            inputs: Current step inputs
+            previous_outputs: Outputs from previously completed steps
+
+        Returns:
+            Validation results
+        """
+        import json
+
+        test_results = {
+            "valid": True,
+            "message": "Deployment validation completed",
+            "tests_run": 0,
+            "tests_passed": 0,
+        }
+
+        # Create test_results artifact (T076: file_format="json")
+        results_content = json.dumps(test_results, indent=2)
+        await self.session_service.create_artifact(
+            session_id=session_id,
+            name="test_results",
+            artifact_type="test_results",
+            content=results_content,
+            file_path=f"artifacts/{session_id}/docker/test_results.json",
+            file_format="json",
+        )
+
         return {
             "valid": True,
             "message": "Deployment validation completed",

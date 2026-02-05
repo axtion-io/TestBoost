@@ -5,7 +5,6 @@
 
 import uuid
 
-import pytest
 from sqlalchemy import inspect
 
 from src.db.models.artifact import Artifact

@@ -962,7 +962,7 @@ async def get_artifact_content(
             raise HTTPException(
                 status_code=400,
                 detail="Cannot download binary artifact as text. Use appropriate client for binary files.",
-            )
+            ) from None
         except Exception as e:
             logger.error(
                 "artifact_file_read_error",
@@ -973,7 +973,7 @@ async def get_artifact_content(
             raise HTTPException(
                 status_code=500,
                 detail=f"Failed to read artifact file: {str(e)}",
-            )
+            ) from e
 
     # Check for binary content (FR-004) - only for file_modification artifacts
     if artifact.artifact_type == "file_modification" and is_binary_content(content):

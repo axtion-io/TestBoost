@@ -2002,7 +2002,7 @@ def _build_fix_prompt(
     source_files_added = set()
     project_dir = Path(project_path)
 
-    for test_path in current_tests.keys():
+    for test_path in current_tests:
         source_path = _find_source_file_for_test(test_path, project_path)
         if source_path and source_path not in source_files_added:
             try:

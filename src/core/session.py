@@ -980,7 +980,7 @@ class SessionService:
                 path.write_bytes(content)
             else:
                 path.write_text(content, encoding="utf-8")  # FR-028
-        except (PermissionError, OSError, IOError) as e:
+        except (PermissionError, OSError) as e:
             logger.error(
                 "artifact_write_failed",
                 file_path=file_path,

@@ -26,7 +26,7 @@ class TestArtifactRepositoryStepArtifacts:
         step_id = uuid.uuid4()
 
         # Create mock step
-        mock_step = Step(
+        Step(
             id=step_id,
             session_id=session_id,
             code="analyze_project",
@@ -74,7 +74,7 @@ class TestArtifactRepositoryStepArtifacts:
 
         session_id = uuid.uuid4()
         step1_id = uuid.uuid4()
-        step2_id = uuid.uuid4()
+        uuid.uuid4()
 
         # Mock artifacts from different steps
         artifact1 = Artifact(

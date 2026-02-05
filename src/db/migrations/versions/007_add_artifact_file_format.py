@@ -5,9 +5,8 @@ Revises: 006_add_artifact_metadata
 Create Date: 2026-02-04 21:45:00.000000
 
 """
-from alembic import op
 import sqlalchemy as sa
-
+from alembic import op
 
 # revision identifiers, used by Alembic.
 revision = '007_add_artifact_file_format'

@@ -4,7 +4,7 @@
 """Unit tests for workflow typed artifact creation."""
 
 import uuid
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -30,7 +30,7 @@ class TestMavenMaintenanceTypedArtifacts:
             executor.session_service.create_artifact = AsyncMock()
 
             # Execute step
-            result = await executor._analyze_dependencies(
+            await executor._analyze_dependencies(
                 session_id=session_id,
                 project_path="/test/project",
                 db_session=mock_session,
@@ -55,7 +55,7 @@ class TestMavenMaintenanceTypedArtifacts:
 
         executor.session_service.create_artifact = AsyncMock()
 
-        result = await executor._identify_vulnerabilities(
+        await executor._identify_vulnerabilities(
             session_id=session_id,
             project_path="/test/project",
             db_session=mock_session,
@@ -79,7 +79,7 @@ class TestMavenMaintenanceTypedArtifacts:
 
         executor.session_service.create_artifact = AsyncMock()
 
-        result = await executor._plan_updates(
+        await executor._plan_updates(
             session_id=session_id,
             project_path="/test/project",
             db_session=mock_session,
@@ -103,7 +103,7 @@ class TestMavenMaintenanceTypedArtifacts:
 
         executor.session_service.create_artifact = AsyncMock()
 
-        result = await executor._apply_updates(
+        await executor._apply_updates(
             session_id=session_id,
             project_path="/test/project",
             db_session=mock_session,
@@ -127,7 +127,7 @@ class TestMavenMaintenanceTypedArtifacts:
 
         executor.session_service.create_artifact = AsyncMock()
 
-        result = await executor._validate_changes(
+        await executor._validate_changes(
             session_id=session_id,
             project_path="/test/project",
             db_session=mock_session,
@@ -156,7 +156,7 @@ class TestDockerDeploymentTypedArtifacts:
         executor.session_service.create_artifact = AsyncMock()
 
         with patch('pathlib.Path.exists', return_value=False):
-            result = await executor._analyze_dockerfile(
+            await executor._analyze_dockerfile(
                 session_id=session_id,
                 project_path="/test/project",
                 db_session=mock_session,
@@ -180,7 +180,7 @@ class TestDockerDeploymentTypedArtifacts:
 
         executor.session_service.create_artifact = AsyncMock()
 
-        result = await executor._optimize_image(
+        await executor._optimize_image(
             session_id=session_id,
             project_path="/test/project",
             db_session=mock_session,
@@ -204,7 +204,7 @@ class TestDockerDeploymentTypedArtifacts:
 
         executor.session_service.create_artifact = AsyncMock()
 
-        result = await executor._generate_compose(
+        await executor._generate_compose(
             session_id=session_id,
             project_path="/test/project",
             db_session=mock_session,
@@ -238,7 +238,7 @@ class TestDockerDeploymentTypedArtifacts:
 
         executor.session_service.create_artifact = AsyncMock()
 
-        result = await executor._validate_deployment(
+        await executor._validate_deployment(
             session_id=session_id,
             project_path="/test/project",
             db_session=mock_session,
@@ -264,13 +264,6 @@ class TestTypedArtifactValidation:
         executor = StepExecutor(mock_session)
         session_id = uuid.uuid4()
 
-        expected_formats = {
-            "_analyze_dependencies": "yaml",
-            "_identify_vulnerabilities": "md",
-            "_plan_updates": "json",
-            "_apply_updates": "xml",
-            "_validate_changes": "json",
-        }
 
         executor.session_service.create_artifact = AsyncMock()
 
@@ -331,13 +324,6 @@ class TestTypedArtifactValidation:
         executor = StepExecutor(mock_session)
         session_id = uuid.uuid4()
 
-        format_to_content_type = {
-            "json": "application/json",
-            "yaml": "application/x-yaml",
-            "xml": "application/xml",
-            "md": "text/markdown",
-            "txt": "text/plain",
-        }
 
         executor.session_service.create_artifact = AsyncMock()
 

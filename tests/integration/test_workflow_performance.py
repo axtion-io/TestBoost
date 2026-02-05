@@ -11,7 +11,6 @@ import pytest
 
 from src.core.session import SessionService
 from src.core.step_executor import StepExecutor
-from src.db.models.step import StepStatus
 
 
 @pytest.mark.integration
@@ -44,7 +43,7 @@ class TestWorkflowPerformance:
             async def baseline_workflow():
                 # Step 1: analyze_project (scans filesystem)
                 start = time.time()
-                result1 = await executor._analyze_project(
+                await executor._analyze_project(
                     mock_session_id,
                     "/test/project",
                     db_session,
@@ -53,7 +52,7 @@ class TestWorkflowPerformance:
                 )
 
                 # Step 2: identify_coverage_gaps (re-scans filesystem - NO REUSE)
-                result2 = await executor._identify_coverage_gaps(
+                await executor._identify_coverage_gaps(
                     mock_session_id,
                     "/test/project",
                     db_session,
@@ -113,7 +112,7 @@ class TestWorkflowPerformance:
                 }
 
                 # Step 2: identify_coverage_gaps (REUSES data - NO re-scan)
-                result2 = await executor._identify_coverage_gaps(
+                await executor._identify_coverage_gaps(
                     mock_session_id,
                     "/test/project",
                     db_session,
@@ -173,7 +172,7 @@ class TestWorkflowPerformance:
         time_saved = baseline_time - optimized_time
         improvement_pct = (time_saved / baseline_time) * 100
 
-        print(f"\nPerformance Results:")
+        print("\nPerformance Results:")
         print(f"  Baseline (no reuse): {baseline_time:.3f}s")
         print(f"  Optimized (with reuse): {optimized_time:.3f}s")
         print(f"  Time saved: {time_saved:.3f}s")
@@ -236,7 +235,7 @@ class TestWorkflowPerformance:
         # Calculate improvement
         improvement_pct = ((baseline_time - optimized_time) / baseline_time) * 100
 
-        print(f"\nScalability Test:")
+        print("\nScalability Test:")
         print(f"  Baseline calls: {baseline_calls}, Time: {baseline_time:.3f}s")
         print(f"  Optimized calls: {optimized_calls}, Time: {optimized_time:.3f}s")
         print(f"  Improvement: {improvement_pct:.1f}%")

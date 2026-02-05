@@ -3,7 +3,6 @@
 
 """Integration tests for artifact creation and retrieval with file_format filtering."""
 
-import uuid
 
 import pytest
 
@@ -26,7 +25,7 @@ class TestArtifactCreationRetrieval:
         )
 
         # Create artifacts with different file formats
-        yaml_artifact = await service.create_artifact(
+        await service.create_artifact(
             session_id=session.id,
             name="config.yaml",
             artifact_type="configuration",
@@ -35,7 +34,7 @@ class TestArtifactCreationRetrieval:
             file_format="yaml",
         )
 
-        json_artifact = await service.create_artifact(
+        await service.create_artifact(
             session_id=session.id,
             name="data.json",
             artifact_type="data",
@@ -44,7 +43,7 @@ class TestArtifactCreationRetrieval:
             file_format="json",
         )
 
-        xml_artifact = await service.create_artifact(
+        await service.create_artifact(
             session_id=session.id,
             name="pom.xml",
             artifact_type="build",
@@ -53,7 +52,7 @@ class TestArtifactCreationRetrieval:
             file_format="xml",
         )
 
-        md_artifact = await service.create_artifact(
+        await service.create_artifact(
             session_id=session.id,
             name="README.md",
             artifact_type="documentation",
@@ -104,7 +103,7 @@ class TestArtifactCreationRetrieval:
         )
 
         # Create artifacts with explicit file_format
-        artifact = await service.create_artifact(
+        await service.create_artifact(
             session_id=session.id,
             name="analysis.yaml",
             artifact_type="analysis",
@@ -138,7 +137,7 @@ class TestArtifactCreationRetrieval:
 
         # Create artifact without specifying file_format
         # (should default to 'json' at database level)
-        artifact = await service.create_artifact(
+        await service.create_artifact(
             session_id=session.id,
             name="report",
             artifact_type="report",

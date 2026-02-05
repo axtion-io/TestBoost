@@ -11,6 +11,9 @@ from src.core.session import SessionService
 pytest_skip_reason = "Requires real database for integration testing. Mock db_session doesn't persist data."
 
 
+pytest_skip_reason = "Requires real database for integration testing. Mock db_session doesn't persist data."
+
+
 @pytest.mark.integration
 @pytest.mark.skip(reason=pytest_skip_reason)
 class TestArtifactCreationRetrieval:

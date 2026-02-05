@@ -49,6 +49,14 @@ async def db_connection():
     yield connection
 
 
+@pytest.fixture
+async def session_service(db_session):
+    """Provide a SessionService instance for testing."""
+    from src.core.session import SessionService
+
+    return SessionService(db_session)
+
+
 # ============================================================================
 # HTTP Client Fixtures
 # ============================================================================

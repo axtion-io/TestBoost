@@ -228,4 +228,77 @@ def configure_logging() -> None:
     _configure_structlog()
 
 
-__all__ = ["get_logger", "bind_context", "clear_context", "configure_logging"]
+def log_data_source_decision(
+    step_code: str,
+    data_source: str,
+    reason: str,
+    reused_from_step: str | None = None,
+    **extra_context: Any,
+) -> None:
+    """
+    Log a data source decision (reuse vs fresh compute) in workflow steps.
+
+    This helper emits a structured log event when a workflow step decides whether
+    to reuse data from previous step outputs or perform fresh computation.
+
+    Args:
+        step_code: Code of the current step making the decision
+        data_source: Either "previous_outputs" (reused) or "fresh_compute" (computed)
+        reason: Human-readable explanation of why this source was chosen
+        reused_from_step: If data_source="previous_outputs", the step code data was reused from
+        **extra_context: Additional context to include in the log
+
+    Example:
+        >>> # Step reuses previous data
+        >>> log_data_source_decision(
+        ...     step_code="identify_coverage_gaps",
+        ...     data_source="previous_outputs",
+        ...     reason="source_files found in previous step outputs (250 files)",
+        ...     reused_from_step="analyze_project",
+        ... )
+
+        >>> # Step performs fresh computation
+        >>> log_data_source_decision(
+        ...     step_code="identify_coverage_gaps",
+        ...     data_source="fresh_compute",
+        ...     reason="source_files not found in previous_outputs",
+        ... )
+
+    Structured Log Format:
+        {
+            "event": "data_source_decision",
+            "step_code": str,              # Step making the decision
+            "data_source": str,            # "previous_outputs" or "fresh_compute"
+            "reason": str,                 # Explanation for the decision
+            "reused_from_step": str|None,  # Source step if reused (optional)
+            "timestamp": str,              # ISO timestamp
+            "level": "info",
+            "category": "business",         # Auto-categorized
+            "severity": "info",            # Auto-categorized
+            **extra_context                # Any additional context
+        }
+    """
+    logger = get_logger(__name__)
+
+    log_data = {
+        "step_code": step_code,
+        "data_source": data_source,
+        "reason": reason,
+    }
+
+    if reused_from_step is not None:
+        log_data["reused_from_step"] = reused_from_step
+
+    if extra_context:
+        log_data.update(extra_context)
+
+    logger.info("data_source_decision", **log_data)
+
+
+__all__ = [
+    "get_logger",
+    "bind_context",
+    "clear_context",
+    "configure_logging",
+    "log_data_source_decision",
+]

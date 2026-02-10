@@ -20,7 +20,7 @@ if TYPE_CHECKING:
     from src.db.models.modification import Modification
 
 
-class ProjectStatus(str, enum.Enum):
+class ProjectStatus(enum.StrEnum):
     """Status of a project in TestBoost."""
 
     ACTIVE = "active"
@@ -30,7 +30,7 @@ class ProjectStatus(str, enum.Enum):
     ERROR = "error"
 
 
-class BuildSystem(str, enum.Enum):
+class BuildSystem(enum.StrEnum):
     """Build system used by the project."""
 
     MAVEN = "maven"

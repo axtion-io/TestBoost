@@ -10,8 +10,7 @@ Tests:
 """
 
 import platform
-import shutil
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 

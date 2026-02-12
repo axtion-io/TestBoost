@@ -1,9 +1,8 @@
 """Unit tests for Maven error parser."""
 
-import pytest
 from pathlib import Path
 
-from src.lib.maven_error_parser import MavenErrorParser, CompilationError
+from src.lib.maven_error_parser import CompilationError, MavenErrorParser
 
 
 class TestMavenErrorParser:

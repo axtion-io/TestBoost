@@ -15,6 +15,7 @@ Tasks implemented: T054-T064
 
 import json
 import re
+import shutil
 import subprocess
 import time
 from pathlib import Path
@@ -44,6 +45,25 @@ MAX_CORRECTION_RETRIES = 3
 # Feedback loop configuration - run tests and fix until passing
 MAX_TEST_ITERATIONS = 5  # Maximum attempts to fix failing tests
 TEST_TIMEOUT_SECONDS = 300  # 5 minutes timeout for Maven test run
+
+
+def _get_maven_executable() -> str:
+    """Get the Maven executable name for the current platform.
+
+    On Windows, Maven is a .cmd script, so we need 'mvn.cmd'.
+    On Linux/macOS, it's a shell script, so 'mvn' works.
+
+    Returns:
+        str: The Maven executable name ('mvn.cmd' on Windows, 'mvn' elsewhere)
+    """
+    mvn = shutil.which("mvn")
+    if mvn is None:
+        # Fallback: try mvn.cmd explicitly on Windows
+        mvn = shutil.which("mvn.cmd")
+        if mvn is None:
+            # If still not found, return 'mvn' and let subprocess fail with clear error
+            return "mvn"
+    return mvn
 
 
 class TestGenerationError(Exception):
@@ -1905,7 +1925,7 @@ async def _compile_maven_tests(
             continue
 
         # Build Maven compile command
-        mvn_cmd = ["mvn", "clean", "test-compile", "-f", pom_path.resolve().as_posix()]
+        mvn_cmd = [_get_maven_executable(), "clean", "test-compile", "-f", pom_path.resolve().as_posix()]
 
         logger.info(
             "compiling_maven_tests",
@@ -1920,7 +1940,6 @@ async def _compile_maven_tests(
                 capture_output=True,
                 text=True,
                 timeout=TEST_TIMEOUT_SECONDS,
-                shell=True,  # Required on Windows
             )
 
             output = result.stdout + "\n" + result.stderr
@@ -2053,7 +2072,7 @@ async def _run_maven_tests(
         # Use absolute paths with forward slashes for cross-platform compatibility
         # CRITICAL: Use 'mvn clean test' to force full recompilation and avoid false positives
         # from pre-compiled classes in target/ directory
-        mvn_cmd = ["mvn", "clean", "test", "-f", pom_path.resolve().as_posix()]
+        mvn_cmd = [_get_maven_executable(), "clean", "test", "-f", pom_path.resolve().as_posix()]
 
         # Add specific test classes
         if test_classes:
@@ -2073,7 +2092,6 @@ async def _run_maven_tests(
                 capture_output=True,
                 text=True,
                 timeout=TEST_TIMEOUT_SECONDS,
-                shell=True,  # Required on Windows
             )
 
             output = result.stdout + "\n" + result.stderr
@@ -2161,24 +2179,17 @@ def _parse_test_failures(maven_output: str) -> list[dict[str, Any]]:
     failures = []
     seen_keys: set[str] = set()  # Deduplicate by (class, method)
 
-    def _simple_class_name(fqcn: str) -> str:
-        """Extract simple class name from fully qualified name."""
-        return fqcn.rsplit(".", 1)[-1] if "." in fqcn else fqcn
-
     def _add_failure(failure: dict[str, Any]) -> None:
-        """Add failure if not already seen (deduplicates by simple class name + method)."""
-        cls = _simple_class_name(failure.get("class", ""))
+        """Add failure if not already seen (deduplicates by fully qualified class name + method)."""
+        cls = failure.get("class", "")
         method = failure.get("method", "")
         key = f"{cls}.{method}"
         if key != "." and key in seen_keys:
             # If already seen, update with stack trace if available
             if failure.get("stacktrace"):
                 for f in failures:
-                    if _simple_class_name(f.get("class", "")) == cls and f.get("method") == method:
+                    if f.get("class", "") == cls and f.get("method") == method:
                         f["stacktrace"] = failure["stacktrace"]
-                        # Prefer the fully qualified class name
-                        if "." in failure.get("class", ""):
-                            f["class"] = failure["class"]
                         break
             return
         if key != ".":

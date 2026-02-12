@@ -85,6 +85,7 @@ async def generate_adaptive_tests(
         "imports": class_info.get("imports", []),
         "is_record": class_info.get("is_record", False),
         "source_code": source_code,
+        "project_path": project_path,
     }
 
     # Generate test code - LLM mode or template mode
@@ -110,6 +111,79 @@ async def generate_adaptive_tests(
     return json.dumps(results, indent=2)
 
 
+def _extract_project_context(project_path: str) -> str:
+    """Extract key project info from pom.xml for LLM context.
+
+    Args:
+        project_path: Root directory of the Java project
+
+    Returns:
+        Formatted string with project context, or empty string if unavailable
+    """
+    import xml.etree.ElementTree as ET
+
+    pom_file = Path(project_path) / "pom.xml"
+    if not pom_file.exists():
+        return ""
+
+    try:
+        tree = ET.parse(pom_file)
+        root = tree.getroot()
+        ns = {"m": "http://maven.apache.org/POM/4.0.0"}
+
+        parts = ["## Project Technical Context\n"]
+
+        # Java version
+        props = root.find("m:properties", ns) or root.find("properties")
+        if props is not None:
+            for tag in ["m:java.version", "java.version", "m:maven.compiler.source", "maven.compiler.source"]:
+                el = props.find(tag, ns) if tag.startswith("m:") else props.find(tag)
+                if el is not None and el.text:
+                    parts.append(f"- **Java version**: {el.text}")
+                    break
+
+        # Spring Boot version from parent
+        parent = root.find("m:parent", ns)
+        if parent is None:
+            parent = root.find("parent")
+        if parent is not None:
+            parent_artifact = parent.find("m:artifactId", ns)
+            if parent_artifact is None:
+                parent_artifact = parent.find("artifactId")
+            parent_version = parent.find("m:version", ns)
+            if parent_version is None:
+                parent_version = parent.find("version")
+            if parent_artifact is not None and "spring-boot" in (parent_artifact.text or ""):
+                parts.append(f"- **Spring Boot version**: {parent_version.text if parent_version is not None else 'unknown'}")
+
+        # Key dependencies
+        key_deps = []
+        for dep_path in [".//m:dependency", ".//dependency"]:
+            use_ns = ns if dep_path.startswith(".//m:") else {}
+            for dep in root.findall(dep_path, use_ns) if use_ns else root.findall(dep_path):
+                artifact = dep.find("m:artifactId", ns) if use_ns else dep.find("artifactId")
+                version = dep.find("m:version", ns) if use_ns else dep.find("version")
+                if artifact is not None and any(k in artifact.text for k in [
+                    "lombok", "junit", "mockito", "spring-boot-starter-test",
+                    "spring-boot-starter-data-jpa", "spring-boot-starter-web", "h2",
+                ]):
+                    ver = version.text if version is not None else "managed"
+                    key_deps.append(f"  - {artifact.text} ({ver})")
+            if key_deps:
+                break
+
+        if key_deps:
+            parts.append("- **Key dependencies**:")
+            parts.extend(key_deps)
+
+        parts.append("")
+        return "\n".join(parts)
+
+    except Exception as e:
+        logger.debug("project_context_extraction_error", error=str(e))
+        return ""
+
+
 async def _generate_test_code_with_llm(context: dict[str, Any], source_code: str) -> str:
     """
     Generate test code using LLM for intelligent, context-aware tests.
@@ -130,10 +204,15 @@ async def _generate_test_code_with_llm(context: dict[str, Any], source_code: str
     methods = context["methods"]
     dependencies = context["dependencies"]
     test_requirements = context.get("test_requirements", [])
+    project_path = context.get("project_path", "")
+
+    # Extract project context from pom.xml
+    project_context = _extract_project_context(project_path) if project_path else ""
 
     # Build the prompt for test generation
     prompt = f"""You are an expert Java test engineer. Generate comprehensive JUnit 5 unit tests for the following Java class.
 
+{project_context}
 ## Source Code to Test:
 ```java
 {source_code}

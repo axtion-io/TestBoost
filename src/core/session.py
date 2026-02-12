@@ -5,6 +5,7 @@
 
 import uuid
 from datetime import datetime
+from pathlib import Path
 from typing import Any
 
 from sqlalchemy import and_, desc, select
@@ -637,8 +638,33 @@ class SessionService:
 
     # Step Management
 
-    async def get_steps(self, session_id: uuid.UUID) -> list[Step]:
-        """Get all steps for a session ordered by sequence."""
+    async def get_steps(
+        self,
+        session_id: uuid.UUID,
+        status: str | None = None,
+    ) -> list[Step]:
+        """Get all steps for a session ordered by sequence.
+
+        Args:
+            session_id: Session UUID
+            status: Optional filter by status (e.g., "completed", "pending")
+
+        Returns:
+            List of steps matching the filters
+        """
+        if status is not None:
+            result = await self.db_session.execute(
+                select(Step)
+                .where(
+                    and_(
+                        Step.session_id == session_id,
+                        Step.status == status,
+                    )
+                )
+                .order_by(Step.sequence)
+            )
+            return list(result.scalars().all())
+
         return await self.step_repo.get_by_session(session_id)
 
     async def get_step_by_code(
@@ -777,6 +803,65 @@ class SessionService:
 
     # Artifact Management
 
+    def _infer_content_type(self, file_format: str) -> str:
+        """
+        Infer MIME content type from file format.
+
+        Args:
+            file_format: File format type (json, yaml, xml, java, py, txt, etc.)
+
+        Returns:
+            MIME type string
+
+        Example:
+            >>> service._infer_content_type("json")
+            "application/json"
+            >>> service._infer_content_type("java")
+            "text/x-java"
+        """
+        # Map file_format to MIME type
+        format_to_mime = {
+            # Data formats
+            "json": "application/json",
+            "yaml": "application/x-yaml",
+            "yml": "application/x-yaml",
+            "xml": "application/xml",
+            "csv": "text/csv",
+            "toml": "application/toml",
+            # Programming languages
+            "java": "text/x-java",
+            "py": "text/x-python",
+            "python": "text/x-python",
+            "js": "text/javascript",
+            "javascript": "text/javascript",
+            "ts": "text/typescript",
+            "typescript": "text/typescript",
+            "go": "text/x-go",
+            "rs": "text/x-rust",
+            "rust": "text/x-rust",
+            "c": "text/x-c",
+            "cpp": "text/x-c++",
+            "h": "text/x-c-header",
+            # Markup & documentation
+            "html": "text/html",
+            "md": "text/markdown",
+            "markdown": "text/markdown",
+            "txt": "text/plain",
+            "log": "text/plain",
+            # Configuration
+            "properties": "text/x-java-properties",
+            "conf": "text/plain",
+            "cfg": "text/plain",
+            "ini": "text/plain",
+            # Shell scripts
+            "sh": "application/x-sh",
+            "bash": "application/x-sh",
+            "bat": "application/x-bat",
+            "ps1": "application/x-powershell",
+        }
+
+        return format_to_mime.get(file_format.lower(), "application/octet-stream")
+
     async def get_artifact(
         self,
         session_id: uuid.UUID,
@@ -806,6 +891,7 @@ class SessionService:
         self,
         session_id: uuid.UUID,
         artifact_type: str | None = None,
+        file_format: str | None = None,
     ) -> list[Artifact]:
         """
         Get artifacts for a session.
@@ -813,50 +899,104 @@ class SessionService:
         Args:
             session_id: Session UUID
             artifact_type: Filter by artifact type
+            file_format: Filter by file format (json, yaml, xml, md, etc.)
 
         Returns:
-            List of artifacts
+            List of artifacts matching the filters
         """
-        if artifact_type:
-            result = await self.db_session.execute(
-                select(Artifact).where(
-                    and_(
-                        Artifact.session_id == session_id,
-                        Artifact.artifact_type == artifact_type,
-                    )
-                )
-            )
-            return list(result.scalars().all())
+        # Use the repository method that supports multiple filters
+        return await self.artifact_repo.get_artifacts(
+            session_id=session_id,
+            artifact_type=artifact_type,
+            file_format=file_format,
+        )
 
-        return await self.artifact_repo.get_by_session(session_id)
+    async def get_step_artifacts(
+        self,
+        session_id: uuid.UUID,
+        step_code: str,
+        artifact_type: str | None = None,
+        file_format: str | None = None,
+    ) -> list[Artifact]:
+        """
+        Get artifacts for a specific step.
+
+        Args:
+            session_id: Session UUID
+            step_code: Step code (e.g., "analyze_project", "identify_coverage_gaps")
+            artifact_type: Filter by artifact type (optional)
+            file_format: Filter by file format (optional)
+
+        Returns:
+            List of artifacts matching the filters for the specified step
+        """
+        return await self.artifact_repo.get_step_artifacts(
+            session_id=session_id,
+            step_code=step_code,
+            artifact_type=artifact_type,
+            file_format=file_format,
+        )
 
     async def create_artifact(
         self,
         session_id: uuid.UUID,
         name: str,
         artifact_type: str,
-        content_type: str,
+        content: str | bytes,
         file_path: str,
-        size_bytes: int = 0,
+        file_format: str = "json",
+        content_type: str | None = None,
+        artifact_metadata: dict[str, Any] | None = None,
         step_id: uuid.UUID | None = None,
-        metadata: dict[str, Any] | None = None,
     ) -> Artifact:
         """
-        Create an artifact for a session.
+        Create an artifact with content stored on disk.
+
+        CRITICAL: This method writes content to disk BEFORE creating database record.
 
         Args:
             session_id: Session UUID
             name: Artifact name
             artifact_type: Type of artifact
-            content_type: MIME type
-            file_path: Path to the artifact file
-            size_bytes: File size in bytes
+            content: Artifact content to write to disk (str for text, bytes for binary)
+            file_path: Path where content will be stored
+            file_format: File format (json, yaml, xml, java, py, txt, etc.)
+            content_type: MIME type (if None, inferred from file_format)
+            artifact_metadata: Optional artifact metadata
             step_id: Optional step UUID
-            metadata: Optional artifact metadata (for file_modification type)
 
         Returns:
             Created artifact
+
+        Raises:
+            Exception: If file write fails (permission denied, disk full, I/O error)
         """
+        # 1. Write file to disk FIRST (FR-025, FR-027)
+        path = Path(file_path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+
+        try:
+            if isinstance(content, bytes):
+                path.write_bytes(content)
+            else:
+                path.write_text(content, encoding="utf-8")  # FR-028
+        except (PermissionError, OSError) as e:
+            logger.error(
+                "artifact_write_failed",
+                file_path=file_path,
+                error=str(e),
+                session_id=str(session_id),
+            )
+            raise Exception(f"Failed to write artifact to disk: {str(e)}") from e
+
+        # 2. Calculate size from actual file (FR-030)
+        size_bytes = path.stat().st_size
+
+        # 3. Infer content_type if not provided
+        if content_type is None:
+            content_type = self._infer_content_type(file_format)
+
+        # 4. Create database record AFTER file exists (FR-029)
         artifact = await self.artifact_repo.create(
             session_id=session_id,
             step_id=step_id,
@@ -865,7 +1005,8 @@ class SessionService:
             content_type=content_type,
             file_path=file_path,
             size_bytes=size_bytes,
-            artifact_metadata=metadata,
+            artifact_metadata=artifact_metadata,
+            file_format=file_format,
         )
 
         await self.emit_event(
@@ -876,8 +1017,18 @@ class SessionService:
                 "artifact_id": str(artifact.id),
                 "name": name,
                 "type": artifact_type,
+                "file_format": file_format,
+                "size_bytes": size_bytes,
             },
             message=f"Artifact '{name}' created",
+        )
+
+        logger.info(
+            "artifact_created",
+            artifact_id=str(artifact.id),
+            file_path=file_path,
+            size_bytes=size_bytes,
+            file_format=file_format,
         )
 
         return artifact
@@ -921,19 +1072,28 @@ class SessionService:
             "diff": diff,
         }
 
-        # Calculate size based on content
+        # Determine content to store (modified for create/modify, original for delete)
         content = modified_content if operation != "delete" else original_content
-        size_bytes = len((content or "").encode("utf-8"))
+        if content is None:
+            content = ""
+
+        # Infer file format from extension
+        file_extension = Path(file_path).suffix.lstrip(".")
+        file_format = file_extension if file_extension else "txt"
+
+        # Determine artifact storage path (different from project file path)
+        artifact_file_path = f"artifacts/{session_id}/modifications/{file_path}"
 
         return await self.create_artifact(
             session_id=session_id,
             step_id=step_id,
             name=file_path,
             artifact_type="file_modification",
+            content=content,
+            file_path=artifact_file_path,
+            file_format=file_format,
             content_type=content_type,
-            file_path=file_path,
-            size_bytes=size_bytes,
-            metadata=metadata,
+            artifact_metadata=metadata,
         )
 
 

@@ -115,6 +115,73 @@ class ArtifactRepository(BaseRepository[Artifact]):
         )
         return list(result.scalars().all())
 
+    async def get_artifacts(
+        self,
+        session_id: uuid.UUID | None = None,
+        artifact_type: str | None = None,
+        file_format: str | None = None,
+    ) -> list[Artifact]:
+        """Get artifacts with optional filters.
+
+        Args:
+            session_id: Filter by session ID (optional)
+            artifact_type: Filter by artifact type (optional)
+            file_format: Filter by file format (optional)
+
+        Returns:
+            List of artifacts matching the filters
+        """
+        query = select(Artifact)
+        conditions = []
+
+        if session_id is not None:
+            conditions.append(Artifact.session_id == session_id)
+        if artifact_type is not None:
+            conditions.append(Artifact.artifact_type == artifact_type)
+        if file_format is not None:
+            conditions.append(Artifact.file_format == file_format)
+
+        if conditions:
+            query = query.where(*conditions)
+
+        result = await self.session.execute(query)
+        return list(result.scalars().all())
+
+    async def get_step_artifacts(
+        self,
+        session_id: uuid.UUID,
+        step_code: str,
+        artifact_type: str | None = None,
+        file_format: str | None = None,
+    ) -> list[Artifact]:
+        """Get artifacts for a specific step by step code.
+
+        Args:
+            session_id: Session UUID
+            step_code: Step code (e.g., "analyze_project", "identify_coverage_gaps")
+            artifact_type: Filter by artifact type (optional)
+            file_format: Filter by file format (optional)
+
+        Returns:
+            List of artifacts matching the filters for the specified step
+        """
+        # Join artifacts with steps to filter by step.code
+        query = (
+            select(Artifact)
+            .join(Step, Artifact.step_id == Step.id)
+            .where(Artifact.session_id == session_id)
+            .where(Step.code == step_code)
+        )
+
+        # Add optional filters
+        if artifact_type is not None:
+            query = query.where(Artifact.artifact_type == artifact_type)
+        if file_format is not None:
+            query = query.where(Artifact.file_format == file_format)
+
+        result = await self.session.execute(query)
+        return list(result.scalars().all())
+
 
 class ProjectLockRepository(BaseRepository[ProjectLock]):
     """Repository for ProjectLock operations."""

@@ -25,6 +25,7 @@ class Artifact(Base):
     )
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     artifact_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    file_format: Mapped[str] = mapped_column(String(20), nullable=False, default="json")
     content_type: Mapped[str] = mapped_column(String(100), nullable=False)
     file_path: Mapped[str] = mapped_column(Text, nullable=False)
     size_bytes: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
@@ -44,6 +45,7 @@ class Artifact(Base):
         Index("ix_artifacts_session_id", "session_id"),
         Index("ix_artifacts_step_id", "step_id"),
         Index("ix_artifacts_artifact_type", "artifact_type"),
+        Index("ix_artifacts_file_format", "file_format"),
     )
 
 

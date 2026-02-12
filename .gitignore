@@ -104,6 +104,10 @@ tests/fixtures/spring-petclinic/
 # Ad-hoc test utilities (temporary, do not commit)
 scripts/test-utils/
 
+# Artifact storage - track structure but exclude content
+artifacts/**/
+!artifacts/.gitkeep
+
 # Auto Claude data directory
 .auto-claude/
 

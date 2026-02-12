@@ -2,6 +2,7 @@
 
 import uuid
 from datetime import datetime
+from pathlib import Path
 from typing import Any, NoReturn
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
@@ -219,6 +220,10 @@ class ArtifactResponse(BaseModel):
     step_id: uuid.UUID | None = None
     name: str
     artifact_type: str
+    file_format: str = Field(
+        default="json",
+        description="File format type: json, yaml, xml, java, py, txt, md, html, csv, etc."
+    )
     content_type: str
     file_path: str
     size_bytes: int
@@ -818,6 +823,7 @@ async def update_session_step(
 async def get_session_artifacts(
     session_id: uuid.UUID,
     artifact_type: str | None = Query(None, description="Filter by artifact type"),
+    file_format: str | None = Query(None, description="Filter by file format (json, yaml, xml, md, txt, etc.)"),
     db: AsyncSession = Depends(get_db),
 ) -> ArtifactListResponse:
     """
@@ -826,9 +832,10 @@ async def get_session_artifacts(
     Args:
         session_id: Session UUID
         artifact_type: Optional filter by artifact type
+        file_format: Optional filter by file format
 
     Returns:
-        List of artifacts
+        List of artifacts matching the filters
     """
     service = SessionService(db)
 
@@ -840,7 +847,11 @@ async def get_session_artifacts(
             detail=f"Session not found: {session_id}",
         )
 
-    artifacts = await service.get_artifacts(session_id, artifact_type=artifact_type)
+    artifacts = await service.get_artifacts(
+        session_id,
+        artifact_type=artifact_type,
+        file_format=file_format,
+    )
 
     return ArtifactListResponse(
         items=[ArtifactResponse.model_validate(a) for a in artifacts],
@@ -922,12 +933,50 @@ async def get_artifact_content(
         else:
             content = artifact_meta.get("modified_content", "")
     else:
-        # For other artifacts, the content would be read from file_path
-        # For now, return empty content as file reading is out of scope
-        content = ""
+        # For other artifacts, read content from file_path
+        if not artifact.file_path:
+            raise HTTPException(
+                status_code=404,
+                detail="Artifact has no file path",
+            )
 
-    # Check for binary content (FR-004)
-    if is_binary_content(content):
+        file_path = Path(artifact.file_path)
+
+        # Check if file exists
+        if not file_path.exists():
+            logger.error(
+                "artifact_file_not_found",
+                artifact_id=str(artifact_id),
+                file_path=str(file_path),
+            )
+            raise HTTPException(
+                status_code=404,
+                detail=f"Artifact file not found: {artifact.file_path}",
+            )
+
+        try:
+            # Read file content as text
+            content = file_path.read_text(encoding="utf-8")
+        except UnicodeDecodeError:
+            # File is binary
+            raise HTTPException(
+                status_code=400,
+                detail="Cannot download binary artifact as text. Use appropriate client for binary files.",
+            ) from None
+        except Exception as e:
+            logger.error(
+                "artifact_file_read_error",
+                artifact_id=str(artifact_id),
+                file_path=str(file_path),
+                error=str(e),
+            )
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to read artifact file: {str(e)}",
+            ) from e
+
+    # Check for binary content (FR-004) - only for file_modification artifacts
+    if artifact.artifact_type == "file_modification" and is_binary_content(content):
         raise HTTPException(
             status_code=400,
             detail="Cannot download binary artifact as text. Use appropriate client for binary files.",

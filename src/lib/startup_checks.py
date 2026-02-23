@@ -12,8 +12,8 @@ from src.lib.logging import get_logger
 logger = get_logger(__name__)
 settings = get_settings()
 
-# Startup check timeout (5 seconds max)
-STARTUP_TIMEOUT = 5
+# Startup check timeout (from settings, default 30 seconds)
+STARTUP_TIMEOUT = settings.startup_timeout
 
 # Retry configuration for intermittent errors (A4 edge case)
 MAX_RETRIES = 3
@@ -197,7 +197,18 @@ async def check_llm_connection(model: str | None = None) -> None:
         # Logs: llm_connection_ok with custom model
     """
     try:
-        logger.info("llm_connection_check_start", model=model or settings.model)
+        effective_model = model or settings.model
+        effective_provider = settings.llm_provider
+        extra_info: dict[str, Any] = {
+            "model": effective_model,
+            "provider": effective_provider,
+        }
+        if effective_provider == "vllm":
+            extra_info["api_base"] = settings.vllm_api_base
+            extra_info["vllm_model"] = settings.vllm_model
+            extra_info["verify_ssl"] = settings.vllm_verify_ssl
+
+        logger.info("llm_connection_check_start", **extra_info)
 
         # Get LLM instance (T016: raises LLMProviderError if API key missing)
         llm = get_llm(model=model, timeout=STARTUP_TIMEOUT)
@@ -205,26 +216,32 @@ async def check_llm_connection(model: str | None = None) -> None:
         # Ping LLM with retry logic (T019: A4 edge case)
         await _ping_llm_with_retry(llm, timeout=STARTUP_TIMEOUT)
 
-        logger.info("llm_connection_ok", model=model or settings.model)
+        logger.info("llm_connection_ok", **extra_info)
 
     except LLMProviderError as e:
         # T016: Missing API key
-        logger.error("llm_connection_failed", reason="missing_api_key", error=str(e))
+        logger.error("llm_connection_failed", reason="missing_api_key", error=str(e), **extra_info)
         raise
 
     except LLMConnectionError as e:
         # T017, T020: Auth errors, rate limits
-        logger.error("llm_connection_failed", reason="connection_error", error=str(e))
+        logger.error("llm_connection_failed", reason="connection_error", error=str(e), **extra_info)
         raise LLMError(f"LLM not available: {e}") from e
 
     except LLMTimeoutError as e:
         # T018: Timeout
-        logger.error("llm_connection_failed", reason="timeout", error=str(e))
+        logger.error("llm_connection_failed", reason="timeout", error=str(e), **extra_info)
         raise
 
     except Exception as e:
         # Catch-all for unexpected errors
-        logger.error("llm_connection_failed", reason="unexpected", error=str(e), error_type=type(e).__name__)
+        logger.error(
+            "llm_connection_failed",
+            reason="unexpected",
+            error=str(e),
+            error_type=type(e).__name__,
+            **extra_info,
+        )
         raise LLMError(f"LLM connection check failed: {e}") from e
 
 

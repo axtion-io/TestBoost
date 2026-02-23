@@ -94,7 +94,7 @@ class Settings(BaseSettings):
         description="LLM request timeout in seconds",
     )
     startup_timeout: int = Field(
-        default=5,
+        default=30,
         description="Startup check timeout in seconds",
     )
 

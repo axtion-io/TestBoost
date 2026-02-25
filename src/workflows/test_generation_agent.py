@@ -32,6 +32,12 @@ from src.lib.config import get_settings
 from src.lib.llm import get_llm
 from src.lib.logging import get_logger
 from src.lib.maven_error_parser import MavenErrorParser
+from src.lib.path_utils import (
+    detect_maven_modules,
+    extract_package,
+    get_source_directories,
+    test_path_to_source_path,
+)
 from src.mcp_servers.registry import get_tools_for_servers
 from src.mcp_servers.test_generator.tools.generate_unit import generate_adaptive_tests
 from src.models.impact import TestRequirement
@@ -79,7 +85,12 @@ class TestGenerationError(Exception):
 class CompilationError(TestGenerationError):
     """Raised when generated tests fail to compile."""
 
-    def __init__(self, message: str = "Generated tests failed to compile", test_file: str | None = None, errors: list[str] | None = None):
+    def __init__(
+        self,
+        message: str = "Generated tests failed to compile",
+        test_file: str | None = None,
+        errors: list[str] | None = None,
+    ):
         if test_file:
             message = f"{message}: {test_file}"
         if errors:
@@ -87,169 +98,6 @@ class CompilationError(TestGenerationError):
         super().__init__(message)
         self.test_file = test_file
         self.errors = errors or []
-
-
-def _find_source_files(project_path: str) -> list[str]:
-    """
-    Find Java source files to generate tests for.
-
-    Filters out test files, DTOs, entities, configuration, and other non-testable classes.
-
-    Args:
-        project_path: Path to the Java project root
-
-    Returns:
-        List of relative paths to source files
-    """
-    project_dir = Path(project_path)
-    source_files = []
-
-    # Patterns to include (testable classes)
-    # Include all Java files, then filter with exclude patterns
-    include_patterns = [
-        "**/*.java",  # All Java files
-    ]
-
-    # Patterns to exclude
-    exclude_patterns = [
-        "**/test/**",  # Test files
-        "**/model/**",  # Entities, DTOs
-        "**/entity/**",
-        "**/dto/**",
-        "**/config/**",  # Configuration
-        "**/configuration/**",
-        "**/mapper/**",  # Mappers (usually simple)
-        # Note: Main Application classes are excluded only if they're simple Spring Boot launchers
-        # "**/*Application.java",  # Too restrictive - some Application classes have business logic
-        "**/*Config.java",
-        "**/*Configuration.java",
-        "**/*Request.java",  # Request/Response DTOs
-        "**/*Response.java",
-        "**/*DTO.java",
-        "**/*Exception.java",  # Exceptions
-    ]
-
-    # Find all Java files in src/main/java
-    main_java_dirs = list(project_dir.glob("**/src/main/java"))
-
-    for main_java_dir in main_java_dirs:
-        for pattern in include_patterns:
-            for source_file in main_java_dir.glob(pattern):
-                # Check if file should be excluded
-                relative_path = str(source_file.relative_to(project_dir))
-                should_exclude = False
-
-                for exclude in exclude_patterns:
-                    # Simple pattern matching
-                    exclude_name = exclude.replace("**/*", "").replace("**", "")
-                    if exclude_name in relative_path or source_file.name.endswith(exclude_name.replace("*", "")):
-                        should_exclude = True
-                        break
-
-                if not should_exclude and relative_path not in source_files:
-                    source_files.append(relative_path)
-
-    logger.info("source_files_found", count=len(source_files), project_path=project_path)
-    return source_files
-
-
-async def _generate_tests_directly(
-    project_path: str,
-    source_files: list[str],
-    test_requirements: list[TestRequirement] | None = None,
-    use_llm: bool = True,
-) -> list[dict[str, Any]]:
-    """
-    Generate tests by calling the generator tool for each source file.
-
-    Args:
-        project_path: Path to the Java project
-        source_files: List of source files to generate tests for
-        test_requirements: Optional test requirements from impact analysis
-        use_llm: If True (default), use LLM for intelligent test generation.
-                 If False, use template-based generation (for CI without LLM).
-
-    Returns:
-        List of generated test info dicts
-    """
-    generated_tests = []
-
-    # Convert test requirements to dict format
-    requirements_by_file: dict[str, list[dict[str, Any]]] = {}
-    if test_requirements:
-        for req in test_requirements:
-            # Match requirement to source file by class name
-            for source_file in source_files:
-                if req.target_class and req.target_class in source_file:
-                    if source_file not in requirements_by_file:
-                        requirements_by_file[source_file] = []
-                    requirements_by_file[source_file].append({
-                        "suggested_test_name": req.suggested_test_name,
-                        "description": req.description,
-                        "scenario_type": req.scenario_type.value if req.scenario_type else "nominal",
-                        "target_method": req.target_method,
-                    })
-
-    for source_file in source_files:
-        logger.info("generating_tests_for_file", source_file=source_file)
-
-        try:
-            # Get requirements for this file if any
-            file_requirements = requirements_by_file.get(source_file)
-
-            # Call generator with LLM mode (production) or template mode (CI)
-            result_json = await generate_adaptive_tests(
-                project_path=project_path,
-                source_file=source_file,
-                test_requirements=file_requirements,
-                use_llm=use_llm,
-            )
-
-            result = json.loads(result_json)
-
-            if result.get("success"):
-                test_code = result.get("test_code", "")
-                test_file = result.get("test_file", "")
-
-                if test_code and "@Test" in test_code:
-                    test_info = {
-                        "path": test_file,
-                        "content": test_code,
-                        "class_name": result.get("context", {}).get("class_name", ""),
-                        "package": result.get("context", {}).get("package", ""),
-                        "source_file": source_file,
-                        "test_count": result.get("test_count", 0),
-                    }
-                    generated_tests.append(test_info)
-                    logger.info(
-                        "test_generated",
-                        source_file=source_file,
-                        test_file=test_file,
-                        test_count=result.get("test_count", 0),
-                    )
-                else:
-                    logger.warning("no_tests_generated", source_file=source_file)
-            else:
-                logger.warning(
-                    "test_generation_failed",
-                    source_file=source_file,
-                    error=result.get("error"),
-                )
-
-        except Exception as e:
-            logger.error(
-                "test_generation_error",
-                source_file=source_file,
-                error=str(e),
-            )
-
-    logger.info(
-        "direct_generation_complete",
-        total_source_files=len(source_files),
-        tests_generated=len(generated_tests),
-    )
-
-    return generated_tests
 
 
 def _find_source_files(project_path: str) -> list[str]:
@@ -307,7 +155,9 @@ def _find_source_files(project_path: str) -> list[str]:
                 for exclude in exclude_patterns:
                     # Simple pattern matching
                     exclude_name = exclude.replace("**/*", "").replace("**", "")
-                    if exclude_name in relative_path or source_file.name.endswith(exclude_name.replace("*", "")):
+                    if exclude_name in relative_path or source_file.name.endswith(
+                        exclude_name.replace("*", "")
+                    ):
                         should_exclude = True
                         break
 
@@ -351,12 +201,16 @@ async def _generate_tests_directly(
                 if req.target_class and req.target_class in source_file:
                     if source_file not in requirements_by_file:
                         requirements_by_file[source_file] = []
-                    requirements_by_file[source_file].append({
-                        "suggested_test_name": req.suggested_test_name,
-                        "description": req.description,
-                        "scenario_type": req.scenario_type.value if req.scenario_type else "nominal",
-                        "target_method": req.target_method,
-                    })
+                    requirements_by_file[source_file].append(
+                        {
+                            "suggested_test_name": req.suggested_test_name,
+                            "description": req.description,
+                            "scenario_type": req.scenario_type.value
+                            if req.scenario_type
+                            else "nominal",
+                            "target_method": req.target_method,
+                        }
+                    )
 
     for source_file in source_files:
         logger.info("generating_tests_for_file", source_file=source_file)
@@ -486,7 +340,9 @@ async def run_test_generation_with_agent(
 
     # Get MCP tools from registry (T058)
     tools = get_tools_for_servers(config.tools.mcp_servers)
-    logger.info("mcp_tools_loaded", server_count=len(config.tools.mcp_servers), tool_count=len(tools))
+    logger.info(
+        "mcp_tools_loaded", server_count=len(config.tools.mcp_servers), tool_count=len(tools)
+    )
 
     # Get LLM instance (T055)
     llm = get_llm(
@@ -763,11 +619,15 @@ async def _compile_with_auto_correction(
 
         # Store compilation errors
         errors = compilation_result.get("errors", [])
-        logger.warning("test_compilation_failed", test_path=test_path, attempt=attempt, errors=errors)
+        logger.warning(
+            "test_compilation_failed", test_path=test_path, attempt=attempt, errors=errors
+        )
 
         # Store compilation error artifact
         # Write file to disk FIRST (critical for artifact retrieval)
-        file_path = f"artifacts/{session_id}/compilation_errors/{Path(test_path).stem}_{attempt}.json"
+        file_path = (
+            f"artifacts/{session_id}/compilation_errors/{Path(test_path).stem}_{attempt}.json"
+        )
         path = Path(file_path)
         path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -790,7 +650,9 @@ async def _compile_with_auto_correction(
 
         # If max attempts reached, return failure
         if attempt >= max_attempts:
-            logger.error("test_compilation_max_retries", test_path=test_path, max_attempts=max_attempts)
+            logger.error(
+                "test_compilation_max_retries", test_path=test_path, max_attempts=max_attempts
+            )
             return {
                 "success": False,
                 "corrected_content": current_content,
@@ -826,7 +688,9 @@ Please fix these compilation errors while maintaining test logic and coverage.""
             messages = correction_response.get("messages", [])
             if messages:
                 last_message = messages[-1]
-                response_content = last_message.content if hasattr(last_message, "content") else str(last_message)
+                response_content = (
+                    last_message.content if hasattr(last_message, "content") else str(last_message)
+                )
             else:
                 response_content = str(correction_response)
         else:
@@ -916,6 +780,7 @@ def _extract_generated_tests(response: dict[str, Any] | AIMessage) -> list[dict[
             try:
                 # Try to find and parse JSON objects in the content
                 import re
+
                 json_pattern = r'\{[^{}]*"test_code"[^{}]*\}'
                 for match in re.finditer(json_pattern, content, re.DOTALL):
                     try:
@@ -982,11 +847,12 @@ def _validate_java_syntax(code: str) -> tuple[bool, str | None]:
 
     # Check 5: Method declarations have opening brace
     import re
-    method_pattern = r'(@Test|@BeforeEach|@AfterEach|@ParameterizedTest)\s*\n\s*(?:public|private|protected)?\s*\w+\s+\w+\s*\([^)]*\)'
+
+    method_pattern = r"(@Test|@BeforeEach|@AfterEach|@ParameterizedTest)\s*\n\s*(?:public|private|protected)?\s*\w+\s+\w+\s*\([^)]*\)"
     for match in re.finditer(method_pattern, code):
         # Find if there's a '{' after the method declaration within next 100 chars
-        snippet = code[match.end():match.end() + 100]
-        if '{' not in snippet:
+        snippet = code[match.end() : match.end() + 100]
+        if "{" not in snippet:
             return False, f"Test method missing opening brace: {match.group()[:50]}"
 
     return True, None
@@ -995,7 +861,9 @@ def _validate_java_syntax(code: str) -> tuple[bool, str | None]:
 def _is_valid_test_code(code: str) -> bool:
     """Check if code is valid Java test code."""
     # Basic content checks
-    if not ("class " in code and ("@Test" in code or "@ParameterizedTest" in code) and len(code) > 100):
+    if not (
+        "class " in code and ("@Test" in code or "@ParameterizedTest" in code) and len(code) > 100
+    ):
         return False
 
     # Syntax validation
@@ -1141,29 +1009,8 @@ def _write_tests_to_disk(project_path: str, validated_tests: list[dict[str, Any]
 
 
 def _detect_maven_modules(project_dir: Path) -> list[Path]:
-    """
-    Detect Maven module directories in a multi-module project.
-
-    Args:
-        project_dir: Root project directory
-
-    Returns:
-        List of module directory paths (empty if not multi-module)
-    """
-    modules: list[Path] = []
-    parent_pom = project_dir / "pom.xml"
-
-    if not parent_pom.exists():
-        return modules
-
-    # Check if it's a multi-module project by looking for subdirectories with pom.xml
-    for subdir in project_dir.iterdir():
-        if subdir.is_dir() and (subdir / "pom.xml").exists():
-            # Verify it has Java sources
-            if (subdir / "src" / "main" / "java").exists():
-                modules.append(subdir)
-
-    return modules
+    """Detect Maven module directories in a multi-module project."""
+    return detect_maven_modules(project_dir)
 
 
 def _find_best_module_for_test(
@@ -1183,16 +1030,15 @@ def _find_best_module_for_test(
         Best matching module path, or None if no match found
     """
     # Extract package from test content
-    package_match = re.search(r'package\s+([\w.]+);', test_content)
-    if not package_match:
+    package = extract_package(test_content)
+    if not package:
         return None
 
-    package = package_match.group(1)
     package_path = package.replace(".", "/")
 
     # Extract the class being tested (look for imports or class under test)
     class_under_test = None
-    import_match = re.search(r'import\s+([\w.]+\.(\w+));', test_content)
+    import_match = re.search(r"import\s+([\w.]+\.(\w+));", test_content)
     if import_match:
         class_under_test = import_match.group(1)
 
@@ -1242,7 +1088,9 @@ async def _store_agent_reasoning(
         messages = response.get("messages", [])
         if messages:
             last_message = messages[-1]
-            content = last_message.content if hasattr(last_message, "content") else str(last_message)
+            content = (
+                last_message.content if hasattr(last_message, "content") else str(last_message)
+            )
         else:
             content = str(response)
     else:
@@ -1530,15 +1378,14 @@ async def _run_test_feedback_loop(
 
     project_dir = Path(project_path)
     # Use actual_path (with module) if available, otherwise original path
-    current_tests = {
-        t.get("actual_path", t["path"]): t["content"]
-        for t in validated_tests
-    }
+    current_tests = {t.get("actual_path", t["path"]): t["content"] for t in validated_tests}
 
     # Extract project context once (pom.xml, Java version, frameworks)
     project_context = _get_project_context(project_path)
     if project_context:
-        logger.info("project_context_loaded", project_path=project_path, context_length=len(project_context))
+        logger.info(
+            "project_context_loaded", project_path=project_path, context_length=len(project_context)
+        )
 
     for iteration in range(1, max_iterations + 1):
         logger.info(
@@ -1601,7 +1448,10 @@ async def _run_test_feedback_loop(
                 # Find the matching test path in current_tests
                 test_path_match = None
                 for test_path in current_tests:
-                    if Path(error_file).name in test_path or Path(test_path).name == Path(error_file).name:
+                    if (
+                        Path(error_file).name in test_path
+                        or Path(test_path).name == Path(error_file).name
+                    ):
                         test_path_match = test_path
                         break
 
@@ -1658,7 +1508,9 @@ async def _run_test_feedback_loop(
                                     file_errors=len(file_errors),
                                 )
                             except Exception as e:
-                                logger.error("corrected_test_write_failed", path=path_str, error=str(e))
+                                logger.error(
+                                    "corrected_test_write_failed", path=path_str, error=str(e)
+                                )
 
             logger.info(
                 "per_file_correction_complete",
@@ -1809,7 +1661,9 @@ async def _run_test_feedback_loop(
                                     runtime_failures=len(class_failures),
                                 )
                             except Exception as e:
-                                logger.error("corrected_test_write_failed", path=path_str, error=str(e))
+                                logger.error(
+                                    "corrected_test_write_failed", path=path_str, error=str(e)
+                                )
 
             logger.info(
                 "per_file_runtime_correction_complete",
@@ -1821,7 +1675,9 @@ async def _run_test_feedback_loop(
 
         elif other_failures:
             # Fallback: non-runtime failures (compilation, assertion, unknown)
-            fix_prompt = _build_fix_prompt(other_failures, current_tests, project_path, project_context=project_context)
+            fix_prompt = _build_fix_prompt(
+                other_failures, current_tests, project_path, project_context=project_context
+            )
 
             fix_response = await _invoke_agent_and_store_tools(
                 agent=agent,
@@ -1925,7 +1781,13 @@ async def _compile_maven_tests(
             continue
 
         # Build Maven compile command
-        mvn_cmd = [_get_maven_executable(), "clean", "test-compile", "-f", pom_path.resolve().as_posix()]
+        mvn_cmd = [
+            _get_maven_executable(),
+            "clean",
+            "test-compile",
+            "-f",
+            pom_path.resolve().as_posix(),
+        ]
 
         logger.info(
             "compiling_maven_tests",
@@ -1990,7 +1852,9 @@ async def _compile_maven_tests(
 
         except subprocess.TimeoutExpired:
             logger.error("maven_test_compile_timeout", module=module, timeout=TEST_TIMEOUT_SECONDS)
-            all_output.append(f"Module {module}: compilation timed out after {TEST_TIMEOUT_SECONDS}s")
+            all_output.append(
+                f"Module {module}: compilation timed out after {TEST_TIMEOUT_SECONDS}s"
+            )
             all_success = False
 
         except Exception as e:
@@ -2220,14 +2084,16 @@ def _parse_test_failures(maven_output: str) -> list[dict[str, Any]]:
                 continue
             line_match = surefire3_line_pattern.match(line)
             if line_match:
-                _add_failure({
-                    "type": "runtime",
-                    "class": line_match.group(1),
-                    "method": line_match.group(2),
-                    "line": int(line_match.group(3)),
-                    "error_type": line_match.group(4),
-                    "error": line_match.group(5).strip(),
-                })
+                _add_failure(
+                    {
+                        "type": "runtime",
+                        "class": line_match.group(1),
+                        "method": line_match.group(2),
+                        "line": int(line_match.group(3)),
+                        "error_type": line_match.group(4),
+                        "error": line_match.group(5).strip(),
+                    }
+                )
 
     # ---- Stack trace blocks (Surefire 3.x) ----
     # [ERROR] com.example.FooTest.myMethod -- Time elapsed: 0.005 s <<< ERROR!
@@ -2263,14 +2129,16 @@ def _parse_test_failures(maven_output: str) -> list[dict[str, Any]]:
                     f["stacktrace"] = limited_trace
                     break
         else:
-            _add_failure({
-                "type": "runtime",
-                "class": class_name,
-                "method": method_name,
-                "error_type": exc_match.group(1) if exc_match else "Unknown",
-                "error": exc_match.group(2).strip() if exc_match else exception_line,
-                "stacktrace": limited_trace,
-            })
+            _add_failure(
+                {
+                    "type": "runtime",
+                    "class": class_name,
+                    "method": method_name,
+                    "error_type": exc_match.group(1) if exc_match else "Unknown",
+                    "error": exc_match.group(2).strip() if exc_match else exception_line,
+                    "stacktrace": limited_trace,
+                }
+            )
 
     # ---- Surefire 2.x format (backwards compatibility) ----
     # "Failed tests:"  or  "Tests in error:"
@@ -2286,12 +2154,14 @@ def _parse_test_failures(maven_output: str) -> list[dict[str, Any]]:
                 continue
             test_match = re.match(r"(\w+)\(([^)]+)\):\s*(.+)", line)
             if test_match:
-                _add_failure({
-                    "type": "runtime",
-                    "method": test_match.group(1),
-                    "class": test_match.group(2),
-                    "error": test_match.group(3),
-                })
+                _add_failure(
+                    {
+                        "type": "runtime",
+                        "method": test_match.group(1),
+                        "class": test_match.group(2),
+                        "error": test_match.group(3),
+                    }
+                )
 
     # ---- Compilation errors ----
     compile_error_pattern = re.compile(
@@ -2320,11 +2190,13 @@ def _parse_test_failures(maven_output: str) -> list[dict[str, Any]]:
         error_type = match.group(1)
         message = match.group(2).strip()
         if message and not any(f.get("error") == message for f in failures):
-            failures.append({
-                "type": "assertion",
-                "error_type": error_type,
-                "error": message,
-            })
+            failures.append(
+                {
+                    "type": "assertion",
+                    "error_type": error_type,
+                    "error": message,
+                }
+            )
 
     return failures
 
@@ -2341,7 +2213,7 @@ def _categorize_jpa_error(error_msg: str) -> dict[str, Any] | None:
         return {
             "category": "generated_value_setid",
             "description": "Attempting to call setId() on a JPA entity with @GeneratedValue",
-            "fix": "Use ReflectionTestUtils.setField(entity, \"id\", value) instead of entity.setId(value)",
+            "fix": 'Use ReflectionTestUtils.setField(entity, "id", value) instead of entity.setId(value)',
             "import_needed": "org.springframework.test.util.ReflectionTestUtils",
         }
 
@@ -2362,8 +2234,9 @@ def _categorize_jpa_error(error_msg: str) -> dict[str, Any] | None:
         }
 
     # Pattern 4: Date type mismatch
-    if ("incompatible types" in error_lower or "cannot find symbol" in error_lower) and \
-       ("date" in error_lower or "localdate" in error_lower):
+    if ("incompatible types" in error_lower or "cannot find symbol" in error_lower) and (
+        "date" in error_lower or "localdate" in error_lower
+    ):
         return {
             "category": "date_type_mismatch",
             "description": "Using wrong date type (java.util.Date vs java.time.LocalDate)",
@@ -2405,24 +2278,26 @@ def _categorize_type_error(error_msg: str) -> dict[str, Any] | None:
     error_lower = error_msg.lower()
 
     # Pattern 1: BigDecimal vs Double
-    if "incompatible types" in error_lower and ("bigdecimal" in error_lower or "double" in error_lower):
+    if "incompatible types" in error_lower and (
+        "bigdecimal" in error_lower or "double" in error_lower
+    ):
         return {
             "category": "bigdecimal_double_mismatch",
             "description": "Type mismatch between BigDecimal and Double",
-            "fix": "Use new BigDecimal(\"value\") instead of Double. Never use double primitives with BigDecimal fields.",
-            "example": "new BigDecimal(\"100.00\") instead of 100.0",
+            "fix": 'Use new BigDecimal("value") instead of Double. Never use double primitives with BigDecimal fields.',
+            "example": 'new BigDecimal("100.00") instead of 100.0',
         }
 
     # Pattern 2: String vs Integer
     if "incompatible types" in error_lower and (
-        ("string" in error_lower and "integer" in error_lower) or
-        ("string" in error_lower and "int" in error_lower)
+        ("string" in error_lower and "integer" in error_lower)
+        or ("string" in error_lower and "int" in error_lower)
     ):
         return {
             "category": "string_integer_mismatch",
             "description": "Type mismatch between String and Integer",
             "fix": "Use Integer.parseInt(string) to convert String to Integer, or use string literals with quotes",
-            "example": "Use 123 (Integer) instead of \"123\" (String), or vice versa",
+            "example": 'Use 123 (Integer) instead of "123" (String), or vice versa',
         }
 
     # Pattern 3: Method parameter type mismatch
@@ -2471,38 +2346,8 @@ def _categorize_type_error(error_msg: str) -> dict[str, Any] | None:
 
 
 def _find_source_file_for_test(test_path: str, project_path: str) -> str | None:
-    """
-    Find the source file corresponding to a test file.
-
-    Args:
-        test_path: Path to test file (e.g., src/test/java/com/example/FooTest.java)
-        project_path: Project root path
-
-    Returns:
-        Path to source file or None if not found
-    """
-    from pathlib import Path
-
-    # Extract class name from test path
-    test_file = Path(test_path)
-    test_class_name = test_file.stem  # e.g., "FooTest"
-
-    # Remove "Test" suffix to get source class name
-    if test_class_name.endswith("Test"):
-        source_class_name = test_class_name[:-4]  # "Foo"
-    else:
-        source_class_name = test_class_name
-
-    # Convert test path to source path
-    # src/test/java/com/example/FooTest.java -> src/main/java/com/example/Foo.java
-    source_path = test_path.replace("/test/", "/main/").replace("\\test\\", "\\main\\")
-    source_path = source_path.replace(test_class_name + ".java", source_class_name + ".java")
-
-    full_source_path = Path(project_path) / source_path
-    if full_source_path.exists():
-        return str(full_source_path.relative_to(project_path))
-
-    return None
+    """Find the source file corresponding to a test file."""
+    return test_path_to_source_path(test_path, project_path)
 
 
 def _build_fix_prompt(
@@ -2573,7 +2418,7 @@ def _build_fix_prompt(
             # Fallback to old format if errors weren't parsed
             prompt += "## Compilation Errors:\n\n"
             for i, failure in enumerate(compilation_errors[:MAX_FAILURES_IN_PROMPT], 1):
-                error_msg = failure.get('error', '')
+                error_msg = failure.get("error", "")
                 if len(error_msg) > 500:
                     error_msg = error_msg[:500] + "... (truncated)"
                 prompt += f"### Error {i}:\n"
@@ -2588,13 +2433,13 @@ def _build_fix_prompt(
         for i, failure in enumerate(runtime_to_show, 1):
             prompt += f"### Failure {i}:\n"
             if failure.get("method"):
-                error_msg = failure.get('error', '')
+                error_msg = failure.get("error", "")
                 if len(error_msg) > 300:
                     error_msg = error_msg[:300] + "... (truncated)"
                 prompt += f"**Test**: `{failure.get('class')}.{failure.get('method')}()`\n"
                 prompt += f"**Error**: {error_msg}\n\n"
             else:
-                error_msg = failure.get('error', '')
+                error_msg = failure.get("error", "")
                 if len(error_msg) > 300:
                     error_msg = error_msg[:300] + "... (truncated)"
                 prompt += f"**Error**: {error_msg}\n\n"
@@ -2752,7 +2597,7 @@ def _build_fix_prompt_per_file(
         else:
             prompt += f"## Compilation Errors ({len(compilation_errors)}):\n\n"
             for i, err in enumerate(compilation_errors, 1):
-                error_msg = err.get('error', '')
+                error_msg = err.get("error", "")
                 if len(error_msg) > 500:
                     error_msg = error_msg[:500] + "... (truncated)"
                 prompt += f"### Error {i} - Line {err.get('line')}:\n"
@@ -2778,7 +2623,7 @@ def _build_fix_prompt_per_file(
     if other_errors:
         prompt += f"## Other Errors ({len(other_errors)}):\n\n"
         for i, err in enumerate(other_errors, 1):
-            error_msg = err.get('error', '')
+            error_msg = err.get("error", "")
             if len(error_msg) > 500:
                 error_msg = error_msg[:500] + "... (truncated)"
             prompt += f"### Error {i}:\n```\n{error_msg}\n```\n\n"
@@ -2891,7 +2736,12 @@ def _get_project_context(project_path: str) -> str:
         props = root.find("m:properties", ns) or root.find("properties")
         java_version = None
         if props is not None:
-            for tag in ["m:java.version", "java.version", "m:maven.compiler.source", "maven.compiler.source"]:
+            for tag in [
+                "m:java.version",
+                "java.version",
+                "m:maven.compiler.source",
+                "maven.compiler.source",
+            ]:
                 el = props.find(tag, ns) if tag.startswith("m:") else props.find(tag)
                 if el is not None and el.text:
                     java_version = el.text
@@ -2911,7 +2761,9 @@ def _get_project_context(project_path: str) -> str:
             if parent_version is None:
                 parent_version = parent.find("version")
             if parent_artifact is not None and "spring-boot" in (parent_artifact.text or ""):
-                context_parts.append(f"- **Spring Boot version**: {parent_version.text if parent_version is not None else 'unknown'}")
+                context_parts.append(
+                    f"- **Spring Boot version**: {parent_version.text if parent_version is not None else 'unknown'}"
+                )
 
         # Key dependencies
         deps = []
@@ -2936,9 +2788,19 @@ def _get_project_context(project_path: str) -> str:
         # Show relevant dependencies
         key_deps = []
         for name, ver in deps:
-            if any(k in name for k in ["lombok", "junit", "mockito", "spring-boot-starter-test",
-                                        "spring-boot-starter-data-jpa", "spring-boot-starter-web",
-                                        "assertj", "h2"]):
+            if any(
+                k in name
+                for k in [
+                    "lombok",
+                    "junit",
+                    "mockito",
+                    "spring-boot-starter-test",
+                    "spring-boot-starter-data-jpa",
+                    "spring-boot-starter-web",
+                    "assertj",
+                    "h2",
+                ]
+            ):
                 key_deps.append(f"  - {name} ({ver})")
 
         if key_deps:
@@ -3007,12 +2869,21 @@ def _find_error_referenced_classes(
     for match in import_pattern.finditer(test_content):
         fqcn = match.group(1)
         # Only include project classes (skip java.*, org.junit.*, org.mockito.*, etc.)
-        if not any(fqcn.startswith(prefix) for prefix in [
-            "java.", "javax.", "jakarta.",
-            "org.junit", "org.mockito", "org.assertj", "org.hamcrest",
-            "org.springframework.test", "org.springframework.beans",
-            "org.springframework.boot.test",
-        ]):
+        if not any(
+            fqcn.startswith(prefix)
+            for prefix in [
+                "java.",
+                "javax.",
+                "jakarta.",
+                "org.junit",
+                "org.mockito",
+                "org.assertj",
+                "org.hamcrest",
+                "org.springframework.test",
+                "org.springframework.beans",
+                "org.springframework.boot.test",
+            ]
+        ):
             class_name = fqcn.split(".")[-1]
             referenced_classes.add(class_name)
 
@@ -3021,14 +2892,7 @@ def _find_error_referenced_classes(
 
     # Find source files for referenced classes
     source_contents = []
-    # Search in src/main/java
-    src_dirs = [project_dir / "src" / "main" / "java"]
-    # Also check multi-module
-    for subdir in project_dir.iterdir():
-        if subdir.is_dir() and (subdir / "pom.xml").exists():
-            module_src = subdir / "src" / "main" / "java"
-            if module_src.exists():
-                src_dirs.append(module_src)
+    src_dirs = get_source_directories(project_dir)
 
     found_classes: set[str] = set()
     for src_dir in src_dirs:

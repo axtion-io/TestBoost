@@ -10,7 +10,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from src.agents.loader import AgentConfig, AgentLoader
+from src.agents.loader import VALID_LLM_PROVIDERS, AgentConfig, AgentLoader
 
 
 class TestYAMLConfigLoading:
@@ -37,8 +37,6 @@ class TestYAMLConfigLoading:
         assert len(loaded_configs) == 3, f"Expected 3 configs, got {len(loaded_configs)}"
 
         # Validate each config has required LLM keys
-        valid_providers = ["google-genai", "anthropic", "openai"]
-
         for name, config in loaded_configs.items():
             # Assert config is valid AgentConfig instance
             assert isinstance(config, AgentConfig), f"{name} is not AgentConfig"
@@ -49,18 +47,18 @@ class TestYAMLConfigLoading:
 
             # Assert 'temperature' exists and is valid
             assert config.llm.temperature is not None, f"{name} missing 'temperature'"
-            assert (
-                0.0 <= config.llm.temperature <= 2.0
-            ), f"{name} temperature {config.llm.temperature} out of range [0, 2]"
+            assert 0.0 <= config.llm.temperature <= 2.0, (
+                f"{name} temperature {config.llm.temperature} out of range [0, 2]"
+            )
 
             # Assert 'max_tokens' exists (can be None for default)
             # max_tokens is optional but should be accessible
             _ = config.llm.max_tokens  # Just verify it's accessible
 
             # Assert provider is valid
-            assert (
-                config.llm.provider in valid_providers
-            ), f"{name} has invalid provider '{config.llm.provider}'"
+            assert config.llm.provider in VALID_LLM_PROVIDERS, (
+                f"{name} has invalid provider '{config.llm.provider}'"
+            )
 
 
 class TestYAMLChangesEffect:
@@ -106,13 +104,13 @@ class TestYAMLChangesEffect:
 
         # Assert new temperature is applied
         assert reloaded_config.llm.temperature == new_temperature, (
-            f"Expected temperature {new_temperature}, " f"got {reloaded_config.llm.temperature}"
+            f"Expected temperature {new_temperature}, got {reloaded_config.llm.temperature}"
         )
 
         # Assert original temperature was different
-        assert (
-            initial_temperature != new_temperature
-        ), "Test setup error: temperatures should differ"
+        assert initial_temperature != new_temperature, (
+            "Test setup error: temperatures should differ"
+        )
 
     def test_yaml_changes_detected_by_cache(self, tmp_path):
         """Test that file modification invalidates cache automatically."""
@@ -263,9 +261,9 @@ class TestPromptTemplateLoading:
         prompt_content = loader.load_prompt("dependency_update", category="maven")
 
         # Assert prompt is non-empty and has substantial content
-        assert (
-            len(prompt_content) > 100
-        ), f"Prompt too short ({len(prompt_content)} chars), expected > 100"
+        assert len(prompt_content) > 100, (
+            f"Prompt too short ({len(prompt_content)} chars), expected > 100"
+        )
 
         # Assert prompt contains expected Maven-related keywords
         prompt_lower = prompt_content.lower()

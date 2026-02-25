@@ -5,8 +5,9 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from langchain_core.messages import AIMessage
 
+from src.lib.config import get_settings
 from src.lib.llm import LLMError, LLMProviderError, LLMTimeoutError
-from src.lib.startup_checks import check_llm_connection
+from src.lib.startup_checks import STARTUP_TIMEOUT, check_llm_connection
 
 
 class TestLLMConnectionSuccess:
@@ -47,7 +48,7 @@ class TestLLMConnectionSuccess:
             await check_llm_connection(model="anthropic/claude-sonnet-4-5")
 
             # Verify get_llm called with custom model
-            mock_get_llm.assert_called_once_with(model="anthropic/claude-sonnet-4-5", timeout=5)
+            mock_get_llm.assert_called_once_with(model="anthropic/claude-sonnet-4-5", timeout=STARTUP_TIMEOUT)
 
 
 class TestLLMConnectionFailure:
@@ -115,15 +116,16 @@ class TestLLMConnectionTimeout:
 
     @pytest.mark.asyncio
     async def test_llm_connection_timeout(self):
-        """Test connection times out after 5 seconds."""
+        """Test connection times out after configured timeout."""
         import asyncio
 
-        with patch("src.lib.startup_checks.get_llm") as mock_get_llm:
+        with patch("src.lib.startup_checks.STARTUP_TIMEOUT", 2), \
+             patch("src.lib.startup_checks.get_llm") as mock_get_llm:
             mock_llm = AsyncMock()
 
             # Simulate timeout by sleeping longer than timeout
             async def slow_response(*args, **kwargs):
-                await asyncio.sleep(10)  # 10 seconds > 5 second timeout
+                await asyncio.sleep(10)  # 10 seconds > 2 second patched timeout
                 return AIMessage(content="pong")
 
             mock_llm.ainvoke.side_effect = slow_response

@@ -73,9 +73,25 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             await run_all_startup_checks()
             logger.info("startup_checks_passed")
         except StartupCheckError as e:
-            logger.error("startup_checks_failed", error=str(e))
-            # Application MUST fail if startup checks fail (FR-010)
-            raise RuntimeError(f"Application startup failed: {e}") from e
+            logger.error(
+                "startup_checks_failed",
+                error=str(e),
+                llm_provider=settings.llm_provider,
+                model=settings.model,
+                hint="Check your .env file and network connectivity. "
+                     "Set TESTBOOST_SKIP_API_STARTUP_CHECKS=true to bypass.",
+            )
+            # In strict mode (default), crash the app per FR-010
+            # Set TESTBOOST_STARTUP_MODE=warn to start in degraded mode
+            startup_mode = os.environ.get("TESTBOOST_STARTUP_MODE", "strict").lower()
+            if startup_mode == "warn":
+                logger.warning(
+                    "startup_degraded_mode",
+                    reason="LLM checks failed but TESTBOOST_STARTUP_MODE=warn",
+                    error=str(e),
+                )
+            else:
+                raise RuntimeError(f"Application startup failed: {e}") from e
 
     yield
 

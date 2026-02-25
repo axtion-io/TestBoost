@@ -12,6 +12,8 @@ from src.lib.logging import get_logger
 
 logger = get_logger(__name__)
 
+VALID_LLM_PROVIDERS = ["google-genai", "anthropic", "openai", "vllm"]
+
 
 class ConfigCache:
     """Cache for loaded configurations with timestamp tracking."""
@@ -384,16 +386,17 @@ class AgentLoader:
                     errors.append(f"Prompt file not found: {config.prompts.system}")
 
             # 3. Validate LLM provider
-            valid_providers = ["google-genai", "anthropic", "openai"]
-            if config.llm.provider not in valid_providers:
+            if config.llm.provider not in VALID_LLM_PROVIDERS:
                 errors.append(
                     f"Invalid LLM provider '{config.llm.provider}'. "
-                    f"Valid providers: {', '.join(valid_providers)}"
+                    f"Valid providers: {', '.join(VALID_LLM_PROVIDERS)}"
                 )
 
             # 4. Validate temperature range
             if not 0.0 <= config.llm.temperature <= 2.0:
-                errors.append(f"Temperature must be between 0.0 and 2.0, got {config.llm.temperature}")
+                errors.append(
+                    f"Temperature must be between 0.0 and 2.0, got {config.llm.temperature}"
+                )
 
             # 5. Validate max_tokens
             if config.llm.max_tokens is not None and config.llm.max_tokens <= 0:
@@ -586,6 +589,7 @@ __all__ = [
     "AgentLoader",
     "AgentConfig",
     "ConfigCache",
+    "VALID_LLM_PROVIDERS",
     "IdentityConfig",
     "LLMConfig",
     "ToolsConfig",

@@ -11,6 +11,12 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Any
 
+from src.lib.path_utils import (
+    extract_package,
+    get_source_directories,
+    get_test_directories,
+)
+
 
 async def analyze_project_context(
     project_path: str, include_dependencies: bool = True, scan_depth: int = 10
@@ -175,29 +181,10 @@ async def _analyze_source_structure(project_dir: Path, scan_depth: int) -> dict[
     """Analyze source code structure."""
     structure = {"main_sources": [], "packages": [], "class_count": 0, "interface_count": 0}
 
-    # Find main source directories - support multi-module Maven projects
-    src_dirs: list[Path] = []
-    java_files: list[Path] = []
-
-    # Check for standard single-module structure first
-    standard_src = project_dir / "src" / "main" / "java"
-    if standard_src.exists():
-        src_dirs.append(standard_src)
-
-    # Check for multi-module Maven structure (submodules with pom.xml and src/main/java)
-    for subdir in project_dir.iterdir():
-        if subdir.is_dir() and (subdir / "pom.xml").exists():
-            module_src = subdir / "src" / "main" / "java"
-            if module_src.exists():
-                src_dirs.append(module_src)
-
-    # Fallback to generic src directory
-    if not src_dirs:
-        generic_src = project_dir / "src"
-        if generic_src.exists():
-            src_dirs.append(generic_src)
+    src_dirs = get_source_directories(project_dir)
 
     # Collect all Java files from all source directories
+    java_files: list[Path] = []
     for src_dir in src_dirs:
         java_files.extend(src_dir.rglob("*.java"))
 
@@ -208,9 +195,9 @@ async def _analyze_source_structure(project_dir: Path, scan_depth: int) -> dict[
     for java_file in java_files[:200]:  # Limit for performance
         try:
             content = java_file.read_text(encoding="utf-8", errors="replace")
-            package_match = re.search(r"package\s+([\w.]+);", content)
-            if package_match:
-                packages.add(package_match.group(1))
+            pkg = extract_package(content)
+            if pkg:
+                packages.add(pkg)
         except OSError:
             # Skip unreadable files (permissions, encoding issues)
             continue
@@ -225,26 +212,7 @@ async def _analyze_test_structure(project_dir: Path, scan_depth: int) -> dict[st
     """Analyze test code structure."""
     structure = {"test_sources": [], "test_count": 0, "test_packages": []}
 
-    # Find test directories - support multi-module Maven projects
-    test_dirs = []
-
-    # Check for standard single-module structure
-    standard_test = project_dir / "src" / "test" / "java"
-    if standard_test.exists():
-        test_dirs.append(standard_test)
-
-    # Check for multi-module Maven structure
-    for subdir in project_dir.iterdir():
-        if subdir.is_dir() and (subdir / "pom.xml").exists():
-            module_test = subdir / "src" / "test" / "java"
-            if module_test.exists():
-                test_dirs.append(module_test)
-
-    # Fallback to generic test directory
-    if not test_dirs:
-        generic_test = project_dir / "test"
-        if generic_test.exists():
-            test_dirs.append(generic_test)
+    test_dirs = get_test_directories(project_dir)
 
     # Collect all test files from all test directories
     test_files: list[Path] = []
@@ -261,9 +229,9 @@ async def _analyze_test_structure(project_dir: Path, scan_depth: int) -> dict[st
     for test_file in test_files[:100]:
         try:
             content = test_file.read_text(encoding="utf-8", errors="replace")
-            package_match = re.search(r"package\s+([\w.]+);", content)
-            if package_match:
-                packages.add(package_match.group(1))
+            pkg = extract_package(content)
+            if pkg:
+                packages.add(pkg)
         except OSError:
             # Skip unreadable files
             continue
@@ -278,17 +246,7 @@ async def _detect_frameworks(project_dir: Path) -> list[str]:
     """Detect application frameworks from code and dependencies."""
     frameworks = set()
 
-    # Collect source directories - support multi-module
-    src_dirs = []
-    standard_src = project_dir / "src" / "main" / "java"
-    if standard_src.exists():
-        src_dirs.append(standard_src)
-
-    for subdir in project_dir.iterdir():
-        if subdir.is_dir() and (subdir / "pom.xml").exists():
-            module_src = subdir / "src" / "main" / "java"
-            if module_src.exists():
-                src_dirs.append(module_src)
+    src_dirs = get_source_directories(project_dir)
 
     # Check imports in source files from all directories
     java_files = []
@@ -325,17 +283,7 @@ async def _detect_test_frameworks(project_dir: Path) -> list[str]:
     """Detect test frameworks from test code."""
     test_frameworks = set()
 
-    # Collect test directories - support multi-module
-    test_dirs = []
-    standard_test = project_dir / "src" / "test" / "java"
-    if standard_test.exists():
-        test_dirs.append(standard_test)
-
-    for subdir in project_dir.iterdir():
-        if subdir.is_dir() and (subdir / "pom.xml").exists():
-            module_test = subdir / "src" / "test" / "java"
-            if module_test.exists():
-                test_dirs.append(module_test)
+    test_dirs = get_test_directories(project_dir)
 
     # Check imports in test files from all directories
     test_files = []

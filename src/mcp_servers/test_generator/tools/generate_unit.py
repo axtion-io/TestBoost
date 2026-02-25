@@ -17,6 +17,7 @@ from typing import Any
 from src.lib.config import get_settings
 from src.lib.llm import get_llm
 from src.lib.logging import get_logger
+from src.lib.path_utils import source_path_to_test_path
 
 logger = get_logger(__name__)
 
@@ -556,21 +557,7 @@ def _detect_class_type(source_code: str, class_info: dict[str, Any]) -> str:
 
 def _get_test_file_path(project_dir: Path, source_path: Path) -> Path:
     """Generate test file path from source file path."""
-    # Convert main/java to test/java
-    relative = source_path.relative_to(project_dir)
-    parts = list(relative.parts)
-
-    if "main" in parts:
-        idx = parts.index("main")
-        parts[idx] = "test"
-
-    # Add Test suffix to filename
-    filename = parts[-1]
-    if filename.endswith(".java"):
-        parts[-1] = filename.replace(".java", "Test.java")
-
-    # Return relative path from project root (not absolute path)
-    return Path(*parts)
+    return source_path_to_test_path(project_dir, source_path)
 
 
 def _generate_test_code(context: dict[str, Any]) -> str:

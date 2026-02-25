@@ -105,6 +105,7 @@ def _find_source_files(project_path: str) -> list[str]:
     Find Java source files to generate tests for.
 
     Filters out test files, DTOs, entities, configuration, and other non-testable classes.
+    Uses get_source_directories() from path_utils for source directory discovery.
 
     Args:
         project_path: Path to the Java project root
@@ -113,55 +114,44 @@ def _find_source_files(project_path: str) -> list[str]:
         List of relative paths to source files
     """
     project_dir = Path(project_path)
-    source_files = []
+    source_files: list[str] = []
 
     # Patterns to include (testable classes)
     include_patterns = [
-        "**/web/**/*.java",  # Controllers, resources
+        "**/web/**/*.java",
         "**/controller/**/*.java",
         "**/service/**/*.java",
         "**/application/**/*.java",
         "**/api/**/*.java",
     ]
 
-    # Patterns to exclude
-    exclude_patterns = [
-        "**/test/**",  # Test files
-        "**/model/**",  # Entities, DTOs
-        "**/entity/**",
-        "**/dto/**",
-        "**/config/**",  # Configuration
-        "**/configuration/**",
-        "**/mapper/**",  # Mappers (usually simple)
-        "**/*Application.java",  # Main classes
-        "**/*Config.java",
-        "**/*Configuration.java",
-        "**/*Request.java",  # Request/Response DTOs
-        "**/*Response.java",
-        "**/*DTO.java",
-        "**/*Exception.java",  # Exceptions
-    ]
+    # Directory names and file suffixes to exclude
+    _exclude_dirs = {"test", "model", "entity", "dto", "config", "configuration", "mapper"}
+    _exclude_suffixes = (
+        "Application.java",
+        "Config.java",
+        "Configuration.java",
+        "Request.java",
+        "Response.java",
+        "DTO.java",
+        "Exception.java",
+    )
 
-    # Find all Java files in src/main/java
-    main_java_dirs = list(project_dir.glob("**/src/main/java"))
-
-    for main_java_dir in main_java_dirs:
+    for src_dir in get_source_directories(project_dir):
         for pattern in include_patterns:
-            for source_file in main_java_dir.glob(pattern):
-                # Check if file should be excluded
+            for source_file in src_dir.glob(pattern):
                 relative_path = str(source_file.relative_to(project_dir))
-                should_exclude = False
 
-                for exclude in exclude_patterns:
-                    # Simple pattern matching
-                    exclude_name = exclude.replace("**/*", "").replace("**", "")
-                    if exclude_name in relative_path or source_file.name.endswith(
-                        exclude_name.replace("*", "")
-                    ):
-                        should_exclude = True
-                        break
+                # Check directory-based exclusions
+                parts = set(source_file.relative_to(src_dir).parts[:-1])
+                if parts & _exclude_dirs:
+                    continue
 
-                if not should_exclude and relative_path not in source_files:
+                # Check suffix-based exclusions
+                if source_file.name.endswith(_exclude_suffixes):
+                    continue
+
+                if relative_path not in source_files:
                     source_files.append(relative_path)
 
     logger.info("source_files_found", count=len(source_files), project_path=project_path)
@@ -941,7 +931,7 @@ def _write_tests_to_disk(project_path: str, validated_tests: list[dict[str, Any]
     project_dir = Path(project_path)
 
     # Detect multi-module Maven structure
-    modules = _detect_maven_modules(project_dir)
+    modules = detect_maven_modules(project_dir)
 
     for test in validated_tests:
         # Only write tests that compiled successfully
@@ -1006,11 +996,6 @@ def _write_tests_to_disk(project_path: str, validated_tests: list[dict[str, Any]
     )
 
     return written_files
-
-
-def _detect_maven_modules(project_dir: Path) -> list[Path]:
-    """Detect Maven module directories in a multi-module project."""
-    return detect_maven_modules(project_dir)
 
 
 def _find_best_module_for_test(
@@ -2345,11 +2330,6 @@ def _categorize_type_error(error_msg: str) -> dict[str, Any] | None:
     return None
 
 
-def _find_source_file_for_test(test_path: str, project_path: str) -> str | None:
-    """Find the source file corresponding to a test file."""
-    return test_path_to_source_path(test_path, project_path)
-
-
 def _build_fix_prompt(
     failures: list[dict[str, Any]],
     current_tests: dict[str, str],
@@ -2455,7 +2435,7 @@ def _build_fix_prompt(
     project_dir = Path(project_path)
 
     for test_path in current_tests:
-        source_path = _find_source_file_for_test(test_path, project_path)
+        source_path = test_path_to_source_path(test_path, project_path)
         if source_path and source_path not in source_files_added:
             try:
                 full_source_path = project_dir / source_path
@@ -2629,7 +2609,7 @@ def _build_fix_prompt_per_file(
             prompt += f"### Error {i}:\n```\n{error_msg}\n```\n\n"
 
     # Add source code context for the class being tested
-    source_path = _find_source_file_for_test(test_path, project_path)
+    source_path = test_path_to_source_path(test_path, project_path)
     if source_path:
         try:
             full_source_path = Path(project_path) / source_path

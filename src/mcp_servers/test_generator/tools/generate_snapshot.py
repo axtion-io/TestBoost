@@ -10,6 +10,8 @@ import re
 from pathlib import Path
 from typing import Any
 
+from src.lib.path_utils import extract_package, source_path_to_test_path
+
 
 async def generate_snapshot_tests(
     project_path: str, source_file: str, snapshot_format: str = "json"
@@ -75,9 +77,9 @@ def _analyze_for_snapshot(source_code: str) -> dict[str, Any]:
     }
 
     # Extract package
-    package_match = re.search(r"package\s+([\w.]+);", source_code)
-    if package_match:
-        info["package"] = package_match.group(1)
+    pkg = extract_package(source_code)
+    if pkg:
+        info["package"] = pkg
 
     # Extract class name
     class_match = re.search(r"class\s+(\w+)", source_code)
@@ -117,18 +119,9 @@ def _analyze_for_snapshot(source_code: str) -> dict[str, Any]:
 
 def _get_snapshot_test_path(project_dir: Path, source_path: Path) -> Path:
     """Generate snapshot test file path."""
-    relative = source_path.relative_to(project_dir)
-    parts = list(relative.parts)
-
-    if "main" in parts:
-        idx = parts.index("main")
-        parts[idx] = "test"
-
-    filename = parts[-1]
-    if filename.endswith(".java"):
-        parts[-1] = filename.replace(".java", "SnapshotTest.java")
-
-    return project_dir / Path(*parts)
+    return project_dir / source_path_to_test_path(
+        project_dir, source_path, suffix="SnapshotTest"
+    )
 
 
 def _generate_snapshot_code(class_info: dict[str, Any], snapshot_format: str) -> str:

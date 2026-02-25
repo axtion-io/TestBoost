@@ -9,6 +9,7 @@ from rich.table import Table
 
 from src.cli.progress import create_progress, is_windows
 from src.lib.logging import get_logger
+from src.lib.path_utils import get_source_directories
 
 logger = get_logger(__name__)
 console = Console()
@@ -90,18 +91,8 @@ def generate_tests(
         console.print(f"[red]Error:[/red] Project path not found: {project_path}")
         raise typer.Exit(1)
 
-    # Check for Java project (support multi-module Maven projects)
-    src_dir = project_dir / "src" / "main" / "java"
-    has_java_sources = src_dir.exists()
-
-    # Check for multi-module Maven structure
-    if not has_java_sources and (project_dir / "pom.xml").exists():
-        for subdir in project_dir.iterdir():
-            if subdir.is_dir() and (subdir / "pom.xml").exists():
-                module_src = subdir / "src" / "main" / "java"
-                if module_src.exists():
-                    has_java_sources = True
-                    break
+    # Check for Java project (support single-module and nested multi-module Maven)
+    has_java_sources = len(get_source_directories(project_dir)) > 0
 
     if not has_java_sources:
         console.print("[red]Error:[/red] Not a Java project (no src/main/java found)")

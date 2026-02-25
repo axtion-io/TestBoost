@@ -17,7 +17,7 @@ from typing import Any
 from src.lib.config import get_settings
 from src.lib.llm import get_llm
 from src.lib.logging import get_logger
-from src.lib.path_utils import source_path_to_test_path
+from src.lib.path_utils import extract_package, source_path_to_test_path
 
 logger = get_logger(__name__)
 
@@ -327,9 +327,9 @@ def _analyze_class(source_code: str) -> dict[str, Any]:
     }
 
     # Extract package
-    package_match = re.search(r"package\s+([\w.]+);", source_code)
-    if package_match:
-        info["package"] = package_match.group(1)
+    pkg = extract_package(source_code)
+    if pkg:
+        info["package"] = pkg
 
     # Extract imports (FIX: Add import extraction from source files)
     import_pattern = re.compile(r"import\s+([\w.]+(?:\.\*)?);", re.MULTILINE)

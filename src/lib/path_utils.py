@@ -107,15 +107,19 @@ def extract_package(source_content: str) -> str | None:
     return match.group(1) if match else None
 
 
-def source_path_to_test_path(project_dir: Path, source_path: Path) -> Path:
+def source_path_to_test_path(
+    project_dir: Path, source_path: Path, suffix: str = "Test"
+) -> Path:
     """
     Convert a source file path to its corresponding test file path.
 
-    Transforms src/main/java/... to src/test/java/...Test.java.
+    Transforms src/main/java/... to src/test/java/...<suffix>.java.
 
     Args:
         project_dir: Root project directory
         source_path: Path to the source file
+        suffix: Test class suffix (default "Test", also "IntegrationTest",
+                "SnapshotTest", "KillerTest", etc.)
 
     Returns:
         Relative path to the test file from project root
@@ -129,7 +133,7 @@ def source_path_to_test_path(project_dir: Path, source_path: Path) -> Path:
 
     filename = parts[-1]
     if filename.endswith(".java"):
-        parts[-1] = filename.replace(".java", "Test.java")
+        parts[-1] = filename.replace(".java", f"{suffix}.java")
 
     return Path(*parts)
 
@@ -195,3 +199,137 @@ def find_source_file_by_class(project_dir: Path, class_name: str) -> Path | None
         return fallback
 
     return None
+
+
+def class_name_to_test_path(
+    project_dir: Path, class_name: str, suffix: str = "Test"
+) -> Path:
+    """
+    Generate a test file path from a fully-qualified class name.
+
+    Resolves the source file first to determine the correct module, then
+    derives the test path. Falls back to root src/test/java if the source
+    file is not found.
+
+    Args:
+        project_dir: Root project directory
+        class_name: Fully-qualified class name (e.g. 'com.example.Foo')
+        suffix: Test class suffix (default "Test")
+
+    Returns:
+        Absolute path to the test file
+    """
+    source_file = find_source_file_by_class(project_dir, class_name)
+    if source_file is not None:
+        return project_dir / source_path_to_test_path(
+            project_dir, source_file, suffix=suffix
+        )
+
+    # Fallback: place in root src/test/java
+    class_path = class_name.replace(".", "/")
+    simple_name = class_name.rsplit(".", 1)[-1]
+    package_path = class_path[: class_path.rfind("/")] if "/" in class_path else ""
+    return project_dir / "src" / "test" / "java" / package_path / f"{simple_name}{suffix}.java"
+
+
+def find_test_files(project_dir: Path) -> list[Path]:
+    """
+    Find all Java test files across all test directories.
+
+    Searches for *Test.java, *Tests.java, and Test*.java patterns.
+
+    Args:
+        project_dir: Root project directory
+
+    Returns:
+        Deduplicated list of test file paths
+    """
+    test_files: list[Path] = []
+    for test_dir in get_test_directories(project_dir):
+        test_files.extend(test_dir.rglob("*Test.java"))
+        test_files.extend(test_dir.rglob("*Tests.java"))
+        test_files.extend(test_dir.rglob("Test*.java"))
+    return list(set(test_files))
+
+
+# Patterns for finding testable source files
+_INCLUDE_PATTERNS = [
+    "**/web/**/*.java",
+    "**/controller/**/*.java",
+    "**/service/**/*.java",
+    "**/application/**/*.java",
+    "**/api/**/*.java",
+]
+
+_EXCLUDE_DIRS = {"test", "model", "entity", "dto", "config", "configuration", "mapper"}
+
+_EXCLUDE_SUFFIXES = (
+    "Application.java",
+    "Config.java",
+    "Configuration.java",
+    "Request.java",
+    "Response.java",
+    "DTO.java",
+    "Exception.java",
+)
+
+
+def find_testable_source_files(project_dir: Path) -> list[str]:
+    """
+    Find Java source files that are candidates for test generation.
+
+    Includes files in web/controller/service/application/api packages,
+    excludes test files, DTOs, entities, configuration, and other
+    non-testable classes.
+
+    Args:
+        project_dir: Root project directory
+
+    Returns:
+        List of relative paths to testable source files
+    """
+    source_files: list[str] = []
+
+    for src_dir in get_source_directories(project_dir):
+        for pattern in _INCLUDE_PATTERNS:
+            for source_file in src_dir.glob(pattern):
+                relative_path = str(source_file.relative_to(project_dir))
+
+                # Check directory-based exclusions
+                parts = set(source_file.relative_to(src_dir).parts[:-1])
+                if parts & _EXCLUDE_DIRS:
+                    continue
+
+                # Check suffix-based exclusions
+                if source_file.name.endswith(_EXCLUDE_SUFFIXES):
+                    continue
+
+                if relative_path not in source_files:
+                    source_files.append(relative_path)
+
+    return source_files
+
+
+def extract_module_from_path(project_dir: Path, file_path: str) -> str:
+    """
+    Extract the Maven module directory from a file path.
+
+    Walks up the path components looking for the deepest directory that
+    contains a pom.xml, returning its path relative to project_dir.
+
+    Args:
+        project_dir: Root project directory
+        file_path: Relative path to a file within the project
+
+    Returns:
+        Relative module path (e.g. "parent/module-a") or "" for root module
+    """
+    parts = Path(file_path).parts
+    # Walk from deepest to shallowest looking for a module pom.xml
+    for i in range(len(parts), 0, -1):
+        candidate = project_dir / Path(*parts[:i])
+        if candidate == project_dir:
+            continue
+        if (candidate / "pom.xml").exists() and (candidate / "src").exists():
+            return str(Path(*parts[:i]))
+    return ""

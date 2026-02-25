@@ -11,6 +11,8 @@ from collections import Counter
 from pathlib import Path
 from typing import Any
 
+from src.lib.path_utils import find_test_files
+
 
 async def detect_test_conventions(project_path: str, sample_size: int = 20) -> str:
     """
@@ -30,15 +32,7 @@ async def detect_test_conventions(project_path: str, sample_size: int = 20) -> s
             {"success": False, "error": f"Project path does not exist: {project_path}"}
         )
 
-    test_dir = project_dir / "src" / "test" / "java"
-    if not test_dir.exists():
-        return json.dumps({"success": False, "error": "Test directory not found"})
-
-    # Find test files
-    test_files = list(test_dir.rglob("*Test.java"))
-    test_files.extend(test_dir.rglob("*Tests.java"))
-    test_files.extend(test_dir.rglob("Test*.java"))
-    test_files = list(set(test_files))[:sample_size]
+    test_files = find_test_files(project_dir)[:sample_size]
 
     if not test_files:
         return json.dumps({"success": False, "error": "No test files found"})

@@ -13,6 +13,7 @@ from typing import Any
 
 from src.lib.path_utils import (
     extract_package,
+    find_test_files,
     get_source_directories,
     get_test_directories,
 )
@@ -212,16 +213,7 @@ async def _analyze_test_structure(project_dir: Path, scan_depth: int) -> dict[st
     """Analyze test code structure."""
     structure = {"test_sources": [], "test_count": 0, "test_packages": []}
 
-    test_dirs = get_test_directories(project_dir)
-
-    # Collect all test files from all test directories
-    test_files: list[Path] = []
-    for test_dir in test_dirs:
-        test_files.extend(test_dir.rglob("*Test.java"))
-        test_files.extend(test_dir.rglob("*Tests.java"))
-        test_files.extend(test_dir.rglob("Test*.java"))
-
-    test_files = list(set(test_files))  # Remove duplicates
+    test_files = find_test_files(project_dir)
     structure["test_count"] = len(test_files)
 
     # Extract test packages
@@ -237,7 +229,7 @@ async def _analyze_test_structure(project_dir: Path, scan_depth: int) -> dict[st
             continue
 
     structure["test_packages"] = sorted(packages)[:30]
-    structure["test_sources"] = [str(d) for d in test_dirs]
+    structure["test_sources"] = [str(d) for d in get_test_directories(project_dir)]
 
     return structure
 

@@ -34,7 +34,9 @@ from src.lib.logging import get_logger
 from src.lib.maven_error_parser import MavenErrorParser
 from src.lib.path_utils import (
     detect_maven_modules,
+    extract_module_from_path,
     extract_package,
+    find_testable_source_files,
     get_source_directories,
     test_path_to_source_path,
 )
@@ -104,8 +106,8 @@ def _find_source_files(project_path: str) -> list[str]:
     """
     Find Java source files to generate tests for.
 
-    Filters out test files, DTOs, entities, configuration, and other non-testable classes.
-    Uses get_source_directories() from path_utils for source directory discovery.
+    Delegates to find_testable_source_files() from path_utils for all
+    source directory discovery and filtering logic.
 
     Args:
         project_path: Path to the Java project root
@@ -113,47 +115,7 @@ def _find_source_files(project_path: str) -> list[str]:
     Returns:
         List of relative paths to source files
     """
-    project_dir = Path(project_path)
-    source_files: list[str] = []
-
-    # Patterns to include (testable classes)
-    include_patterns = [
-        "**/web/**/*.java",
-        "**/controller/**/*.java",
-        "**/service/**/*.java",
-        "**/application/**/*.java",
-        "**/api/**/*.java",
-    ]
-
-    # Directory names and file suffixes to exclude
-    _exclude_dirs = {"test", "model", "entity", "dto", "config", "configuration", "mapper"}
-    _exclude_suffixes = (
-        "Application.java",
-        "Config.java",
-        "Configuration.java",
-        "Request.java",
-        "Response.java",
-        "DTO.java",
-        "Exception.java",
-    )
-
-    for src_dir in get_source_directories(project_dir):
-        for pattern in include_patterns:
-            for source_file in src_dir.glob(pattern):
-                relative_path = str(source_file.relative_to(project_dir))
-
-                # Check directory-based exclusions
-                parts = set(source_file.relative_to(src_dir).parts[:-1])
-                if parts & _exclude_dirs:
-                    continue
-
-                # Check suffix-based exclusions
-                if source_file.name.endswith(_exclude_suffixes):
-                    continue
-
-                if relative_path not in source_files:
-                    source_files.append(relative_path)
-
+    source_files = find_testable_source_files(Path(project_path))
     logger.info("source_files_found", count=len(source_files), project_path=project_path)
     return source_files
 
@@ -1730,12 +1692,7 @@ async def _compile_maven_tests(
         if not path.endswith(".java"):
             continue
 
-        # Check if path includes a module directory
-        parts = Path(path).parts
-        if len(parts) > 1 and (project_dir / parts[0] / "pom.xml").exists():
-            module = parts[0]
-        else:
-            module = ""
+        module = extract_module_from_path(project_dir, path)
 
         if module not in tests_by_module:
             tests_by_module[module] = []
@@ -1881,12 +1838,7 @@ async def _run_maven_tests(
 
         class_name = Path(path).stem
 
-        # Check if path includes a module directory
-        parts = Path(path).parts
-        if len(parts) > 1 and (project_dir / parts[0] / "pom.xml").exists():
-            module = parts[0]
-        else:
-            module = ""
+        module = extract_module_from_path(project_dir, path)
 
         if module not in tests_by_module:
             tests_by_module[module] = []

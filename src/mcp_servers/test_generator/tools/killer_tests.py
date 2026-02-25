@@ -10,7 +10,7 @@ import re
 from pathlib import Path
 from typing import Any
 
-from src.lib.path_utils import find_source_file_by_class
+from src.lib.path_utils import class_name_to_test_path, find_source_file_by_class
 
 
 async def generate_killer_tests(
@@ -96,11 +96,7 @@ def _find_source_file(project_dir: Path, class_name: str) -> Path | None:
 
 def _get_killer_test_path(project_dir: Path, class_name: str) -> Path:
     """Generate killer test file path."""
-    # Convert class name to path
-    parts = class_name.split(".")
-    parts[-1] = f"{parts[-1]}KillerTest.java"
-
-    return project_dir / "src" / "test" / "java" / Path(*parts)
+    return class_name_to_test_path(project_dir, class_name, suffix="KillerTest")
 
 
 def _generate_killer_test_class(

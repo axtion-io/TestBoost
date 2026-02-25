@@ -405,60 +405,27 @@ def find_test_files(project_dir: Path) -> list[Path]:
 # Testable source file discovery
 # ---------------------------------------------------------------------------
 
-# Patterns for finding testable source files
-_INCLUDE_PATTERNS = [
-    "**/web/**/*.java",
-    "**/controller/**/*.java",
-    "**/service/**/*.java",
-    "**/application/**/*.java",
-    "**/api/**/*.java",
-]
-
-_EXCLUDE_DIRS = {"test", "model", "entity", "dto", "config", "configuration", "mapper"}
-
-_EXCLUDE_SUFFIXES = (
-    "Application.java",
-    "Config.java",
-    "Configuration.java",
-    "Request.java",
-    "Response.java",
-    "DTO.java",
-    "Exception.java",
-)
-
 
 def find_testable_source_files(project_dir: Path) -> list[str]:
     """
-    Find Java source files that are candidates for test generation.
+    Find all Java source files that are candidates for test generation.
 
-    Includes files in ``web/controller/service/application/api`` packages,
-    excludes test files, DTOs, entities, configuration, and other
-    non-testable classes.
+    Collects every ``*.java`` file found under the project's source
+    directories (``src/main/java``).
 
     Args:
         project_dir: Root project directory
 
     Returns:
-        List of relative paths to testable source files
+        List of relative paths to source ``.java`` files
     """
     source_files: list[str] = []
 
     for src_dir in get_source_directories(project_dir):
-        for pattern in _INCLUDE_PATTERNS:
-            for source_file in src_dir.glob(pattern):
-                relative_path = str(source_file.relative_to(project_dir))
-
-                # Check directory-based exclusions
-                parts = set(source_file.relative_to(src_dir).parts[:-1])
-                if parts & _EXCLUDE_DIRS:
-                    continue
-
-                # Check suffix-based exclusions
-                if source_file.name.endswith(_EXCLUDE_SUFFIXES):
-                    continue
-
-                if relative_path not in source_files:
-                    source_files.append(relative_path)
+        for java_file in src_dir.rglob("*.java"):
+            relative_path = str(java_file.relative_to(project_dir))
+            if relative_path not in source_files:
+                source_files.append(relative_path)
 
     return source_files
 

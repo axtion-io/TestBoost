@@ -25,10 +25,12 @@ def detect_maven_modules(project_dir: Path) -> list[Path]:
     if not (project_dir / "pom.xml").exists():
         return modules
 
-    for subdir in project_dir.iterdir():
-        if subdir.is_dir() and (subdir / "pom.xml").exists():
-            if (subdir / "src" / "main" / "java").exists():
-                modules.append(subdir)
+    for pom in project_dir.glob("**/pom.xml"):
+        subdir = pom.parent
+        if subdir == project_dir:
+            continue
+        if (subdir / "src" / "main" / "java").exists():
+            modules.append(subdir)
 
     return modules
 
@@ -48,17 +50,10 @@ def get_source_directories(project_dir: Path) -> list[Path]:
     """
     src_dirs: list[Path] = []
 
-    # Standard single-module structure
-    standard_src = project_dir / "src" / "main" / "java"
-    if standard_src.exists():
-        src_dirs.append(standard_src)
-
-    # Multi-module Maven structure
-    for subdir in project_dir.iterdir():
-        if subdir.is_dir() and (subdir / "pom.xml").exists():
-            module_src = subdir / "src" / "main" / "java"
-            if module_src.exists():
-                src_dirs.append(module_src)
+    # Find all src/main/java directories at any depth (handles both
+    # single-module and nested multi-module Maven structures)
+    for src_dir in project_dir.glob("**/src/main/java"):
+        src_dirs.append(src_dir)
 
     # Fallback to generic src directory
     if not src_dirs:
@@ -84,17 +79,10 @@ def get_test_directories(project_dir: Path) -> list[Path]:
     """
     test_dirs: list[Path] = []
 
-    # Standard single-module structure
-    standard_test = project_dir / "src" / "test" / "java"
-    if standard_test.exists():
-        test_dirs.append(standard_test)
-
-    # Multi-module Maven structure
-    for subdir in project_dir.iterdir():
-        if subdir.is_dir() and (subdir / "pom.xml").exists():
-            module_test = subdir / "src" / "test" / "java"
-            if module_test.exists():
-                test_dirs.append(module_test)
+    # Find all src/test/java directories at any depth (handles both
+    # single-module and nested multi-module Maven structures)
+    for test_dir in project_dir.glob("**/src/test/java"):
+        test_dirs.append(test_dir)
 
     # Fallback to generic test directory
     if not test_dirs:
@@ -195,17 +183,11 @@ def find_source_file_by_class(project_dir: Path, class_name: str) -> Path | None
     """
     class_path = class_name.replace(".", "/") + ".java"
 
-    # Search in standard location first
-    standard = project_dir / "src" / "main" / "java" / class_path
-    if standard.exists():
-        return standard
-
-    # Search in multi-module structures
-    for subdir in project_dir.iterdir():
-        if subdir.is_dir() and (subdir / "pom.xml").exists():
-            module_path = subdir / "src" / "main" / "java" / class_path
-            if module_path.exists():
-                return module_path
+    # Search in all src/main/java directories (including nested modules)
+    for src_dir in project_dir.glob("**/src/main/java"):
+        candidate = src_dir / class_path
+        if candidate.exists():
+            return candidate
 
     # Fallback to generic src
     fallback = project_dir / "src" / class_path

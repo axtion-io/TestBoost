@@ -87,8 +87,12 @@ async def _cmd_analyze_async(args: argparse.Namespace) -> int:
     logger.info("Starting project analysis...")
 
     try:
-        # --- Reuse existing TestBoost analyze function ---
-        from src.mcp_servers.test_generator.tools.analyze import analyze_project_context
+        # --- Reuse existing TestBoost functions via bridge ---
+        from testboost_lite.lib.testboost_bridge import (
+            analyze_project_context,
+            detect_test_conventions,
+            find_source_files,
+        )
 
         result_json = await analyze_project_context(project_path)
         result = json.loads(result_json)
@@ -102,16 +106,10 @@ async def _cmd_analyze_async(args: argparse.Namespace) -> int:
             )
             return 1
 
-        # --- Reuse existing TestBoost conventions detection ---
-        from src.mcp_servers.test_generator.tools.conventions import detect_test_conventions
-
         conventions_json = await detect_test_conventions(project_path)
         conventions = json.loads(conventions_json)
 
-        # --- Reuse existing TestBoost source file finder ---
-        from src.workflows.test_generation_agent import _find_source_files
-
-        source_files = _find_source_files(project_path)
+        source_files = find_source_files(project_path)
 
         # Build the analysis report
         content = "# Project Analysis\n\n"
@@ -340,6 +338,13 @@ async def _cmd_generate_async(args: argparse.Namespace) -> int:
             )
             return 0
 
+        # Extract conventions from the analysis step (for smarter generation)
+        analysis_file = Path(session_dir) / "analysis.md"
+        conventions = None
+        if analysis_file.exists():
+            analysis_content = analysis_file.read_text(encoding="utf-8")
+            conventions = _extract_json_field(analysis_content, "conventions")
+
         # Apply file filter if specified
         target_files = gaps
         if hasattr(args, "files") and args.files:
@@ -350,15 +355,35 @@ async def _cmd_generate_async(args: argparse.Namespace) -> int:
 
         logger.info(f"Generating tests for {len(target_files)} files...")
 
-        # --- Reuse existing TestBoost test generation ---
-        from src.workflows.test_generation_agent import _generate_tests_directly
+        # --- Reuse existing TestBoost test generation via bridge ---
+        from testboost_lite.lib.testboost_bridge import generate_adaptive_tests
 
         use_llm = not getattr(args, "no_llm", False)
-        generated = await _generate_tests_directly(
-            project_path=project_path,
-            source_files=target_files,
-            use_llm=use_llm,
-        )
+        generated = []
+        for source_file in target_files:
+            logger.info(f"Generating tests for: {source_file}")
+            try:
+                result_json = await generate_adaptive_tests(
+                    project_path=project_path,
+                    source_file=source_file,
+                    use_llm=use_llm,
+                    conventions=conventions,
+                )
+                result = json.loads(result_json)
+                if result.get("success") and result.get("test_code") and "@Test" in result.get("test_code", ""):
+                    generated.append({
+                        "path": result.get("test_file", ""),
+                        "content": result.get("test_code", ""),
+                        "class_name": result.get("context", {}).get("class_name", ""),
+                        "package": result.get("context", {}).get("package", ""),
+                        "source_file": source_file,
+                        "test_count": result.get("test_count", 0),
+                    })
+                else:
+                    logger.warn(f"No tests generated for {source_file}")
+            except Exception as file_err:
+                logger.error(f"Failed to generate tests for {source_file}: {file_err}")
+                raise  # Re-raise to propagate LLM errors
 
         # Build generation report
         content = "# Test Generation Results\n\n"
@@ -465,11 +490,10 @@ async def _cmd_validate_async(args: argparse.Namespace) -> int:
         )
 
         if compile_result.returncode != 0:
-            # --- Reuse MavenErrorParser for structured error feedback ---
-            from src.lib.maven_error_parser import MavenErrorParser
+            # --- Reuse MavenErrorParser via bridge ---
+            from testboost_lite.lib.testboost_bridge import parse_maven_errors
 
-            parser = MavenErrorParser()
-            errors = parser.parse(compile_result.stdout + compile_result.stderr)
+            parser, errors = parse_maven_errors(compile_result.stdout + compile_result.stderr)
 
             content += "## Compilation: FAILED\n\n"
             if errors:

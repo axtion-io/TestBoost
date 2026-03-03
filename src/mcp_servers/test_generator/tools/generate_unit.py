@@ -184,6 +184,34 @@ def _extract_project_context(project_path: str) -> str:
         return ""
 
 
+def _load_strategy_guidelines(project_path: str) -> str:
+    """Load key guidelines from the unit test strategy template.
+
+    Args:
+        project_path: Project root (used to locate TestBoost root)
+
+    Returns:
+        Formatted string with strategy guidelines, or empty string
+    """
+    # Try to find the strategy file relative to the TestBoost root
+    for base in [Path(__file__).parent.parent.parent.parent.parent, Path(project_path)]:
+        strategy_file = base / "config" / "prompts" / "testing" / "unit_test_strategy.md"
+        if strategy_file.exists():
+            try:
+                content = strategy_file.read_text(encoding="utf-8")
+                # Extract the mutation-resistant patterns section
+                sections = []
+                if "## Mutation-Resistant" in content:
+                    start = content.index("## Mutation-Resistant")
+                    end = content.index("## Expected Output", start) if "## Expected Output" in content[start:] else len(content)
+                    sections.append(content[start:end].strip())
+                if sections:
+                    return "\n\n" + "\n\n".join(sections) + "\n"
+            except Exception:
+                pass
+    return ""
+
+
 async def _generate_test_code_with_llm(context: dict[str, Any], source_code: str) -> str:
     """
     Generate test code using LLM for intelligent, context-aware tests.
@@ -204,15 +232,68 @@ async def _generate_test_code_with_llm(context: dict[str, Any], source_code: str
     methods = context["methods"]
     dependencies = context["dependencies"]
     test_requirements = context.get("test_requirements", [])
+    conventions = context.get("conventions", {})
     project_path = context.get("project_path", "")
 
     # Extract project context from pom.xml
     project_context = _extract_project_context(project_path) if project_path else ""
 
+    # Build conventions section for the prompt
+    conventions_section = ""
+    if conventions:
+        naming = conventions.get("naming", {})
+        assertions = conventions.get("assertions", {})
+        mocking = conventions.get("mocking", {})
+        setup = conventions.get("setup_patterns", {})
+        conventions_section = f"""
+## Project Test Conventions (MUST follow):
+- **Naming pattern**: {naming.get('dominant_pattern', 'descriptive')}
+- **Case style**: {'snake_case' if naming.get('uses_snake_case') else 'camelCase'}
+- **Assertion style**: {assertions.get('dominant_style', 'assertj')} (use this, not others)
+- **Uses Mockito**: {'yes - use @Mock and @InjectMocks' if mocking.get('uses_mockito', True) else 'no'}
+- **Uses @MockBean**: {'yes - for Spring integration' if mocking.get('uses_spring_mock_bean') else 'no - use @Mock'}
+- **Uses @Nested classes**: {'yes' if setup.get('uses_nested') else 'no'}
+- **Uses @ParameterizedTest**: {'yes - prefer parameterized tests for similar scenarios' if setup.get('uses_parameterized') else 'no'}
+"""
+
+    # Build class-type-specific instructions
+    class_type_instructions = ""
+    if class_type == "controller":
+        class_type_instructions = """
+## Controller-Specific Instructions:
+- Use @WebMvcTest({class_name}.class) for test class annotation
+- Use @MockBean for service dependencies (NOT @Mock)
+- Use MockMvc for HTTP request testing
+- Test HTTP status codes, response body, and content type
+- Skip null parameter tests (Spring @Valid handles validation)
+"""
+    elif class_type == "service":
+        class_type_instructions = """
+## Service-Specific Instructions:
+- Use @ExtendWith(MockitoExtension.class)
+- Use @Mock for repository and other dependencies
+- Use @InjectMocks for the service under test
+- Verify mock interactions with verify()
+- Test business logic, validation, and exception scenarios
+"""
+    elif class_type == "repository":
+        class_type_instructions = """
+## Repository-Specific Instructions:
+- Use @DataJpaTest for repository testing
+- Use TestEntityManager for test data setup
+- Test custom query methods
+- Verify data persistence and retrieval
+"""
+
+    # Load strategy template if available
+    strategy_guidelines = _load_strategy_guidelines(project_path)
+
     # Build the prompt for test generation
-    prompt = f"""You are an expert Java test engineer. Generate comprehensive JUnit 5 unit tests for the following Java class.
+    prompt = f"""You are an expert Java test engineer specializing in unit testing with JUnit 5, Mockito, and AssertJ. Generate comprehensive, mutation-resistant unit tests for the following Java class.
 
 {project_context}
+{conventions_section}
+{class_type_instructions}
 ## Source Code to Test:
 ```java
 {source_code}
@@ -223,7 +304,7 @@ async def _generate_test_code_with_llm(context: dict[str, Any], source_code: str
 - Package: {package}
 - Type: {class_type}
 - Dependencies to mock: {json.dumps(dependencies, indent=2)}
-- Public methods: {json.dumps([m["name"] for m in methods], indent=2)}
+- Public methods: {json.dumps([{"name": m["name"], "params": m.get("parameters", []), "return_type": m.get("return_type", "void")} for m in methods], indent=2)}
 
 ## Test Requirements:
 {json.dumps(test_requirements, indent=2) if test_requirements else "Generate standard coverage tests for all public methods."}
@@ -237,10 +318,21 @@ async def _generate_test_code_with_llm(context: dict[str, Any], source_code: str
    - Edge case tests (null handling, boundary values)
    - Error scenario tests where applicable
 5. Use @DisplayName for readable test descriptions
-6. Use meaningful test data, not generic placeholders
+6. Use meaningful test data, not generic placeholders (e.g. "john@example.com" not "test")
 7. For reactive types (Mono/Flux), use StepVerifier
 8. Follow AAA pattern: Arrange, Act, Assert
 9. Include proper imports at the top
+10. Make tests mutation-resistant:
+    - Assert exact return values, not just non-null
+    - Test boundary conditions (at, below, above)
+    - Verify both true AND false paths for boolean returns
+    - Use specific equality assertions
+{strategy_guidelines}
+## JPA Entity Guidelines (CRITICAL):
+- NEVER call setId() on @GeneratedValue fields - use ReflectionTestUtils.setField(entity, "id", 1L)
+- Use Optional.of(entity) for present values, Optional.empty() for not-found scenarios
+- Use correct ID types (Long for JPA, not Integer)
+- Check actual date field type before using date values
 
 ## Output Format:
 Return ONLY the complete Java test class code, starting with `package` statement.
@@ -286,9 +378,9 @@ Do not include any explanation or markdown - just the raw Java code.
             class_name=class_name,
             error=str(e),
         )
-        # Fall back to template generation
-        logger.info("falling_back_to_templates", reason=str(e))
-        return _generate_test_code(context)
+        # CRITICAL: Do NOT silently fall back to templates.
+        # If the LLM is unreachable, the error must propagate immediately.
+        raise
 
 
 def _analyze_class(source_code: str) -> dict[str, Any]:

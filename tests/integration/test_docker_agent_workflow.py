@@ -8,7 +8,7 @@ from langchain_core.tools import BaseTool
 
 
 class TestDockerWorkflowUsesAgent:
-    """Test that Docker workflow uses DeepAgents create_deep_agent()."""
+    """Test that Docker workflow uses LangGraph create_deep_agent()."""
 
     @pytest.mark.asyncio
     async def test_docker_workflow_uses_agent(self, tmp_path):
@@ -37,7 +37,7 @@ class TestDockerWorkflowUsesAgent:
         mock_container_tool.name = "container_create_maven"
         mock_container_tool.description = "Create Maven build container"
 
-        # Mock DeepAgents agent
+        # Mock LangGraph agent
         mock_agent = AsyncMock()
         mock_agent_response = {
             "messages": [

@@ -2,15 +2,13 @@
 # Copyright 2026 TestBoost Contributors
 
 """
-Test Generation Workflow with DeepAgents LLM Integration.
+Test Generation Workflow with LangGraph ReAct Agent.
 
-Implements User Story 4 (US4) from 002-deepagents-integration:
+Uses create_react_agent() with prompts loaded from markdown and tools from MCP registry.
 - Real LLM agent for test generation analysis
 - Auto-correction retry logic for compilation errors (A2: max 3 attempts)
 - Tool-based project context analysis
 - Artifact storage for agent reasoning and metrics
-
-Tasks implemented: T054-T064
 """
 
 import json
@@ -437,7 +435,7 @@ async def run_test_generation_with_agent(
     - Template mode (use_llm=False): Uses templates for CI without LLM access
 
     Implements:
-    - T054-T055: Agent creation with create_deep_agent()
+    - T054-T055: Agent creation with create_react_agent()
     - T056-T057: Load config from YAML and prompts from Markdown
     - T058-T059: Bind MCP tools and invoke with retry logic
     - T060: Auto-correction retry for compilation errors
@@ -679,7 +677,7 @@ async def _validate_and_correct_tests(
     Args:
         session_id: Session UUID
         artifact_repo: Artifact repository
-        agent: DeepAgents agent for corrections
+        agent: LangGraph ReAct agent for corrections
         generated_tests: List of generated test files
         project_path: Java project path
 
@@ -734,7 +732,7 @@ async def _compile_with_auto_correction(
     Args:
         session_id: Session UUID
         artifact_repo: Artifact repository
-        agent: DeepAgents agent
+        agent: LangGraph ReAct agent
         test_path: Test file path
         test_content: Test file content
         project_path: Java project path

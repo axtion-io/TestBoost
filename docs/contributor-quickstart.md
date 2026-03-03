@@ -283,7 +283,7 @@ TestBoost/
 │   │   ├── maven_maintenance_agent.py
 │   │   └── docker_deployment_agent.py
 │   │
-│   ├── agents/                 # DeepAgents configurations
+│   ├── agents/                 # Agent YAML configs & prompt loader
 │   │   ├── loader.py          # Agent loading
 │   │   └── adapter.py         # Agent adaptation
 │   │

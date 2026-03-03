@@ -1,9 +1,9 @@
 """
-Docker Deployment Workflow using DeepAgents LLM.
+Docker Deployment Workflow using LangGraph ReAct Agent.
 
 This module implements Docker deployment with real AI agent reasoning
 for project analysis, container configuration, and health monitoring.
-Replaces deterministic logic with LLM-powered decision-making.
+Uses create_react_agent() with prompts loaded from markdown and tools from MCP registry.
 """
 
 import json
@@ -46,7 +46,7 @@ async def run_docker_deployment_with_agent(
     session_id: str | None = None,
 ) -> dict[str, Any]:
     """
-    Run Docker deployment workflow with DeepAgents LLM agent.
+    Run Docker deployment workflow with LangGraph ReAct agent.
 
     This function uses a real LLM agent to:
     1. Analyze Java project structure and detect dependencies

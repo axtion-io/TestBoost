@@ -3,7 +3,7 @@
 AI-powered Java/Spring Boot test generation and maintenance automation platform.
 
 [![Python](https://img.shields.io/badge/Python-3.11+-blue.svg)](https://python.org)
-[![FastAPI](https://img.shields.io/badge/FastAPI-0.121-green.svg)](https://fastapi.tiangolo.com)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.135-green.svg)](https://fastapi.tiangolo.com)
 [![LangGraph](https://img.shields.io/badge/LangGraph-1.0-purple.svg)](https://langchain.com)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-15-blue.svg)](https://postgresql.org)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
@@ -99,7 +99,7 @@ TestBoost/
 │   ├── core/             # Core business logic
 │   ├── db/               # Database models & migrations
 │   ├── workflows/        # LangGraph workflows
-│   ├── agents/           # DeepAgents configurations
+│   ├── agents/           # Agent YAML configs & prompt loader
 │   └── mcp_servers/      # MCP tool servers
 ├── config/               # Agent YAML & prompt configurations
 ├── docs/                 # Documentation
@@ -114,7 +114,7 @@ TestBoost/
 | Backend | Python 3.11+, FastAPI, Uvicorn |
 | Database | PostgreSQL 15, SQLAlchemy, Alembic |
 | Workflows | LangGraph 1.0+ |
-| Agents | DeepAgents 0.2.8, LangChain Core 1.1+ |
+| Agents | LangGraph ReAct (create_react_agent), LangChain Core 1.1+ |
 | LLM Providers | Google Gemini, Anthropic Claude, OpenAI |
 | CLI | Typer, Rich |
 | Observability | Structlog, LangSmith (optional) |
@@ -205,7 +205,7 @@ Copyright 2026 TestBoost Contributors
 
 ## Acknowledgments
 
-Built with [FastAPI](https://fastapi.tiangolo.com), [LangChain](https://langchain.com), [LangGraph](https://langchain.com), [DeepAgents](https://github.com/anthropics/deepagents), [Typer](https://typer.tiangolo.com), and [Rich](https://rich.readthedocs.io).
+Built with [FastAPI](https://fastapi.tiangolo.com), [LangChain](https://langchain.com), [LangGraph](https://langchain.com), [Typer](https://typer.tiangolo.com), and [Rich](https://rich.readthedocs.io).
 
 ---
 

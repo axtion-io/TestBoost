@@ -2,10 +2,10 @@
 # Copyright 2026 TestBoost Contributors
 
 """
-Maven Maintenance Workflow using DeepAgents LLM framework.
+Maven Maintenance Workflow using LangGraph ReAct Agent.
 
 Implements US2: Maven maintenance with real LLM agent reasoning and MCP tool calls.
-Replaces deterministic workflow logic with AI-powered decision making.
+Uses create_react_agent() with prompts loaded from markdown and tools from MCP registry.
 """
 
 import json
@@ -33,7 +33,7 @@ from src.mcp_servers.registry import get_tools_for_servers
 logger = get_logger(__name__)
 settings = get_settings()
 
-# NOTE: Windows path support for DeepAgents is patched in tests/conftest.py
+# NOTE: Windows path support is patched in tests/conftest.py
 # The patch is applied at test startup to avoid Windows absolute path rejection
 
 
@@ -78,7 +78,7 @@ async def run_maven_maintenance_with_agent(
     mode: str = "autonomous"
 ) -> str:
     """
-    Run Maven maintenance workflow using DeepAgents LLM agent.
+    Run Maven maintenance workflow using LangGraph ReAct agent.
 
     Implements:
     - T034-T049: Maven maintenance with real LLM agent
@@ -197,13 +197,13 @@ Remember: You have access to these tools:
 """
 
         # T040: Invoke agent with retry logic (A2, A4, A5 edge cases)
-        # Note: DeepAgents executes tools via the graph workflow, so we don't verify
+        # Note: LangGraph executes tools via the graph workflow, so we don't verify
         # expected_tools in the AI message. MCP tool logging confirms execution.
         response = await invoke_agent_with_retry(
             agent=agent,
             input_data=[HumanMessage(content=user_input)],
             max_retries=config.error_handling.max_retries,
-            expected_tools=None,  # Let DeepAgents manage tool execution via graph
+            expected_tools=None,  # LangGraph manages tool execution via graph
         )
 
         # T044: Store agent reasoning in session result

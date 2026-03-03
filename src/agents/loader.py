@@ -1,4 +1,4 @@
-"""DeepAgents YAML configuration loader with hot-reload support."""
+"""Agent YAML configuration loader with hot-reload support."""
 
 import shutil
 from datetime import UTC, datetime
@@ -119,7 +119,7 @@ class ErrorHandlingConfig(BaseModel):
 
 
 class AgentConfig(BaseModel):
-    """Configuration for a DeepAgents agent (spec.md schema)."""
+    """Configuration for a LangGraph agent (spec.md schema)."""
 
     name: str
     description: str
@@ -156,7 +156,7 @@ class WorkflowGraphConfig(BaseModel):
 
 
 class AgentLoader:
-    """Load and validate DeepAgents YAML configurations with hot-reload support."""
+    """Load and validate agent YAML configurations with hot-reload support."""
 
     def __init__(self, config_dir: str | Path, enable_cache: bool = True) -> None:
         """Initialize loader with configuration directory.

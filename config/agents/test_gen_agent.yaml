@@ -1,5 +1,5 @@
 # Test Generation Agent Configuration
-# Simplified DeepAgents YAML configuration matching spec.md schema
+# Agent YAML configuration (loaded by AgentLoader, passed to create_react_agent)
 
 name: test_gen_agent
 description: Java test generation specialist with mutation testing validation

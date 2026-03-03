@@ -5,14 +5,14 @@ Designed to be used through LLM CLI slash commands.
 
 ## Motivation
 
-TestBoost is a powerful but complex platform (PostgreSQL, FastAPI, LangGraph, DeepAgents, MCP).
+TestBoost is a powerful but complex platform (PostgreSQL, FastAPI, LangGraph, MCP).
 TestBoost Lite takes the same core test generation capabilities and wraps them in a
 simple, file-based workflow inspired by [spec-kit](https://github.com/github/spec-kit).
 
 **Key simplifications:**
 - No database - state tracked in markdown files
 - No API server - direct CLI invocation
-- No LangGraph/DeepAgents orchestration - the LLM CLI orchestrates
+- No LangGraph orchestration - the LLM CLI orchestrates
 - Interactive by default - user reviews and decides at each step
 
 ## Quick Start
@@ -143,7 +143,7 @@ Dual-output logging:
 |---------|-----------|---------------|
 | State management | PostgreSQL + SQLAlchemy | Markdown files |
 | API | FastAPI REST API | Direct CLI |
-| Orchestration | LangGraph + DeepAgents | LLM CLI (Claude Code) |
+| Orchestration | LangGraph ReAct agents | LLM CLI (Claude Code) |
 | User interaction | API-mediated | Direct conversation |
 | Logging | structlog + DB events | Markdown tables |
 | Correction loop | Automatic (silent) | Interactive (LLM + user) |

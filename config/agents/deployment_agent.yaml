@@ -1,5 +1,5 @@
 # Docker Deployment Agent Configuration
-# Simplified DeepAgents YAML configuration matching spec.md schema
+# Agent YAML configuration (loaded by AgentLoader, passed to create_react_agent)
 
 name: deployment_agent
 description: Docker deployment specialist with health monitoring

@@ -1,5 +1,5 @@
 # Maven Maintenance Agent Configuration
-# Simplified DeepAgents YAML configuration matching spec.md schema
+# Agent YAML configuration (loaded by AgentLoader, passed to create_react_agent)
 
 name: maven_maintenance_agent
 description: Maven dependency maintenance specialist with test validation

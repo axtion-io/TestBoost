@@ -114,7 +114,7 @@ class TestMavenWorkflowLLMCalls:
         """Test Maven workflow invokes MCP tools during execution.
 
         This test verifies the workflow executes successfully and produces
-        results consistent with MCP tool usage. DeepAgents executes tools
+        results consistent with MCP tool usage. LangGraph executes tools
         within the graph workflow, so tool_calls are logged via MCP logging
         rather than returned in the AIMessage.
         """
@@ -135,7 +135,7 @@ class TestMavenWorkflowLLMCalls:
 </project>
 """)
 
-        # Run the workflow - MCP tools are called within the DeepAgents graph
+        # Run the workflow - MCP tools are called within the LangGraph graph
         result = await run_maven_maintenance_with_agent(
             project_path=str(project_path), session_id="e2e-test-tools"
         )
@@ -272,7 +272,7 @@ class TestMavenWorkflowEdgeCases:
         """Test workflow handles missing pom.xml gracefully (error handling edge case).
 
         This tests the A5 edge case - error handling in the workflow.
-        DeepAgents handles errors through its internal retry/error handling.
+        LangGraph handles errors through its internal retry/error handling.
         """
         import json
 
@@ -468,7 +468,7 @@ class TestDockerWorkflowLLMCalls:
         """Test Docker workflow invokes MCP tools during execution.
 
         This test verifies the workflow executes successfully and produces
-        results consistent with MCP tool usage. DeepAgents executes tools
+        results consistent with MCP tool usage. LangGraph executes tools
         within the graph workflow, so we verify via result content.
         """
         from src.workflows.docker_deployment_agent import run_docker_deployment_with_agent
@@ -489,7 +489,7 @@ class TestDockerWorkflowLLMCalls:
 </project>
 """)
 
-        # Run the workflow - MCP tools are called within the DeepAgents graph
+        # Run the workflow - MCP tools are called within the LangGraph graph
         result = await run_docker_deployment_with_agent(
             project_path=str(project_path), session_id="e2e-docker-tools"
         )

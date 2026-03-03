@@ -1,4 +1,4 @@
-"""LangGraph agent adapter for DeepAgents configurations."""
+"""LangGraph agent adapter for YAML agent configurations."""
 
 from collections.abc import Awaitable, Callable
 from typing import Any
@@ -15,7 +15,7 @@ logger = get_logger(__name__)
 
 
 class AgentAdapter:
-    """Adapt DeepAgents configuration to LangGraph nodes."""
+    """Adapt agent YAML configuration to LangGraph nodes."""
 
     def __init__(self, mcp_tool_registry: dict[str, list[BaseTool]] | None = None) -> None:
         """Initialize adapter with optional MCP tool registry.

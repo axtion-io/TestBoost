@@ -1,7 +1,7 @@
 """Regression tests for old workflow compatibility (T097a).
 
 These tests ensure that existing workflow interfaces continue to work
-after the DeepAgents 0.2.8 integration. They verify backward compatibility
+after the LangGraph agent integration. They verify backward compatibility
 and proper deprecation warning logging.
 """
 

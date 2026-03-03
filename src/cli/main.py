@@ -18,7 +18,7 @@ from src.lib.config import get_settings  # noqa: E402
 
 get_settings.cache_clear()
 
-# IMPORTANT: Must be imported early to patch DeepAgents before any other module uses it
+# IMPORTANT: Must be imported early to patch deepagents lib before any other module uses it
 import asyncio  # noqa: E402
 import os  # noqa: E402
 

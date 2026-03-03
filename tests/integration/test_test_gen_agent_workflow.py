@@ -1,4 +1,4 @@
-"""Integration tests for Test Generation workflow with DeepAgents (US4, T050-T051)."""
+"""Integration tests for Test Generation workflow with LangGraph (US4, T050-T051)."""
 
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
@@ -11,7 +11,7 @@ class TestTestGenAgentWorkflow:
 
     @pytest.mark.asyncio
     async def test_test_gen_workflow_uses_agent(self, tmp_path):
-        """Test that test generation workflow creates and uses DeepAgents agent (T050)."""
+        """Test that test generation workflow creates and uses LangGraph agent (T050)."""
         from src.workflows.test_generation_agent import run_test_generation_with_agent
 
         # Create a minimal Java project
@@ -49,34 +49,42 @@ public class Calculator {
         mock_session_repo = MagicMock()
         mock_session_repo.update = AsyncMock(return_value=None)
 
-        # Track create_deep_agent calls
-        agent_created = False
+        # Mock agent config
+        mock_config = MagicMock()
+        mock_config.name = "test_gen_agent"
+        mock_config.llm.provider = "google-genai"
+        mock_config.llm.model = "gemini-2.0-flash"
+        mock_config.llm.temperature = 0.3
+        mock_config.llm.max_tokens = 8192
+        mock_config.tools.mcp_servers = ["test-generator"]
+        mock_config.error_handling.timeout_seconds = 180
 
-        def mock_create_deep_agent(*args, **kwargs):
-            """Track that create_deep_agent was called."""
-            nonlocal agent_created
-            agent_created = True
+        mock_loader = MagicMock()
+        mock_loader.load_agent.return_value = mock_config
+        mock_loader.load_prompt.return_value = "Unit test strategy prompt content"
 
-            # Create a mock agent that returns a response
-            mock_agent = MagicMock()
-            mock_response = MagicMock()
-            mock_response.content = "Generated tests for Calculator class"
-            mock_response.tool_calls = []
-            mock_response.response_metadata = {"model": "test-model", "usage": {}}
-            mock_response.usage_metadata = {
-                "input_tokens": 100,
-                "output_tokens": 200,
-                "total_tokens": 300,
-            }
-            mock_agent.ainvoke = AsyncMock(return_value=mock_response)
-            return mock_agent
+        # Mock agent response
+        mock_agent = MagicMock()
+        mock_response = MagicMock()
+        mock_response.content = "Generated tests for Calculator class"
+        mock_response.tool_calls = []
+        mock_response.response_metadata = {"model": "test-model", "usage": {}}
+        mock_response.usage_metadata = {
+            "input_tokens": 100,
+            "output_tokens": 200,
+            "total_tokens": 300,
+        }
+        mock_agent.ainvoke = AsyncMock(return_value=mock_response)
+
+        mock_test_tool = MagicMock()
+        mock_test_tool.name = "test_gen_analyze_project"
 
         # Patch create_react_agent and get_llm to track usage
         with (
             patch(
                 "src.workflows.test_generation_agent.create_react_agent",
-                side_effect=mock_create_deep_agent,
-            ),
+                return_value=mock_agent,
+            ) as mock_create_agent,
             patch("src.workflows.test_generation_agent.get_llm", return_value=MagicMock()),
             patch(
                 "src.workflows.test_generation_agent.ArtifactRepository",
@@ -85,6 +93,14 @@ public class Calculator {
             patch(
                 "src.workflows.test_generation_agent.SessionRepository",
                 return_value=mock_session_repo,
+            ),
+            patch(
+                "src.workflows.test_generation_agent.AgentLoader",
+                return_value=mock_loader,
+            ),
+            patch(
+                "src.workflows.test_generation_agent.get_tools_for_servers",
+                return_value=[mock_test_tool],
             ),
         ):
             # Run workflow
@@ -97,7 +113,24 @@ public class Calculator {
             )
 
             # Verify agent was created
-            assert agent_created, "create_deep_agent should have been called"
+            mock_create_agent.assert_called_once()
+            create_call = mock_create_agent.call_args
+
+            # Verify prompt was passed through to create_react_agent
+            assert "prompt" in create_call.kwargs, (
+                "Prompt must be passed to create_react_agent — "
+                "removing it silently breaks the architecture"
+            )
+            assert create_call.kwargs["prompt"] == "Unit test strategy prompt content"
+
+            # Verify tools were passed through
+            assert create_call.kwargs["tools"] == [mock_test_tool]
+
+            # Verify config was loaded from YAML
+            mock_loader.load_agent.assert_called_once_with("test_gen_agent")
+            mock_loader.load_prompt.assert_called_once_with(
+                "unit_test_strategy", category="testing"
+            )
 
             # Verify result structure
             assert result is not None

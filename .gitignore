@@ -12,6 +12,7 @@ eggs/
 .eggs/
 lib/
 !src/lib/
+!testboost_lite/lib/
 lib64/
 parts/
 sdist/
@@ -83,7 +84,9 @@ alembic/versions/__pycache__/
 .ipynb_checkpoints/
 
 # Local settings and development tools
-.claude/
+# .claude/ internal state is ignored but commands are tracked
+.claude/*
+!.claude/commands/
 .specify/
 .github/README.md
 
@@ -92,7 +95,8 @@ test-projects/
 
 # Internal development documentation
 specs/
-CLAUDE.md
+# CLAUDE.md - uncommitted on main, but committed on testboost-lite branches
+# CLAUDE.md
 CONTEXT.md
 OPEN_SOURCE_AUDIT_REPORT.md
 PR-*.md

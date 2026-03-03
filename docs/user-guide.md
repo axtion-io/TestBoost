@@ -36,14 +36,15 @@ cd TestBoost
 ### Étape 2 : Installer les Dépendances
 
 ```bash
+# Créer et activer un environnement virtuel
+python -m venv .venv
+source .venv/bin/activate  # Windows: .venv\Scripts\activate
+
 # Installer Poetry si nécessaire
 pip install poetry
 
 # Installer les dépendances du projet
 poetry install
-
-# Activer l'environnement virtuel
-poetry shell
 ```
 
 ### Étape 3 : Configurer l'Environnement

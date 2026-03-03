@@ -45,6 +45,7 @@ TestBoost automates Java/Spring Boot project maintenance through AI-powered work
 # Clone and install
 git clone https://github.com/axtion-io/TestBoost.git
 cd TestBoost
+python -m venv .venv && source .venv/bin/activate
 pip install poetry && poetry install
 
 # Configure environment

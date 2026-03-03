@@ -12,10 +12,12 @@
 git clone https://github.com/axtion-io/TestBoost.git
 cd TestBoost
 
-# Install in development mode
-pip install -e .
+# Create and activate a virtual environment
+python -m venv .venv
+source .venv/bin/activate  # Windows: .venv\Scripts\activate
 
-# Or via poetry
+# Install via poetry
+pip install poetry
 poetry install
 ```
 

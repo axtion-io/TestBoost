@@ -24,6 +24,7 @@ The slash commands are pre-installed in `.claude/commands/` and ready to use.
 ```bash
 git clone https://github.com/axtion-io/TestBoost.git
 cd TestBoost
+python -m venv .venv && source .venv/bin/activate
 pip install poetry && poetry install
 
 # Set your LLM API key
@@ -59,10 +60,11 @@ cp "$TESTBOOST_DIR"/testboost_lite/templates/commands/testboost.*.md .opencode/c
 
 ### Option C: Use the CLI directly (no slash commands)
 
-No installation needed beyond cloning and `poetry install`:
+No installation needed beyond cloning, creating a venv, and `poetry install`:
 
 ```bash
 cd /path/to/TestBoost
+source .venv/bin/activate
 python -m testboost_lite init /path/to/java/project
 ```
 

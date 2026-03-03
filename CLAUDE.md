@@ -5,6 +5,12 @@
 TestBoost Lite is a lightweight, markdown-driven test generation toolkit for Java projects.
 It is designed to be used through LLM CLI slash commands (Claude Code, Open Code, etc.).
 
+## Prerequisites
+
+- Claude Code (or another LLM CLI) must be launched **from the TestBoost repo root**
+- The slash commands in `.claude/commands/` call shell scripts via relative paths
+- `<path>` in every command refers to an **absolute or relative path to the Java project** you want to test
+
 ## Available Commands
 
 Use these slash commands to drive the test generation workflow:

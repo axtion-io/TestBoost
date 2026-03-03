@@ -15,20 +15,73 @@ simple, file-based workflow inspired by [spec-kit](https://github.com/github/spe
 - No LangGraph orchestration - the LLM CLI orchestrates
 - Interactive by default - user reviews and decides at each step
 
-## Quick Start
+## Installation
 
-### With Claude Code
+### Option A: Run Claude Code from the TestBoost repo (recommended)
+
+The slash commands are pre-installed in `.claude/commands/` and ready to use.
 
 ```bash
-# In a Java project directory:
-/testboost.init .
-/testboost.analyze .
-/testboost.gaps .
-/testboost.generate .
-/testboost.validate .
+git clone https://github.com/axtion-io/TestBoost.git
+cd TestBoost
+pip install poetry && poetry install
+
+# Set your LLM API key
+export GOOGLE_API_KEY="..."  # or ANTHROPIC_API_KEY or OPENAI_API_KEY
+
+# Launch Claude Code — slash commands are available immediately
+claude
+# Then use: /testboost.init /path/to/your/java/project
 ```
 
-### With the CLI directly
+### Option B: Install slash commands into an existing project
+
+If you prefer to work from your Java project directory, copy the command
+templates so your LLM CLI can discover them:
+
+```bash
+# From your Java project root:
+TESTBOOST_DIR="/path/to/TestBoost"
+
+# For Claude Code
+mkdir -p .claude/commands
+cp "$TESTBOOST_DIR"/testboost_lite/templates/commands/testboost.*.md .claude/commands/
+
+# For Open Code
+mkdir -p .opencode/commands
+cp "$TESTBOOST_DIR"/testboost_lite/templates/commands/testboost.*.md .opencode/commands/
+```
+
+> **Note:** The shell scripts inside the slash commands call
+> `testboost_lite/scripts/tb-*.sh` using a relative path from `$TESTBOOST_DIR`.
+> Make sure `TESTBOOST_DIR` is set correctly, or edit the paths in the copied
+> command files.
+
+### Option C: Use the CLI directly (no slash commands)
+
+No installation needed beyond cloning and `poetry install`:
+
+```bash
+cd /path/to/TestBoost
+python -m testboost_lite init /path/to/java/project
+```
+
+## Quick Start
+
+### With Claude Code (from TestBoost repo)
+
+```bash
+cd /path/to/TestBoost
+claude
+# Then in the Claude Code session:
+/testboost.init /path/to/your/java/project
+/testboost.analyze /path/to/your/java/project
+/testboost.gaps /path/to/your/java/project
+/testboost.generate /path/to/your/java/project
+/testboost.validate /path/to/your/java/project
+```
+
+### With the CLI directly (no Claude Code needed)
 
 ```bash
 cd /path/to/TestBoost
@@ -153,10 +206,10 @@ Dual-output logging:
 ## Adapting for Other LLM CLIs
 
 The command templates in `testboost_lite/templates/commands/` can be adapted for:
-- **Claude Code**: Copy to `.claude/commands/` (done by default)
-- **Open Code**: Copy to `.opencode/commands/`
+- **Claude Code**: Already in `.claude/commands/` of this repo — no action needed
+- **Open Code**: Copy templates to `.opencode/commands/` in your project
 - **Cursor**: Add as custom commands
-- **Generic**: Use the shell scripts directly
+- **Generic**: Use the shell scripts in `testboost_lite/scripts/` directly
 
 ## Configuration
 

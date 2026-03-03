@@ -190,7 +190,7 @@ def _create_google_llm(
     callbacks = _add_metrics_callback("google-genai", model, kwargs)
 
     return ChatGoogleGenerativeAI(
-        google_api_key=api_key,
+        api_key=api_key,
         model=model,
         temperature=temperature,
         max_output_tokens=max_tokens,

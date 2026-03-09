@@ -12,8 +12,8 @@ from src.lib.logging import get_logger
 logger = get_logger(__name__)
 settings = get_settings()
 
-# Startup check timeout (5 seconds max)
-STARTUP_TIMEOUT = 5
+# Startup check timeout — configurable via STARTUP_TIMEOUT in .env (default 5s)
+STARTUP_TIMEOUT = settings.startup_timeout
 
 # Retry configuration for intermittent errors (A4 edge case)
 MAX_RETRIES = 3

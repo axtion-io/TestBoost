@@ -101,6 +101,18 @@ CONTEXT.md
 OPEN_SOURCE_AUDIT_REPORT.md
 PR-*.md
 
+# Corporate CA certificates (local machine, do not commit)
+corp-ca.pem
+corp-ca.der
+corp-ca-bundle.pem
+export_cert.ps1
+
+# TestBoost session data (generated at runtime, not source)
+.testboost/
+
+# OpenCode local config (contains internal infrastructure URLs)
+opencode.json
+
 # Config backups
 config/agents/.backups/
 tests/fixtures/spring-petclinic/

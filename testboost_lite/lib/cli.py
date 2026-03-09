@@ -29,6 +29,14 @@ from typing import Any
 TESTBOOST_ROOT = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(TESTBOOST_ROOT))
 
+# Load .env into os.environ BEFORE any LLM/httpx imports so that NO_PROXY,
+# SSL_CERT_FILE, REQUESTS_CA_BUNDLE etc. are visible to httpx at client creation.
+try:
+    from dotenv import load_dotenv
+    load_dotenv(TESTBOOST_ROOT / ".env", override=False)
+except ImportError:
+    pass
+
 
 def cmd_init(args: argparse.Namespace) -> int:
     """Initialize .testboost/ in a project."""
@@ -90,8 +98,10 @@ async def _cmd_analyze_async(args: argparse.Namespace) -> int:
         # --- Reuse existing TestBoost functions via bridge ---
         from testboost_lite.lib.testboost_bridge import (
             analyze_project_context,
+            classify_file,
             detect_test_conventions,
             find_source_files,
+            find_test_for_source,
         )
 
         result_json = await analyze_project_context(project_path)
@@ -132,11 +142,31 @@ async def _cmd_analyze_async(args: argparse.Namespace) -> int:
         content += f"- **Existing tests**: {test_struct.get('test_count', 0)}\n"
         content += f"- **Packages**: {len(src_struct.get('packages', []))}\n\n"
 
-        # Source files to test
-        content += "## Source Files for Test Generation\n\n"
-        content += f"Found **{len(source_files)}** testable source files:\n\n"
+        # Classify source files and check for existing tests
+        file_details = []
         for sf in source_files:
-            content += f"- `{sf}`\n"
+            category = classify_file(sf)
+            test_file = find_test_for_source(project_path, sf)
+            file_details.append({
+                "path": sf,
+                "category": category,
+                "has_test": test_file is not None,
+                "test_file": test_file,
+            })
+
+        tested_count = sum(1 for f in file_details if f["has_test"])
+
+        # Source files table
+        content += "## Source Files for Test Generation\n\n"
+        content += f"Found **{len(source_files)}** source files"
+        content += f" ({tested_count} with existing tests, {len(source_files) - tested_count} without):\n\n"
+        content += "| # | Source File | Category | Has Test | Test File |\n"
+        content += "|---|-----------|----------|----------|----------|\n"
+        for i, fd in enumerate(file_details, 1):
+            src_name = Path(fd["path"]).name
+            has_test = "Yes" if fd["has_test"] else "No"
+            test_name = Path(fd["test_file"]).name if fd["test_file"] else "-"
+            content += f"| {i} | `{src_name}` | {fd['category']} | {has_test} | {test_name} |\n"
         content += "\n"
 
         # Conventions summary
@@ -159,6 +189,7 @@ async def _cmd_analyze_async(args: argparse.Namespace) -> int:
                 "project_context": result,
                 "conventions": conventions,
                 "source_files": source_files,
+                "source_file_details": file_details,
             },
         )
 
@@ -358,7 +389,16 @@ async def _cmd_generate_async(args: argparse.Namespace) -> int:
         # --- Reuse existing TestBoost test generation via bridge ---
         from testboost_lite.lib.testboost_bridge import generate_adaptive_tests
 
-        use_llm = not getattr(args, "no_llm", False)
+        # Verify LLM connectivity before generating tests
+        from src.lib.startup_checks import check_llm_connection
+        try:
+            await check_llm_connection()
+        except Exception as e:
+            logger.error(f"LLM connection failed: {e}")
+            print(f"\nERROR: Cannot connect to LLM provider. {e}")
+            print("Set the appropriate API key (ANTHROPIC_API_KEY, GOOGLE_API_KEY, or OPENAI_API_KEY).")
+            return 1
+
         generated = []
         for source_file in target_files:
             logger.info(f"Generating tests for: {source_file}")
@@ -366,7 +406,6 @@ async def _cmd_generate_async(args: argparse.Namespace) -> int:
                 result_json = await generate_adaptive_tests(
                     project_path=project_path,
                     source_file=source_file,
-                    use_llm=use_llm,
                     conventions=conventions,
                 )
                 result = json.loads(result_json)
@@ -389,7 +428,7 @@ async def _cmd_generate_async(args: argparse.Namespace) -> int:
         content = "# Test Generation Results\n\n"
         content += f"**Target files**: {len(target_files)}\n"
         content += f"**Tests generated**: {len(generated)}\n"
-        content += f"**LLM mode**: {'yes' if use_llm else 'template only'}\n\n"
+        content += "\n"
 
         if generated:
             content += "## Generated Tests\n\n"
@@ -643,7 +682,6 @@ def main() -> int:
     p_gen = subparsers.add_parser("generate", help="Generate tests")
     p_gen.add_argument("project_path", help="Path to the Java project")
     p_gen.add_argument("--files", nargs="*", help="Filter specific files")
-    p_gen.add_argument("--no-llm", action="store_true", help="Use template mode (no LLM)")
     p_gen.add_argument("--verbose", "-v", action="store_true")
 
     # validate

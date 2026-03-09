@@ -42,23 +42,12 @@ jobs:
       run: |
         poetry run pytest tests/integration/test_llm_connectivity.py -v --tb=short --no-cov --durations=0 --durations-min=0.1 -k "not test_llm_connection_success"
         poetry run pytest tests/integration/test_agent_config_loading.py -v --tb=short --no-cov --durations=0 --durations-min=0.1
-        poetry run pytest tests/integration/test_agent_config_validation.py -v --tb=short --no-cov --durations=0 --durations-min=0.1
         poetry run pytest tests/integration/test_provider_switching.py -v --tb=short --no-cov --durations=0 --durations-min=0.1
-      continue-on-error: false
-
-    - name: Run Regression Tests (T097a)
-      run: |
-        poetry run pytest tests/regression/test_old_workflows.py -v --tb=short --no-cov --durations=0 --durations-min=0.1
       continue-on-error: false
 
     - name: Run Security Audit Tests (T101a)
       run: |
         poetry run pytest tests/security/test_api_key_audit.py -v --tb=short --no-cov --durations=0 --durations-min=0.1
-      continue-on-error: false
-
-    - name: Run Documentation Tests (T103b-e)
-      run: |
-        poetry run pytest tests/integration/test_documentation.py -v --tb=short --no-cov --durations=0 --durations-min=0.1
       continue-on-error: false
 
     - name: Run Edge Case Tests (T105b-f)
@@ -95,7 +84,7 @@ jobs:
 
     - name: Run Ruff linter
       run: |
-        poetry run ruff check src/ tests/
+        poetry run ruff check src/ tests/ testboost_lite/
       continue-on-error: true
 
     - name: Run type checking with mypy

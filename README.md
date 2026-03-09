@@ -1,45 +1,24 @@
 # TestBoost
 
-AI-powered Java/Spring Boot test generation and maintenance automation platform.
+AI-powered test generation for Java/Spring Boot projects, driven by LLM CLI tools.
 
 [![Python](https://img.shields.io/badge/Python-3.11+-blue.svg)](https://python.org)
-[![FastAPI](https://img.shields.io/badge/FastAPI-0.135-green.svg)](https://fastapi.tiangolo.com)
-[![LangGraph](https://img.shields.io/badge/LangGraph-1.0-purple.svg)](https://langchain.com)
-[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-15-blue.svg)](https://postgresql.org)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
-
-[![CI](https://github.com/axtion-io/TestBoost/actions/workflows/ci.yml/badge.svg)](https://github.com/axtion-io/TestBoost/actions/workflows/ci.yml)
-[![Coverage](https://img.shields.io/badge/coverage-36%25-orange)](https://github.com/axtion-io/TestBoost)
 [![Code style: ruff](https://img.shields.io/badge/code%20style-ruff-000000.svg)](https://github.com/astral-sh/ruff)
-[![pre-commit](https://img.shields.io/badge/pre--commit-enabled-brightgreen?logo=pre-commit)](https://github.com/pre-commit/pre-commit)
 
-<!-- GitHub Stats badges (uncomment after making repository public)
-![GitHub stars](https://img.shields.io/github/stars/axtion-io/TestBoost?style=social)
-![GitHub forks](https://img.shields.io/github/forks/axtion-io/TestBoost?style=social)
-![GitHub issues](https://img.shields.io/github/issues/axtion-io/TestBoost)
-![GitHub pull requests](https://img.shields.io/github/issues-pr/axtion-io/TestBoost)
-![GitHub last commit](https://img.shields.io/github/last-commit/axtion-io/TestBoost)
--->
+## What is TestBoost?
 
-## Overview
+TestBoost analyzes your Java project, identifies files lacking test coverage, and generates unit tests using LLMs (Google Gemini, Anthropic Claude, or OpenAI). It is designed to be used interactively through LLM CLI tools like [Claude Code](https://docs.anthropic.com/en/docs/claude-code) or [OpenCode](https://opencode.ai), where the AI assistant orchestrates the workflow step by step.
 
-TestBoost automates Java/Spring Boot project maintenance through AI-powered workflows:
+The workflow is simple:
 
-- **Maven Dependency Management** - Automated updates with security scanning and non-regression validation
-- **Test Generation** - Unit, integration, and snapshot tests with mutation testing (PIT)
-- **Docker Deployment** - Automated containerization with health check monitoring
-- **Impact Analysis** - Code change analysis to identify required tests
+```
+init --> analyze --> gaps --> generate --> validate
+```
+
+Each step produces a markdown report in your project's `.testboost/` directory, giving you full visibility into what was analyzed, what's missing, and what was generated.
 
 ## Quick Start
-
-### Prerequisites
-
-- Python 3.11+
-- PostgreSQL 15+ (or Docker)
-- Git
-- LLM API key (Google Gemini, Anthropic Claude, or OpenAI)
-
-### Installation
 
 ```bash
 # Clone and install
@@ -48,90 +27,74 @@ cd TestBoost
 python -m venv .venv && source .venv/bin/activate
 pip install poetry && poetry install
 
-# Configure environment
-cp .env.example .env
-# Edit .env with your LLM API key (GOOGLE_API_KEY, ANTHROPIC_API_KEY, or OPENAI_API_KEY)
+# Set your LLM API key
+export GOOGLE_API_KEY="..."   # or ANTHROPIC_API_KEY or OPENAI_API_KEY
 
-# Start database and run migrations
-docker compose up -d postgres
-alembic upgrade head
-
-# Start the API
-uvicorn src.api.main:app --reload
+# Launch your LLM CLI from the TestBoost directory
+claude                         # or: opencode
 ```
 
-### CLI Usage
+Then use the slash commands:
+
+```
+/testboost.init /path/to/your/java/project
+/testboost.analyze /path/to/your/java/project
+/testboost.gaps /path/to/your/java/project
+/testboost.generate /path/to/your/java/project
+/testboost.validate /path/to/your/java/project
+```
+
+Or use the CLI directly (no LLM CLI needed):
 
 ```bash
-# Maven maintenance
-python -m src.cli.main maintenance list ./my-project
-python -m src.cli.main maintenance run ./my-project --mode autonomous
-
-# Test generation
-python -m src.cli.main tests generate ./my-project
-
-# Docker deployment
-python -m src.cli.main deploy run ./my-project
-
-# Configuration management
-python -m src.cli.main config validate
+python -m testboost_lite init /path/to/java/project
+python -m testboost_lite analyze /path/to/java/project
+python -m testboost_lite gaps /path/to/java/project
+python -m testboost_lite generate /path/to/java/project
+python -m testboost_lite validate /path/to/java/project
 ```
+
+## How It Works
+
+1. **Init** -- Creates a `.testboost/` session directory in your Java project
+2. **Analyze** -- Scans project structure, frameworks (Spring Boot, JPA, etc.), and existing test conventions
+3. **Gaps** -- Compares source files against existing tests to find what's missing
+4. **Generate** -- Uses an LLM to generate JUnit 5 tests with Mockito mocks, following your project's conventions
+5. **Validate** -- Compiles and runs the generated tests with Maven
+
+All results are written to `.testboost/sessions/<id>/` as markdown files, so you can review everything before committing.
+
+## Supported LLM CLIs
+
+| Tool | Command directory | Status |
+|------|-------------------|--------|
+| [Claude Code](https://docs.anthropic.com/en/docs/claude-code) | `.claude/commands/` | Ready |
+| [OpenCode](https://opencode.ai) | `.opencode/commands/` | Ready |
+
+## LLM Providers
+
+TestBoost supports three LLM providers for test generation:
+
+| Provider | Model | Setup |
+|----------|-------|-------|
+| Google Gemini | `gemini-2.0-flash` | `export GOOGLE_API_KEY=...` |
+| Anthropic Claude | `claude-sonnet-4-20250514` | `export ANTHROPIC_API_KEY=...` |
+| OpenAI | `gpt-4o` | `export OPENAI_API_KEY=...` |
+
+Set the `MODEL` environment variable to switch providers. See [LLM Providers](./docs/llm-providers.md) for details.
 
 ## Documentation
 
-Full documentation is available in the [`docs/`](./docs/) directory:
-
 | Document | Description |
 |----------|-------------|
-| [User Guide](./docs/user-guide.md) | Complete installation and usage guide |
-| [CLI Reference](./docs/cli-reference.md) | Full CLI commands documentation |
-| [API Authentication](./docs/api-authentication.md) | REST API endpoints and authentication |
-| [LLM Providers](./docs/llm-providers.md) | Configure Google Gemini, Claude, or OpenAI |
-| [Database Schema](./docs/database-schema.md) | PostgreSQL tables and migrations |
-| [Documentation Index](./docs/README.md) | Full documentation table of contents |
-
-## Architecture
-
-```
-TestBoost/
-├── src/
-│   ├── api/              # FastAPI REST API
-│   ├── cli/              # Typer CLI commands
-│   ├── core/             # Core business logic
-│   ├── db/               # Database models & migrations
-│   ├── workflows/        # LangGraph workflows
-│   ├── agents/           # Agent YAML configs & prompt loader
-│   └── mcp_servers/      # MCP tool servers
-├── config/               # Agent YAML & prompt configurations
-├── docs/                 # Documentation
-├── specs/                # Feature specifications (SpecKit)
-└── tests/                # Test suite
-```
-
-### Technology Stack
-
-| Component | Technology |
-|-----------|------------|
-| Backend | Python 3.11+, FastAPI, Uvicorn |
-| Database | PostgreSQL 15, SQLAlchemy, Alembic |
-| Workflows | LangGraph 1.0+ |
-| Agents | LangGraph ReAct (create_react_agent), LangChain Core 1.1+ |
-| LLM Providers | Google Gemini, Anthropic Claude, OpenAI |
-| CLI | Typer, Rich |
-| Observability | Structlog, LangSmith (optional) |
-
-## API Endpoints
-
-| Endpoint | Description |
-|----------|-------------|
-| `GET /health` | Health check with database and LLM status |
-| `POST /api/v2/sessions` | Create workflow session |
-| `GET /api/v2/sessions` | List sessions (paginated) |
-| `GET /api/v2/sessions/{id}` | Get session details |
-| `POST /api/v2/sessions/{id}/pause` | Pause workflow |
-| `POST /api/v2/sessions/{id}/resume` | Resume workflow |
-
-See [API Authentication](./docs/api-authentication.md) for full endpoint documentation.
+| [Getting Started](./docs/getting-started.md) | Installation and first usage |
+| [Workflow](./docs/workflow.md) | Detailed description of each step |
+| [LLM Providers](./docs/llm-providers.md) | Provider configuration and comparison |
+| [Configuration](./docs/configuration.md) | Project settings and environment variables |
+| [Session Format](./docs/session-format.md) | Structure of `.testboost/` session files |
+| [Architecture](./docs/architecture.md) | Internal architecture and design |
+| [Prompts](./docs/prompts.md) | LLM prompts used for test generation |
+| [Contributor Quickstart](./docs/contributor-quickstart.md) | Set up a development environment |
 
 ## Development
 
@@ -139,75 +102,17 @@ See [API Authentication](./docs/api-authentication.md) for full endpoint documen
 # Run tests
 pytest tests/
 
-# Linting
-ruff check src/
+# Lint
+ruff check .
 
-# Type checking
+# Type check
 mypy src/
 ```
 
-## Edge Cases & Error Handling
-
-TestBoost handles common edge cases automatically:
-
-| Scenario | Behavior |
-|----------|----------|
-| **LLM Rate Limit (429)** | Automatic retry with exponential backoff (max 3 attempts) |
-| **LLM Timeout** | Configurable timeout (default 120s), retry on transient failures |
-| **Invalid API Key** | Startup validation fails with clear error message |
-| **Network Errors** | Automatic retry with backoff for transient failures |
-| **Malformed LLM Response** | Retry with modified prompt (max 3 attempts) |
-
-For detailed edge case handling, see [LLM Providers](./docs/llm-providers.md#gestion-des-erreurs).
-
-## Troubleshooting
-
-### Common Issues
-
-**LLM not available at startup**
-```
-Error: LLM not available: GOOGLE_API_KEY not configured
-```
-Solution: Set your LLM API key in `.env` file.
-
-**Database connection failed**
-```
-Error: Connection refused on port 5433
-```
-Solution: Start PostgreSQL with `docker compose up -d postgres`.
-
-**Tests not found (collected 0 items)**
-- Verify test files match pattern `test_*.py`
-- Check pytest configuration in `pyproject.toml`
-
-**Rate limit exceeded**
-```
-LLM rate limit exceeded. Retry after 60 seconds.
-```
-Solution: Wait for the indicated duration or switch to a provider with higher quota.
-
-For more troubleshooting help, see [Operations Guide](./docs/operations.md).
-
-## Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes with tests
-4. Run code quality checks
-5. Submit a pull request
-
-See [CONTRIBUTING.md](./CONTRIBUTING.md) for detailed guidelines.
+See [CONTRIBUTING.md](./CONTRIBUTING.md) for contribution guidelines.
 
 ## License
 
-This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENSE) file for details.
+Apache License 2.0 -- see [LICENSE](LICENSE).
 
 Copyright 2026 TestBoost Contributors
-
-## Acknowledgments
-
-Built with [FastAPI](https://fastapi.tiangolo.com), [LangChain](https://langchain.com), [LangGraph](https://langchain.com), [Typer](https://typer.tiangolo.com), and [Rich](https://rich.readthedocs.io).
-
----
-
-**Version**: 0.2.0

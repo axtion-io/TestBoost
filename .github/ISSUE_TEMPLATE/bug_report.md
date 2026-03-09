@@ -6,35 +6,39 @@ labels: bug
 assignees: ''
 ---
 
-## Description du bug
-<!-- Décrivez clairement le bug rencontré -->
+## Description
 
-## Étapes pour reproduire
-<!-- Listez les étapes pour reproduire le comportement -->
+<!-- Describe the bug clearly -->
+
+## Steps to Reproduce
+
 1.
 2.
 3.
 
-## Comportement attendu
-<!-- Décrivez ce qui devrait se passer normalement -->
+## Expected Behavior
 
-## Comportement actuel
-<!-- Décrivez ce qui se passe réellement -->
+<!-- What should happen -->
 
-## Captures d'écran
-<!-- Si applicable, ajoutez des captures d'écran pour illustrer le problème -->
+## Actual Behavior
 
-## Environnement
-- **OS**: [ex: Ubuntu 22.04, macOS 14, Windows 11]
-- **Version Python**: [ex: 3.11.5]
-- **Version TestBoost**: [ex: 0.1.0]
-- **Méthode d'installation**: [ex: pip, poetry, source]
+<!-- What happens instead -->
 
-## Logs / Messages d'erreur
-<!-- Copiez les messages d'erreur ou logs pertinents -->
+## Environment
+
+- **OS**: [e.g. Ubuntu 22.04, macOS 14, Windows 11]
+- **Python version**: [e.g. 3.11.5]
+- **TestBoost version**: [e.g. 0.2.0]
+- **LLM CLI**: [e.g. Claude Code 2.1, OpenCode 1.0, CLI only]
+- **LLM provider**: [e.g. Gemini, Claude, OpenAI]
+
+## Error Output
+
+<!-- Paste relevant error messages or logs -->
 ```
-Collez vos logs ici
+Paste logs here
 ```
 
-## Contexte additionnel
-<!-- Ajoutez tout autre contexte utile sur le problème -->
+## Additional Context
+
+<!-- Any other useful information -->

@@ -2,8 +2,6 @@
 
 ## Supported Versions
 
-We release patches for security vulnerabilities in the following versions:
-
 | Version | Supported          |
 | ------- | ------------------ |
 | 0.2.x   | :white_check_mark: |
@@ -13,134 +11,81 @@ We release patches for security vulnerabilities in the following versions:
 
 **DO NOT report security vulnerabilities through public GitHub issues.**
 
-Instead, please report security vulnerabilities privately to our security team.
-
 ### How to Report
 
 **Email**: security@testboost.dev
 
 **Subject**: [SECURITY] Brief description of the vulnerability
 
-### What to Include in Your Report
-
-To help us assess and address the vulnerability quickly, please include:
+### What to Include
 
 1. **Description**: A clear description of the vulnerability
 2. **Steps to Reproduce**: Detailed steps to reproduce the issue
-3. **Impact Assessment**: Your assessment of the potential impact (data exposure, privilege escalation, etc.)
-4. **Affected Components**: Which parts of TestBoost are affected (API, CLI, workflows, etc.)
-5. **Suggested Fix** (optional): If you have suggestions for how to fix it
+3. **Impact Assessment**: Potential impact (data exposure, privilege escalation, etc.)
+4. **Affected Components**: Which parts of TestBoost are affected (CLI, test generation, session files, etc.)
+5. **Suggested Fix** (optional): How to fix it
 6. **Proof of Concept** (optional): Code or steps demonstrating the vulnerability
 
 ### What to Expect
 
-- **48-hour acknowledgment**: We will acknowledge receipt of your report within 48 hours
-- **5-day updates**: We will provide status updates at least every 5 days
-- **Coordinated disclosure**: We request that you give us reasonable time to fix the vulnerability before public disclosure
-- **Credit**: With your permission, we will acknowledge your contribution in our security advisories
-
-### Our Commitment
-
-- We will keep you informed about the progress of fixing the vulnerability
-- We will notify you when the vulnerability is fixed
-- We will credit you in our security advisory (unless you prefer to remain anonymous)
+- **48-hour acknowledgment**: We will acknowledge your report within 48 hours
+- **5-day updates**: Status updates at least every 5 days
+- **Coordinated disclosure**: We request reasonable time to fix before public disclosure
+- **Credit**: We will acknowledge your contribution (unless you prefer anonymity)
 
 ## Security Best Practices for Users
 
-### Environment Variables
-
-Never commit sensitive data to the repository:
-- Use `.env` files for local development (already in `.gitignore`)
-- Use `.env.example` as a template (safe placeholder values only)
-- For production, use environment-specific secrets management (AWS Secrets Manager, Azure Key Vault, etc.)
-
-### API Keys and Credentials
+### API Keys
 
 TestBoost requires API keys for LLM providers (Google Gemini, Anthropic, OpenAI):
+
 - **Never hardcode** API keys in source code or configuration files
 - **Never commit** `.env` files with real credentials
-- **Rotate keys regularly** especially after team member changes
-- **Use separate keys** for development, staging, and production environments
+- **Rotate keys regularly**, especially after team member changes
+- **Use separate keys** for development and production
 - **Restrict key permissions** to minimum required scope
 
-### Database Security
+### Environment Variables
 
-For PostgreSQL:
-- Use **strong passwords** (minimum 16 characters, mixed case, numbers, symbols)
-- **Never use default credentials** (testboost/testboost from examples)
-- **Restrict network access** to trusted IPs only
-- **Enable SSL/TLS** for database connections in production
-- **Regular backups** with encrypted storage
+- Use `.env` files for local development (already in `.gitignore`)
+- Use `.env.example` as a template (placeholder values only)
+- For production, use secrets management (AWS Secrets Manager, Azure Key Vault, etc.)
 
-### Docker and Container Security
+### Session Files
 
-- **Keep base images updated** to latest patch versions
-- **Scan images** for vulnerabilities before deployment
-- **Run containers as non-root** user when possible
-- **Limit container resources** (CPU, memory) to prevent DoS
-- **Use secrets management** for container environment variables
+The `.testboost/` directory in your Java project contains session data including source code analysis. Consider:
 
-### Network Security
+- Adding `.testboost/` to `.gitignore` if sessions contain sensitive information
+- Reviewing generated test files before committing (they may reference internal APIs or data structures)
 
-- **Use HTTPS** for all production API endpoints
-- **Enable CORS** carefully - restrict to trusted origins only
-- **Rate limiting** on API endpoints to prevent abuse
-- **Authentication/Authorization** for all non-public endpoints
-
-## Security Features in TestBoost
+## Security Features
 
 ### Secret Scanning
 
-This repository uses automated secret scanning to prevent accidental credential commits:
-- **TruffleHog** - Detects and verifies secrets in commits
-- **Gitleaks** - Comprehensive secret pattern detection
-- **GitHub Actions CI** - Runs scans on every PR and push
-
-If the CI detects secrets, your PR will be blocked until the issue is resolved.
+- **TruffleHog** -- Detects secrets in commits
+- **Gitleaks** -- Comprehensive secret pattern detection
+- **GitHub Actions CI** -- Runs scans on every PR and push
 
 ### Dependency Scanning
 
-We monitor dependencies for known vulnerabilities:
-- **License compliance** - Automated checks for GPL/AGPL dependencies (incompatible with Apache 2.0)
-- **Security advisories** - GitHub Dependabot alerts for vulnerable dependencies
+- License compliance checks (no GPL/AGPL dependencies, incompatible with Apache 2.0)
+- GitHub Dependabot alerts for known vulnerabilities
 
-### Code Quality Checks
+### Code Quality
 
-- **Ruff** - Python linter with security-focused rules
-- **mypy** - Static type checking to catch potential bugs
-- **pytest** - Comprehensive test suite with security-focused tests
+- **Ruff** -- Linting with security-focused rules
+- **mypy** -- Static type checking
+- **pytest** -- Comprehensive test suite
 
-## Responsible Disclosure Policy
+## Responsible Disclosure
 
-We believe in responsible disclosure and appreciate security researchers who report vulnerabilities responsibly. We commit to:
+We commit to:
 
-1. **No legal action** against security researchers who:
-   - Report vulnerabilities privately and in good faith
-   - Give us reasonable time to fix before public disclosure
-   - Do not exploit vulnerabilities for personal gain or harm users
-
-2. **Acknowledge contributions** in our security advisories
-
-3. **Work collaboratively** to understand and fix reported vulnerabilities
-
-## Security Updates
-
-Security updates will be released as PATCH versions (e.g., 0.2.1, 0.2.2) and documented in:
-- **GitHub Security Advisories**: https://github.com/axtion-io/TestBoost/security/advisories
-- **CHANGELOG.md**: With `### Security` section
-- **Release notes**: With clear upgrade instructions
-
-Subscribe to **GitHub repository notifications** to receive security update alerts.
+1. **No legal action** against researchers who report in good faith
+2. **Acknowledge contributions** in security advisories
+3. **Work collaboratively** to understand and fix issues
 
 ## Contact
 
-For non-security-related questions, please use:
-- **GitHub Issues**: https://github.com/axtion-io/TestBoost/issues
-- **GitHub Discussions**: https://github.com/axtion-io/TestBoost/discussions
-
-For security-related concerns **only**, contact: security@testboost.dev
-
----
-
-**Document Version**: 1.0
-**Last Updated**: 2026-01-26
+- **Security issues**: security@testboost.dev
+- **General questions**: [GitHub Issues](https://github.com/axtion-io/TestBoost/issues) or [Discussions](https://github.com/axtion-io/TestBoost/discussions)

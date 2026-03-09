@@ -9,7 +9,15 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from src.db.models.session import SessionMode
+from enum import Enum
+
+
+class SessionMode(str, Enum):
+    """Session execution mode."""
+    INTERACTIVE = "interactive"
+    AUTONOMOUS = "autonomous"
+    ANALYSIS_ONLY = "analysis_only"
+    DEBUG = "debug"
 from src.lib.logging import get_logger
 
 logger = get_logger(__name__)

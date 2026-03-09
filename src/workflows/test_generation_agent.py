@@ -24,7 +24,7 @@ from langchain_core.messages import AIMessage, HumanMessage
 from langgraph.prebuilt import create_react_agent
 
 from src.agents.loader import AgentLoader
-from src.db.repository import ArtifactRepository, SessionRepository
+# DB repository imports removed (Lite architecture uses markdown files)
 from src.lib.agent_retry import invoke_agent_with_retry
 from src.lib.config import get_settings
 from src.lib.llm import get_llm
@@ -470,8 +470,8 @@ async def run_test_generation_with_agent(
     )
 
     # Initialize repositories
-    session_repo = SessionRepository(db_session)
-    artifact_repo = ArtifactRepository(db_session)
+    session_repo = None  # DB removed (Lite architecture)
+    artifact_repo = None  # DB removed (Lite architecture)
 
     # Load agent configuration (T056)
     loader = AgentLoader("config/agents")
@@ -630,7 +630,7 @@ async def _invoke_agent_and_store_tools(
     agent: Any,
     input_data: dict[str, Any],
     session_id: UUID,
-    artifact_repo: ArtifactRepository,
+    artifact_repo: Any,
 ) -> dict[str, Any] | AIMessage:
     """
     Invoke agent and store tool calls as artifacts.
@@ -666,7 +666,7 @@ async def _invoke_agent_and_store_tools(
 
 async def _validate_and_correct_tests(
     session_id: UUID,
-    artifact_repo: ArtifactRepository,
+    artifact_repo: Any,
     agent: Any,
     generated_tests: list[dict[str, Any]],
     project_path: str,
@@ -719,7 +719,7 @@ async def _validate_and_correct_tests(
 
 async def _compile_with_auto_correction(
     session_id: UUID,
-    artifact_repo: ArtifactRepository,
+    artifact_repo: Any,
     agent: Any,
     test_path: str,
     test_content: str,
@@ -1229,7 +1229,7 @@ def _find_best_module_for_test(
 
 async def _store_agent_reasoning(
     session_id: UUID,
-    artifact_repo: ArtifactRepository,
+    artifact_repo: Any,
     response: dict[str, Any] | AIMessage,
     agent_name: str,
 ) -> None:
@@ -1280,7 +1280,7 @@ async def _store_agent_reasoning(
 
 async def _store_tool_calls(
     session_id: UUID,
-    artifact_repo: ArtifactRepository,
+    artifact_repo: Any,
     tool_calls: list[Any],
 ) -> None:
     """Store LLM tool calls as artifacts (T061)."""
@@ -1318,7 +1318,7 @@ async def _store_tool_calls(
 
 async def _store_test_file_artifacts(
     session_id: UUID,
-    artifact_repo: ArtifactRepository,
+    artifact_repo: Any,
     validated_tests: list[dict[str, Any]],
     project_path: str,
 ) -> None:
@@ -1394,7 +1394,7 @@ async def _store_test_file_artifacts(
 
 async def _store_generation_metrics(
     session_id: UUID,
-    artifact_repo: ArtifactRepository,
+    artifact_repo: Any,
     metrics: dict[str, Any],
 ) -> None:
     """Store direct generation metrics as artifact."""
@@ -1430,7 +1430,7 @@ async def _store_generation_metrics(
 
 async def _store_llm_metrics(
     session_id: UUID,
-    artifact_repo: ArtifactRepository,
+    artifact_repo: Any,
     metrics: dict[str, Any],
     response: dict[str, Any] | AIMessage,
 ) -> None:
@@ -1488,7 +1488,7 @@ async def _store_llm_metrics(
 
 async def _run_test_feedback_loop(
     session_id: UUID,
-    artifact_repo: ArtifactRepository,
+    artifact_repo: Any,
     agent: Any,
     validated_tests: list[dict[str, Any]],
     project_path: str,

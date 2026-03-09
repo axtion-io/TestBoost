@@ -22,15 +22,9 @@ class Settings(BaseSettings):
     )
 
     # Application settings
-    app_name: str = Field(default="TestBoost", description="Application name")
+    app_name: str = Field(default="TestBoost Lite", description="Application name")
     debug: bool = Field(default=False, description="Enable debug mode")
     log_level: str = Field(default="INFO", description="Logging level")
-
-    # Database settings
-    database_url: str = Field(
-        default="postgresql+asyncpg://testboost:testboost@localhost:5433/testboost",
-        description="PostgreSQL connection URL",
-    )
 
     # LLM Provider settings
     llm_provider: Literal["anthropic", "google-genai", "openai"] = Field(
@@ -54,6 +48,10 @@ class Settings(BaseSettings):
     openai_api_key: str | None = Field(
         default=None,
         description="OpenAI API key",
+    )
+    openai_api_base: str | None = Field(
+        default=None,
+        description="OpenAI-compatible API base URL (for vLLM or proxy)",
     )
 
     # LangSmith tracing (optional)
@@ -86,24 +84,6 @@ class Settings(BaseSettings):
         description="Maximum retry attempts for transient errors",
     )
 
-    # Data retention settings
-    session_retention_days: int = Field(
-        default=365,
-        description="Number of days to retain session data",
-    )
-
-    # Locking settings
-    project_lock_timeout_seconds: int = Field(
-        default=300,
-        description="Project lock timeout in seconds",
-    )
-
-    # API authentication
-    api_key: str | None = Field(
-        default=None,
-        description="API key for authentication",
-    )
-
     @model_validator(mode="after")
     def parse_model_provider(self) -> "Settings":
         """
@@ -122,23 +102,13 @@ class Settings(BaseSettings):
                 "openai": "openai",
             }
             if provider_part in provider_mapping:
-                # Override with parsed values (use object.__setattr__ for frozen model)
                 object.__setattr__(self, "llm_provider", provider_mapping[provider_part])
                 object.__setattr__(self, "model", model_part)
         return self
 
     def get_api_key_for_provider(self, provider: str | None = None) -> str | None:
-        """
-        Get API key for the specified or default provider.
-
-        Args:
-            provider: LLM provider name (defaults to configured provider)
-
-        Returns:
-            API key or None if not configured
-        """
+        """Get API key for the specified or default provider."""
         provider = provider or self.llm_provider
-
         api_keys = {
             "anthropic": self.anthropic_api_key,
             "google-genai": self.google_api_key,
@@ -149,17 +119,7 @@ class Settings(BaseSettings):
 
 @lru_cache
 def get_settings() -> Settings:
-    """
-    Get cached application settings.
-
-    Returns:
-        Settings instance (cached for performance)
-
-    Example:
-        >>> settings = get_settings()
-        >>> print(settings.llm_provider)
-        'anthropic'
-    """
+    """Get cached application settings."""
     return Settings()
 
 

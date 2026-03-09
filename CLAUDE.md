@@ -68,6 +68,20 @@ Sessions are tracked via markdown files (no database):
             +-- 2026-03-09.md    # Detailed execution logs
 ```
 
+## Pre-Commit Checklist
+
+**Always run ruff before committing:**
+
+```bash
+python -m ruff check src/ tests/
+```
+
+Fix any errors before creating the commit. Auto-fixable issues can be resolved with:
+
+```bash
+python -m ruff check --fix src/ tests/
+```
+
 ## Key Design Decisions
 
 - **No database**: All state is in markdown files with YAML frontmatter

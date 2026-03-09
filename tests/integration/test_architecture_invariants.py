@@ -133,19 +133,11 @@ class TestTestGenPromptAndToolsPassThrough:
         mock_response.usage_metadata = {"input_tokens": 10, "output_tokens": 20, "total_tokens": 30}
         mock_agent.ainvoke = AsyncMock(return_value=mock_response)
 
-        mock_db = AsyncMock()
-        mock_artifact_repo = MagicMock()
-        mock_artifact_repo.create = AsyncMock(return_value=None)
-        mock_session_repo = MagicMock()
-        mock_session_repo.update = AsyncMock(return_value=None)
-
         with (
             patch("src.workflows.test_generation_agent.AgentLoader") as mock_loader_cls,
             patch("src.workflows.test_generation_agent.get_tools_for_servers") as mock_get_tools,
             patch("src.workflows.test_generation_agent.create_react_agent") as mock_create,
             patch("src.workflows.test_generation_agent.get_llm") as mock_get_llm,
-            patch("src.workflows.test_generation_agent.ArtifactRepository", return_value=mock_artifact_repo),
-            patch("src.workflows.test_generation_agent.SessionRepository", return_value=mock_session_repo),
         ):
             loader = MagicMock()
             loader.load_agent.return_value = mock_config
@@ -159,7 +151,6 @@ class TestTestGenPromptAndToolsPassThrough:
             await run_test_generation_with_agent(
                 session_id=uuid4(),
                 project_path=str(project),
-                db_session=mock_db,
                 coverage_target=80.0,
             )
 
@@ -188,83 +179,6 @@ class TestTestGenPromptAndToolsPassThrough:
             )
 
 
-class TestDockerPromptAndToolsPassThrough:
-    """Docker deployment workflow must pass prompt and tools to create_react_agent."""
-
-    @pytest.mark.asyncio
-    async def test_prompt_reaches_create_react_agent(self, tmp_path):
-        from src.workflows.docker_deployment_agent import run_docker_deployment_with_agent
-
-        project = tmp_path / "test-project"
-        project.mkdir()
-
-        mock_config = MagicMock()
-        mock_config.name = "deployment_agent"
-        mock_config.llm.provider = "google-genai"
-        mock_config.llm.model = "gemini-2.0-flash"
-        mock_config.llm.temperature = 0.1
-        mock_config.llm.max_tokens = 4096
-        mock_config.tools.mcp_servers = ["docker-deployment", "container-runtime"]
-
-        prompt_text = "Docker containerization guidelines for Java"
-        docker_tool = _make_mock_tool("docker_create_dockerfile")
-        container_tool = _make_mock_tool("container_create_maven")
-
-        mock_agent = AsyncMock()
-        mock_agent.ainvoke.return_value = {
-            "messages": [AIMessage(content="Deployment complete")]
-        }
-
-        with (
-            patch("src.workflows.docker_deployment_agent.AgentLoader") as mock_loader_cls,
-            patch("src.workflows.docker_deployment_agent.get_tools_for_servers") as mock_get_tools,
-            patch("src.workflows.docker_deployment_agent.create_react_agent") as mock_create,
-            patch("src.workflows.docker_deployment_agent.get_llm") as mock_get_llm,
-            patch("src.workflows.docker_deployment_agent.get_checkpointer") as mock_cp,
-        ):
-            loader = MagicMock()
-            loader.load_agent.return_value = mock_config
-            loader.load_prompt.return_value = prompt_text
-            mock_loader_cls.return_value = loader
-
-            mock_get_tools.return_value = [docker_tool, container_tool]
-            mock_create.return_value = mock_agent
-            mock_get_llm.return_value = MagicMock()
-            mock_cp.return_value = MagicMock()
-
-            await run_docker_deployment_with_agent(
-                project_path=str(project), session_id="arch-test-docker"
-            )
-
-            # --- Architectural assertions ---
-            mock_create.assert_called_once()
-            call_kwargs = mock_create.call_args.kwargs
-
-            # Prompt loaded from markdown must reach the agent
-            assert "prompt" in call_kwargs, "prompt= missing from create_react_agent call"
-            assert call_kwargs["prompt"] == prompt_text
-
-            # MCP tools must reach the agent
-            assert call_kwargs["tools"] == [docker_tool, container_tool]
-
-            # Checkpointer must be provided (Docker workflow requires state persistence)
-            assert "checkpointer" in call_kwargs
-
-            # Config loaded from YAML
-            loader.load_agent.assert_called_once_with("deployment_agent")
-            loader.load_prompt.assert_called_once_with(
-                "docker_guidelines", category="deployment"
-            )
-
-            # LLM created from config
-            mock_get_llm.assert_called_once_with(
-                provider="google-genai",
-                model="gemini-2.0-flash",
-                temperature=0.1,
-                max_tokens=4096,
-            )
-
-
 class TestPromptFilesExistForAllAgents:
     """Every agent YAML config must reference a prompt file that actually exists."""
 
@@ -272,7 +186,7 @@ class TestPromptFilesExistForAllAgents:
         from src.agents.loader import AgentLoader
 
         loader = AgentLoader(config_dir="config/agents")
-        agent_names = ["maven_maintenance_agent", "test_gen_agent", "deployment_agent"]
+        agent_names = ["maven_maintenance_agent", "test_gen_agent"]
 
         for name in agent_names:
             config = loader.load_agent(name)

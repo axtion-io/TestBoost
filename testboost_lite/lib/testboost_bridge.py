@@ -19,10 +19,7 @@ if str(TESTBOOST_ROOT) not in sys.path:
 
 
 async def analyze_project_context(project_path: str, **kwargs) -> str:
-    """Analyze a Java project structure and context.
-
-    Wraps src.mcp_servers.test_generator.tools.analyze.analyze_project_context
-    """
+    """Analyze a Java project structure and context."""
     from src.mcp_servers.test_generator.tools.analyze import (
         analyze_project_context as _analyze,
     )
@@ -30,10 +27,7 @@ async def analyze_project_context(project_path: str, **kwargs) -> str:
 
 
 async def detect_test_conventions(project_path: str, **kwargs) -> str:
-    """Detect test naming and assertion conventions.
-
-    Wraps src.mcp_servers.test_generator.tools.conventions.detect_test_conventions
-    """
+    """Detect test naming and assertion conventions."""
     from src.mcp_servers.test_generator.tools.conventions import (
         detect_test_conventions as _detect,
     )
@@ -41,24 +35,46 @@ async def detect_test_conventions(project_path: str, **kwargs) -> str:
 
 
 def find_source_files(project_path: str) -> list[str]:
-    """Find testable Java source files.
-
-    Wraps src.workflows.test_generation_agent._find_source_files
-    """
-    from src.workflows.test_generation_agent import (
-        _find_source_files,
-    )
+    """Find testable Java source files."""
+    from src.workflows.test_generation_agent import _find_source_files
     return _find_source_files(project_path)
 
 
+def classify_file(source_file: str) -> str:
+    """Classify a Java source file by its role (Service, Controller, Repository, etc.)."""
+    name = Path(source_file).stem.lower()
+    if "controller" in name or "resource" in name:
+        return "Controller"
+    if "service" in name:
+        return "Service"
+    if "repository" in name or "dao" in name or "mapper" in name:
+        return "Repository"
+    if "entity" in name or "model" in name or "domain" in name:
+        return "Model"
+    if "config" in name or "configuration" in name:
+        return "Config"
+    if "util" in name or "helper" in name or "utils" in name:
+        return "Utility"
+    if "exception" in name or "error" in name:
+        return "Exception"
+    return "Other"
+
+
+def find_test_for_source(project_path: str, source_file: str) -> str | None:
+    """Find the test file corresponding to a Java source file."""
+    class_name = Path(source_file).stem
+    test_root = Path(project_path) / "src" / "test" / "java"
+    if not test_root.exists():
+        return None
+    for candidate in [f"{class_name}Test.java", f"{class_name}Tests.java"]:
+        matches = list(test_root.rglob(candidate))
+        if matches:
+            return str(matches[0])
+    return None
+
+
 async def generate_adaptive_tests(project_path: str, source_file: str, **kwargs) -> str:
-    """Generate tests for a single source file using LLM.
-
-    Wraps src.mcp_servers.test_generator.tools.generate_unit.generate_adaptive_tests
-
-    CRITICAL: If the LLM is not reachable, this function MUST raise an exception.
-    It should NEVER silently fallback or return empty results without error.
-    """
+    """Generate tests for a single source file using LLM."""
     from src.mcp_servers.test_generator.tools.generate_unit import (
         generate_adaptive_tests as _generate,
     )
@@ -66,10 +82,7 @@ async def generate_adaptive_tests(project_path: str, source_file: str, **kwargs)
 
 
 def parse_maven_errors(maven_output: str):
-    """Parse Maven compilation errors into structured format.
-
-    Wraps src.lib.maven_error_parser.MavenErrorParser
-    """
+    """Parse Maven compilation errors into structured format."""
     from src.lib.maven_error_parser import MavenErrorParser
     parser = MavenErrorParser()
     return parser, parser.parse(maven_output)

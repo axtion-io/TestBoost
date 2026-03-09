@@ -40,7 +40,7 @@ except ImportError:
 
 def cmd_init(args: argparse.Namespace) -> int:
     """Initialize .testboost/ in a project."""
-    from testboost_lite.lib.session_tracker import init_project, create_session
+    from testboost_lite.lib.session_tracker import create_session, init_project
 
     project_path = args.project_path
 
@@ -71,14 +71,14 @@ def cmd_analyze(args: argparse.Namespace) -> int:
 
 
 async def _cmd_analyze_async(args: argparse.Namespace) -> int:
+    from testboost_lite.lib.md_logger import MdLogger
     from testboost_lite.lib.session_tracker import (
-        get_current_session,
-        update_step_file,
-        STATUS_IN_PROGRESS,
         STATUS_COMPLETED,
         STATUS_FAILED,
+        STATUS_IN_PROGRESS,
+        get_current_session,
+        update_step_file,
     )
-    from testboost_lite.lib.md_logger import MdLogger
 
     project_path = args.project_path
     session = get_current_session(project_path)
@@ -213,14 +213,14 @@ def cmd_gaps(args: argparse.Namespace) -> int:
 
 
 async def _cmd_gaps_async(args: argparse.Namespace) -> int:
+    from testboost_lite.lib.md_logger import MdLogger
     from testboost_lite.lib.session_tracker import (
-        get_current_session,
-        update_step_file,
-        STATUS_IN_PROGRESS,
         STATUS_COMPLETED,
         STATUS_FAILED,
+        STATUS_IN_PROGRESS,
+        get_current_session,
+        update_step_file,
     )
-    from testboost_lite.lib.md_logger import MdLogger
 
     project_path = args.project_path
     session = get_current_session(project_path)
@@ -329,14 +329,14 @@ def cmd_generate(args: argparse.Namespace) -> int:
 
 
 async def _cmd_generate_async(args: argparse.Namespace) -> int:
+    from testboost_lite.lib.md_logger import MdLogger
     from testboost_lite.lib.session_tracker import (
-        get_current_session,
-        update_step_file,
-        STATUS_IN_PROGRESS,
         STATUS_COMPLETED,
         STATUS_FAILED,
+        STATUS_IN_PROGRESS,
+        get_current_session,
+        update_step_file,
     )
-    from testboost_lite.lib.md_logger import MdLogger
 
     project_path = args.project_path
     session = get_current_session(project_path)
@@ -387,10 +387,9 @@ async def _cmd_generate_async(args: argparse.Namespace) -> int:
         logger.info(f"Generating tests for {len(target_files)} files...")
 
         # --- Reuse existing TestBoost test generation via bridge ---
-        from testboost_lite.lib.testboost_bridge import generate_adaptive_tests
-
         # Verify LLM connectivity before generating tests
         from src.lib.startup_checks import check_llm_connection
+        from testboost_lite.lib.testboost_bridge import generate_adaptive_tests
         try:
             await check_llm_connection()
         except Exception as e:
@@ -482,17 +481,17 @@ def cmd_validate(args: argparse.Namespace) -> int:
 
 
 async def _cmd_validate_async(args: argparse.Namespace) -> int:
-    import subprocess
     import shutil
+    import subprocess
 
+    from testboost_lite.lib.md_logger import MdLogger
     from testboost_lite.lib.session_tracker import (
-        get_current_session,
-        update_step_file,
-        STATUS_IN_PROGRESS,
         STATUS_COMPLETED,
         STATUS_FAILED,
+        STATUS_IN_PROGRESS,
+        get_current_session,
+        update_step_file,
     )
-    from testboost_lite.lib.md_logger import MdLogger
 
     project_path = args.project_path
     session = get_current_session(project_path)
@@ -585,8 +584,8 @@ async def _cmd_validate_async(args: argparse.Namespace) -> int:
 
             # Extract failure details
             failure_lines = [
-                l for l in test_output.split("\n")
-                if "FAIL" in l or "ERROR" in l or "Tests run:" in l
+                ln for ln in test_output.split("\n")
+                if "FAIL" in ln or "ERROR" in ln or "Tests run:" in ln
             ]
             if failure_lines:
                 content += "### Failure Details\n\n```\n"

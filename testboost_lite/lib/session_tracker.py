@@ -16,10 +16,9 @@ A session = a directory under .testboost/sessions/ containing:
 import json
 import os
 import re
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
-
 
 TESTBOOST_DIR = ".testboost"
 SESSIONS_DIR = "sessions"
@@ -258,10 +257,10 @@ def write_log(session_dir: str, step_name: str, level: str, message: str, **kwar
     logs_dir = Path(session_dir) / "logs"
     logs_dir.mkdir(exist_ok=True)
 
-    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    today = datetime.now(UTC).strftime("%Y-%m-%d")
     log_file = logs_dir / f"{today}.md"
 
-    now = datetime.now(timezone.utc).strftime("%H:%M:%S")
+    now = datetime.now(UTC).strftime("%H:%M:%S")
     entry = f"| {now} | {level:<5} | {step_name:<15} | {message}"
 
     if kwargs:
@@ -326,7 +325,7 @@ def get_session_status(project_path: str) -> str:
             latest_log = log_files[0]
             log_content = latest_log.read_text(encoding="utf-8")
             # Get last 10 log lines
-            log_lines = [l for l in log_content.split("\n") if l.startswith("|") and not l.startswith("| Time") and not l.startswith("|---")]
+            log_lines = [ln for ln in log_content.split("\n") if ln.startswith("|") and not ln.startswith("| Time") and not ln.startswith("|---")]
             if log_lines:
                 lines.append("### Recent Logs")
                 lines.append("")
@@ -343,7 +342,7 @@ def get_session_status(project_path: str) -> str:
 
 def _now_iso() -> str:
     """Get current time as ISO string."""
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    return datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def _make_frontmatter(**kwargs: Any) -> str:

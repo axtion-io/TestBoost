@@ -420,7 +420,7 @@ async def _generate_tests_directly(
 async def run_test_generation_with_agent(
     session_id: UUID,
     project_path: str,
-    db_session: Any,
+    db_session: Any = None,
     source_files: list[str] | None = None,
     coverage_target: float = 80.0,
     test_requirements: list[TestRequirement] | None = None,

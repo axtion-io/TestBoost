@@ -13,7 +13,7 @@ Design decisions:
 
 import json
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -117,13 +117,11 @@ class MdLogger:
 
         if level == "ERROR":
             print(f"[{marker}] {message}", file=sys.stderr)
-        elif level == "WARN" or self.verbose:
-            print(f"[{marker}] {message}", file=sys.stdout)
-        elif level == "INFO":
+        elif level == "WARN" or self.verbose or level == "INFO":
             print(f"[{marker}] {message}", file=sys.stdout)
 
 
 def get_log_path(session_dir: str) -> Path:
     """Get the path to today's log file."""
-    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    today = datetime.now(UTC).strftime("%Y-%m-%d")
     return Path(session_dir) / "logs" / f"{today}.md"

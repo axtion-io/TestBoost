@@ -17,24 +17,24 @@ class TestYAMLConfigLoading:
     """Test YAML configuration loading functionality (T079)."""
 
     def test_yaml_config_loads(self):
-        """Test that all 3 agent YAML configs load successfully (T079).
+        """Test that all agent YAML configs load successfully (T079).
 
-        Assert 3 YAML configs loaded (maven_maintenance, test_gen, deployment),
+        Assert 2 YAML configs loaded (maven_maintenance, test_gen),
         assert each config has 'model', 'temperature', 'max_tokens' keys,
         assert model names valid.
         """
         loader = AgentLoader(config_dir="config/agents")
 
-        # Load all 3 required agent configs
-        agent_names = ["maven_maintenance_agent", "test_gen_agent", "deployment_agent"]
+        # Load all required agent configs (deployment_agent removed in Lite migration)
+        agent_names = ["maven_maintenance_agent", "test_gen_agent"]
 
         loaded_configs = {}
         for name in agent_names:
             config = loader.load_agent(name)
             loaded_configs[name] = config
 
-        # Assert all 3 configs loaded
-        assert len(loaded_configs) == 3, f"Expected 3 configs, got {len(loaded_configs)}"
+        # Assert all 2 configs loaded
+        assert len(loaded_configs) == 2, f"Expected 2 configs, got {len(loaded_configs)}"
 
         # Validate each config has required LLM keys
         valid_providers = ["google-genai", "anthropic", "openai"]
@@ -326,11 +326,11 @@ class TestAllAgentsValidation:
         loader = AgentLoader(config_dir="config/agents")
         results = loader.validate_all_agents()
 
-        # Should validate at least 3 agents
-        assert len(results) >= 3, f"Expected at least 3 agents, found {len(results)}"
+        # Should validate at least 2 agents (deployment_agent removed in Lite migration)
+        assert len(results) >= 2, f"Expected at least 2 agents, found {len(results)}"
 
         # Check expected agents are present
-        expected_agents = ["maven_maintenance_agent", "test_gen_agent", "deployment_agent"]
+        expected_agents = ["maven_maintenance_agent", "test_gen_agent"]
         for agent_name in expected_agents:
             assert agent_name in results, f"Missing validation for {agent_name}"
             is_valid, errors = results[agent_name]

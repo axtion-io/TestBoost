@@ -20,21 +20,45 @@ Each step produces a markdown report in your project's `.testboost/` directory, 
 
 ## Quick Start
 
+### Linux / macOS (Bash)
+
 ```bash
 # Clone and install
 git clone https://github.com/axtion-io/TestBoost.git
 cd TestBoost
-python -m venv .venv && source .venv/bin/activate
-pip install poetry && poetry install
+pip install poetry
+poetry install
+poetry shell                   # activate the virtual environment
 
-# Set your LLM API key
-export GOOGLE_API_KEY="..."   # or ANTHROPIC_API_KEY or OPENAI_API_KEY
+# Configure your LLM (copy and edit .env)
+cp .env.example .env
+# Edit .env — see "LLM Providers" below
 
 # Launch your LLM CLI from the TestBoost directory
 claude                         # or: opencode
 ```
 
-Then use the slash commands:
+### Windows (PowerShell)
+
+```powershell
+# Clone and install
+git clone https://github.com/axtion-io/TestBoost.git
+cd TestBoost
+pip install poetry
+poetry install
+poetry shell                   # activate the virtual environment
+
+# Configure your LLM (copy and edit .env)
+Copy-Item .env.example .env
+# Edit .env — see "LLM Providers" below
+
+# Launch your LLM CLI from the TestBoost directory
+claude                         # or: opencode
+```
+
+### Use the slash commands
+
+Once inside the LLM CLI:
 
 ```
 /testboost.init /path/to/your/java/project
@@ -73,15 +97,23 @@ All results are written to `.testboost/sessions/<id>/` as markdown files, so you
 
 ## LLM Providers
 
-TestBoost supports three LLM providers for test generation:
+TestBoost supports three LLM provider modes via the `LLM_PROVIDER` variable in `.env`:
 
-| Provider | Model | Setup |
-|----------|-------|-------|
-| Google Gemini | `gemini-2.0-flash` | `export GOOGLE_API_KEY=...` |
-| Anthropic Claude | `claude-sonnet-4-20250514` | `export ANTHROPIC_API_KEY=...` |
-| OpenAI | `gpt-4o` | `export OPENAI_API_KEY=...` |
+| Provider | Use case | Setup |
+|----------|----------|-------|
+| `openai` | **Local vLLM** or any OpenAI-compatible endpoint | `OPENAI_API_BASE`, `OPENAI_API_KEY` |
+| `google-genai` | Google Gemini API | `GOOGLE_API_KEY` |
+| `anthropic` | Anthropic Claude API | `ANTHROPIC_API_KEY` |
 
-Set the `MODEL` environment variable to switch providers. See [LLM Providers](./docs/llm-providers.md) for details.
+**Local vLLM (recommended for air-gapped / corporate setups):**
+vLLM serves a local model behind an OpenAI-compatible API. Set `LLM_PROVIDER=openai`,
+point `OPENAI_API_BASE` to the vLLM endpoint, and set `MODEL` to the model path or name.
+
+**Corporate proxy / SSL:** if your LLM endpoint uses an internal CA certificate,
+configure `SSL_CERT_FILE` and `REQUESTS_CA_BUNDLE` in `.env`.
+See [CLAUDE.md](./CLAUDE.md#corporate-network--proxy--ssl) and `.env.example` for details.
+
+Set the `MODEL` environment variable to choose a specific model. See [LLM Providers](./docs/llm-providers.md) for more.
 
 ## Documentation
 

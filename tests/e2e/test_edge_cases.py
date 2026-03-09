@@ -327,20 +327,11 @@ class TestZeroComplaisance:
         # The function should raise, not return False or None
         assert callable(check_llm_connection)
 
-    def test_agent_config_validation_is_mandatory(self):
-        """Test that validate_agent_infrastructure raises on failure."""
-        from src.lib.startup_checks import validate_agent_infrastructure
-
-        # The function should raise AgentConfigError on invalid configs
-        assert callable(validate_agent_infrastructure)
-
     def test_startup_check_error_hierarchy(self):
         """Test that all startup errors inherit from StartupCheckError."""
         from src.lib.startup_checks import (
-            AgentConfigError,
             LLMConnectionError,
             StartupCheckError,
         )
 
         assert issubclass(LLMConnectionError, StartupCheckError)
-        assert issubclass(AgentConfigError, StartupCheckError)

@@ -5,11 +5,12 @@ and serialization support for LangGraph workflows.
 """
 
 import uuid
+from enum import Enum
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from enum import Enum
+from src.lib.logging import get_logger
 
 
 class SessionMode(str, Enum):
@@ -18,7 +19,6 @@ class SessionMode(str, Enum):
     AUTONOMOUS = "autonomous"
     ANALYSIS_ONLY = "analysis_only"
     DEBUG = "debug"
-from src.lib.logging import get_logger
 
 logger = get_logger(__name__)
 

@@ -3,14 +3,13 @@
 
 import re
 
-import pytest
-
 from testboost_lite.lib.session_tracker import (
     STATUS_COMPLETED,
     STATUS_FAILED,
     STATUS_IN_PROGRESS,
-    STATUS_PENDING,
     STEPS,
+    _make_frontmatter,
+    _parse_frontmatter,
     create_session,
     get_current_session,
     get_session_status,
@@ -19,11 +18,7 @@ from testboost_lite.lib.session_tracker import (
     init_project,
     update_step_file,
     write_log,
-    _make_frontmatter,
-    _parse_frontmatter,
-    _update_spec_progress,
 )
-
 
 # ============================================================================
 # init_project
@@ -99,7 +94,7 @@ class TestCreateSession:
     def test_custom_name(self, tmp_path):
         init_project(str(tmp_path))
         result = create_session(str(tmp_path), name="My Custom Session")
-        assert "001-my-custom-session" == result["session_id"]
+        assert result["session_id"] == "001-my-custom-session"
 
     def test_custom_description(self, tmp_path):
         init_project(str(tmp_path))

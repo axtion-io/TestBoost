@@ -5,7 +5,7 @@ and serialization support for LangGraph workflows.
 """
 
 import uuid
-from enum import Enum
+from enum import StrEnum
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -13,7 +13,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from src.lib.logging import get_logger
 
 
-class SessionMode(str, Enum):
+class SessionMode(StrEnum):
     """Session execution mode."""
     INTERACTIVE = "interactive"
     AUTONOMOUS = "autonomous"

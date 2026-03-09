@@ -3,10 +3,18 @@
 ## Overview
 
 TestBoost is an AI-powered test generation toolkit for Java projects.
-It is driven by slash commands from LLM CLIs (Claude Code, OpenCode, etc.).
+It uses a local LLM served via **vLLM** (OpenAI-compatible API) and is driven
+by slash commands from LLM CLIs (Claude Code, OpenCode, etc.).
 
 ## Prerequisites
 
+- **Python 3.11+** and **Poetry** installed
+- Activate the virtual environment before using the CLI:
+  ```bash
+  cd TestBoost
+  poetry install          # first time only
+  poetry shell            # activate the venv
+  ```
 - Launch the LLM CLI **from the TestBoost repo root** (`cd TestBoost && claude`)
 - The slash commands in `.claude/commands/` (or `.opencode/commands/`) call shell scripts via relative paths
 - `<path>` in every command refers to an **absolute or relative path to the Java project** you want to test
@@ -70,6 +78,8 @@ Sessions are tracked via markdown files (no database):
 
 ## Running the CLI Directly
 
+Make sure the Poetry venv is active, then:
+
 ```bash
 python -m testboost_lite init /path/to/java/project
 python -m testboost_lite analyze /path/to/java/project
@@ -81,9 +91,68 @@ python -m testboost_lite status /path/to/java/project
 
 ## Environment
 
-Set one of these API keys depending on your LLM provider:
-- `GOOGLE_API_KEY` for Google Gemini
-- `ANTHROPIC_API_KEY` for Anthropic Claude
-- `OPENAI_API_KEY` for OpenAI
+Copy `.env.example` to `.env` and adjust values. Key variables:
 
-Set `MODEL` to choose a specific model (e.g. `gemini-2.0-flash`, `anthropic/claude-sonnet-4-20250514`).
+### LLM Provider
+
+TestBoost supports three provider modes via `LLM_PROVIDER`:
+
+| Provider | Use case |
+|----------|----------|
+| `openai` | Local vLLM or any OpenAI-compatible endpoint |
+| `anthropic` | Anthropic Claude API |
+| `google-genai` | Google Gemini API |
+
+**Using a local vLLM instance (recommended for air-gapped / corporate setups):**
+
+```env
+LLM_PROVIDER=openai
+MODEL=/path/to/your/local/model/
+OPENAI_API_BASE=https://your-internal-llm-endpoint/v1
+OPENAI_API_KEY=dummy
+```
+
+vLLM serves a local model behind an OpenAI-compatible API. Point `OPENAI_API_BASE`
+to the vLLM endpoint and set `MODEL` to the model path or name loaded by vLLM.
+
+**Using a cloud provider:**
+
+```env
+# Google Gemini
+GOOGLE_API_KEY=your-key
+MODEL=gemini-2.5-flash-preview-09-2025
+
+# Anthropic Claude
+ANTHROPIC_API_KEY=your-key
+MODEL=anthropic/claude-sonnet-4-20250514
+
+# OpenAI
+OPENAI_API_KEY=your-key
+MODEL=gpt-4o
+```
+
+### Corporate Network / Proxy / SSL
+
+When running behind a corporate proxy or firewall, configure these variables
+so that Python (httpx/requests) can reach the LLM endpoint:
+
+```env
+# Bypass proxy for internal endpoints (comma-separated)
+NO_PROXY=*.example.corp,10.0.0.*,127.0.0.1,localhost
+
+# Corporate CA certificate bundle (PEM format)
+# Needed when the internal endpoint uses a certificate signed by an internal CA
+SSL_CERT_FILE=/path/to/corp-ca-bundle.pem
+REQUESTS_CA_BUNDLE=/path/to/corp-ca-bundle.pem
+```
+
+**Creating the CA bundle:** concatenate your corporate CA certificate(s) with
+the default certifi bundle:
+
+```bash
+python -c "import certifi; print(certifi.where())"   # find the default bundle
+cat "$(python -c 'import certifi;print(certifi.where())')" corp-ca.pem > corp-ca-bundle.pem
+```
+
+> **Note:** Certificate files (`*.pem`, `*.crt`, `*.der`) are git-ignored and must
+> be provisioned locally on each machine.

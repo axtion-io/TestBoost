@@ -137,8 +137,11 @@ See [Session Format](./session-format.md) for details.
 |----------------|---------------|
 | `analyze_project_context()` | `src/mcp_servers/test_generator/tools/analyze.py` |
 | `detect_test_conventions()` | `src/mcp_servers/test_generator/tools/conventions.py` |
-| `find_source_files()` | `src/workflows/test_generation_agent.py` |
+| `find_source_files()` | `src/lib/java_discovery.py` |
+| `classify_file()` | `src/lib/java_discovery.py` |
+| `find_test_for_source()` | `src/lib/java_discovery.py` |
 | `generate_adaptive_tests()` | `src/mcp_servers/test_generator/tools/generate_unit.py` |
+| `fix_compilation_errors()` | `src/mcp_servers/test_generator/tools/generate_unit.py` |
 | `parse_maven_errors()` | `src/lib/maven_error_parser.py` |
 
 ### 7. Core Functions (MCP Servers)
@@ -147,9 +150,19 @@ The actual analysis and generation logic lives in `src/mcp_servers/test_generato
 
 - **analyze.py** -- Parses `pom.xml`, detects frameworks, analyzes project structure
 - **conventions.py** -- Detects test naming patterns, assertion styles, mocking conventions
-- **generate_unit.py** -- Generates unit tests using LLMs with project-aware prompts
+- **generate_unit.py** -- Generates unit tests using LLMs with project-aware prompts; also handles LLM-based compilation error fixing
 
 These modules use the LLM abstraction in `src/lib/llm.py` which supports Google Gemini, Anthropic Claude, and OpenAI through LangChain.
+
+### 8. Shared Library (`src/lib/`)
+
+Supporting modules used across the core:
+
+- **java_discovery.py** -- Finds and classifies Java source files in Maven projects (`src/main/java`); locates existing test files
+- **maven_error_parser.py** -- Parses Maven compilation output into structured errors with fix suggestions
+- **prompt_utils.py** -- Shared `load_prompt_template()` (disk-read cached) and `render_template()` used by all LLM prompt construction; `{{placeholder}}` syntax avoids conflicts with Java `{` braces
+- **llm.py** -- LLM provider abstraction (Google Gemini, Anthropic Claude, OpenAI via LangChain)
+- **startup_checks.py** -- LLM connectivity check at startup with retry logic
 
 ## Project Structure
 
@@ -172,7 +185,11 @@ TestBoost/
 |   |   +-- test_generator/     # Core analysis + generation logic
 |   +-- lib/
 |   |   +-- llm.py              # LLM provider abstraction
+|   |   +-- java_discovery.py   # Java source file finder + classifier
 |   |   +-- maven_error_parser.py
+|   |   +-- prompt_utils.py     # Shared template load+render
+|   +-- workflows/
+|   |   +-- test_generation_agent.py  # Java test validation utilities
 +-- config/
 |   +-- prompts/                # LLM prompt templates
 +-- tests/                      # Test suite

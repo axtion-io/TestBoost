@@ -7,12 +7,14 @@ using LLM to create intelligent test cases.
 
 import json
 import re
+import xml.etree.ElementTree as ET
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
-from src.lib.config import get_settings
 from src.lib.llm import get_llm
 from src.lib.logging import get_logger
+from src.lib.prompt_utils import load_prompt_template, render_template
 
 logger = get_logger(__name__)
 
@@ -100,8 +102,9 @@ async def generate_adaptive_tests(
     return json.dumps(results, indent=2)
 
 
+@lru_cache(maxsize=16)
 def _extract_project_context(project_path: str) -> str:
-    """Extract key project info from pom.xml for LLM context.
+    """Extract key project info from pom.xml for LLM context (cached per project).
 
     Args:
         project_path: Root directory of the Java project
@@ -109,7 +112,6 @@ def _extract_project_context(project_path: str) -> str:
     Returns:
         Formatted string with project context, or empty string if unavailable
     """
-    import xml.etree.ElementTree as ET
 
     pom_file = Path(project_path) / "pom.xml"
     if not pom_file.exists():
@@ -173,32 +175,64 @@ def _extract_project_context(project_path: str) -> str:
         return ""
 
 
-def _load_strategy_guidelines(project_path: str) -> str:
-    """Load key guidelines from the unit test strategy template.
 
-    Args:
-        project_path: Project root (used to locate TestBoost root)
 
-    Returns:
-        Formatted string with strategy guidelines, or empty string
-    """
-    # Try to find the strategy file relative to the TestBoost root
-    for base in [Path(__file__).parent.parent.parent.parent.parent, Path(project_path)]:
-        strategy_file = base / "config" / "prompts" / "testing" / "unit_test_strategy.md"
-        if strategy_file.exists():
-            try:
-                content = strategy_file.read_text(encoding="utf-8")
-                # Extract the mutation-resistant patterns section
-                sections = []
-                if "## Mutation-Resistant" in content:
-                    start = content.index("## Mutation-Resistant")
-                    end = content.index("## Expected Output", start) if "## Expected Output" in content[start:] else len(content)
-                    sections.append(content[start:end].strip())
-                if sections:
-                    return "\n\n" + "\n\n".join(sections) + "\n"
-            except Exception:
-                pass
-    return ""
+def _extract_dependency_signatures(project_path: str, dependencies: list[dict]) -> str:
+    """Find source files for dependency classes and extract their public method signatures."""
+    if not dependencies or not project_path:
+        return ""
+    project_dir = Path(project_path)
+    results = []
+    for dep in dependencies:
+        dep_type = dep.get("type", "").split("<")[0].strip()
+        if not dep_type or _is_primitive_type(dep_type):
+            continue
+        matches = list(project_dir.rglob(f"{dep_type}.java"))
+        if not matches:
+            continue
+        try:
+            source = matches[0].read_text(encoding="utf-8", errors="replace")
+            sigs = _extract_public_signatures(source)
+            if sigs:
+                results.append(f"**{dep_type}** (field: `{dep.get('name', dep_type)}`):\n{sigs}")
+        except Exception:
+            pass
+    return "\n".join(results)
+
+
+def _extract_public_signatures(source_code: str) -> str:
+    """Extract public method signatures with full parameter types from Java source."""
+    pattern = re.compile(
+        r"public\s+(?:static\s+)?(?:final\s+)?(?:synchronized\s+)?"
+        r"(\w[\w<>\[\], ]*?)\s+(\w+)\s*\(([^)]*)\)"
+        r"(?:\s+throws\s+([\w, ]+))?",
+        re.MULTILINE,
+    )
+    sigs = []
+    for m in pattern.finditer(source_code):
+        ret = m.group(1).strip()
+        name = m.group(2)
+        if name in {"if", "while", "for", "switch", "class", "new", "return"}:
+            continue
+        params = m.group(3).strip()
+        throws = f" throws {m.group(4).strip()}" if m.group(4) else ""
+        sigs.append(f"  - `{ret} {name}({params}){throws}`")
+    return "\n".join(sigs[:20])
+
+
+async def fix_compilation_errors(test_code: str, compile_errors: str, class_name: str) -> str:
+    """Fix compilation errors in generated test code using LLM."""
+    llm = get_llm()
+    template = load_prompt_template("testing/compilation_fix.md")
+    prompt = render_template(template, compile_errors=compile_errors, test_code=test_code)
+    response = await llm.ainvoke(prompt)
+    raw = response.content if hasattr(response, "content") else str(response)
+    code = str(raw) if not isinstance(raw, str) else raw
+    if "```java" in code:
+        code = code.split("```java")[1].split("```")[0].strip()
+    elif "```" in code:
+        code = code.split("```")[1].split("```")[0].strip()
+    return code
 
 
 async def _generate_test_code_with_llm(context: dict[str, Any], source_code: str) -> str:
@@ -212,7 +246,6 @@ async def _generate_test_code_with_llm(context: dict[str, Any], source_code: str
     Returns:
         Generated test code as string
     """
-    get_settings()
     llm = get_llm()
 
     class_name = context["class_name"]
@@ -226,6 +259,16 @@ async def _generate_test_code_with_llm(context: dict[str, Any], source_code: str
 
     # Extract project context from pom.xml
     project_context = _extract_project_context(project_path) if project_path else ""
+
+    # Extract method signatures of dependency classes so the LLM uses exact types
+    dep_signatures = _extract_dependency_signatures(project_path, dependencies)
+    dep_section = ""
+    if dep_signatures:
+        dep_section = (
+            "\n## Dependency Method Signatures "
+            "(use EXACT parameter types in any() matchers and doThrow/doNothing calls):\n"
+            + dep_signatures + "\n"
+        )
 
     # Build conventions section for the prompt
     conventions_section = ""
@@ -274,59 +317,32 @@ async def _generate_test_code_with_llm(context: dict[str, Any], source_code: str
 - Verify data persistence and retrieval
 """
 
-    # Load strategy template if available
-    strategy_guidelines = _load_strategy_guidelines(project_path)
+    # Build prompt from template
+    methods_json = json.dumps(
+        [{"name": m["name"], "params": m.get("parameters", []), "return_type": m.get("return_type", "void")}
+         for m in methods],
+        indent=2,
+    )
+    test_requirements_section = (
+        json.dumps(test_requirements, indent=2) if test_requirements
+        else "Generate standard coverage tests for all public methods."
+    )
 
-    # Build the prompt for test generation
-    prompt = f"""You are an expert Java test engineer specializing in unit testing with JUnit 5, Mockito, and AssertJ. Generate comprehensive, mutation-resistant unit tests for the following Java class.
-
-{project_context}
-{conventions_section}
-{class_type_instructions}
-## Source Code to Test:
-```java
-{source_code}
-```
-
-## Class Analysis:
-- Class Name: {class_name}
-- Package: {package}
-- Type: {class_type}
-- Dependencies to mock: {json.dumps(dependencies, indent=2)}
-- Public methods: {json.dumps([{"name": m["name"], "params": m.get("parameters", []), "return_type": m.get("return_type", "void")} for m in methods], indent=2)}
-
-## Test Requirements:
-{json.dumps(test_requirements, indent=2) if test_requirements else "Generate standard coverage tests for all public methods."}
-
-## Instructions:
-1. Generate a complete, compilable JUnit 5 test class
-2. Use Mockito for mocking dependencies (constructor injection pattern)
-3. Include @BeforeEach setup method
-4. For each public method, generate:
-   - Happy path test (valid inputs, expected output)
-   - Edge case tests (null handling, boundary values)
-   - Error scenario tests where applicable
-5. Use @DisplayName for readable test descriptions
-6. Use meaningful test data, not generic placeholders (e.g. "john@example.com" not "test")
-7. For reactive types (Mono/Flux), use StepVerifier
-8. Follow AAA pattern: Arrange, Act, Assert
-9. Include proper imports at the top
-10. Make tests mutation-resistant:
-    - Assert exact return values, not just non-null
-    - Test boundary conditions (at, below, above)
-    - Verify both true AND false paths for boolean returns
-    - Use specific equality assertions
-{strategy_guidelines}
-## JPA Entity Guidelines (CRITICAL):
-- NEVER call setId() on @GeneratedValue fields - use ReflectionTestUtils.setField(entity, "id", 1L)
-- Use Optional.of(entity) for present values, Optional.empty() for not-found scenarios
-- Use correct ID types (Long for JPA, not Integer)
-- Check actual date field type before using date values
-
-## Output Format:
-Return ONLY the complete Java test class code, starting with `package` statement.
-Do not include any explanation or markdown - just the raw Java code.
-"""
+    template = load_prompt_template("testing/unit_test_generation.md")
+    prompt = render_template(
+        template,
+        project_context=project_context,
+        conventions_section=conventions_section,
+        class_type_instructions=class_type_instructions,
+        dep_section=dep_section,
+        source_code=source_code,
+        class_name=class_name,
+        package=package,
+        class_type=class_type,
+        dependencies_json=json.dumps(dependencies, indent=2),
+        methods_json=methods_json,
+        test_requirements_section=test_requirements_section,
+    )
 
     try:
         # Call LLM to generate tests

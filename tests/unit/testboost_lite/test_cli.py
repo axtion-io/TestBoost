@@ -337,8 +337,10 @@ class TestCmdGenerate:
         gen_args = argparse.Namespace(
             project_path=str(initialized_project), verbose=False, files=None,
         )
+        mock_compile = MagicMock(returncode=0, stdout="", stderr="")
         with patch("src.lib.startup_checks.check_llm_connection", new_callable=AsyncMock), \
-             patch("testboost_lite.lib.testboost_bridge.generate_adaptive_tests", new_callable=AsyncMock, return_value=mock_result):
+             patch("testboost_lite.lib.testboost_bridge.generate_adaptive_tests", new_callable=AsyncMock, return_value=mock_result), \
+             patch("subprocess.run", return_value=mock_compile):
             result = await _cmd_generate_async(gen_args)
 
         assert result == 0
@@ -362,8 +364,10 @@ class TestCmdGenerate:
         gen_args = argparse.Namespace(
             project_path=str(initialized_project), verbose=False, files=None,
         )
+        mock_compile = MagicMock(returncode=0, stdout="", stderr="")
         with patch("src.lib.startup_checks.check_llm_connection", new_callable=AsyncMock), \
-             patch("testboost_lite.lib.testboost_bridge.generate_adaptive_tests", new_callable=AsyncMock, return_value=mock_result):
+             patch("testboost_lite.lib.testboost_bridge.generate_adaptive_tests", new_callable=AsyncMock, return_value=mock_result), \
+             patch("subprocess.run", return_value=mock_compile):
             await _cmd_generate_async(gen_args)
 
         test_file = initialized_project / "src" / "test" / "java" / "com" / "example" / "OrderServiceTest.java"

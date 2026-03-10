@@ -41,31 +41,20 @@ async def detect_test_conventions(project_path: str, **kwargs) -> str:
 
 
 def find_source_files(project_path: str) -> list[str]:
-    """Find testable Java source files.
-
-    Wraps src.workflows.test_generation_agent._find_source_files
-    """
-    from src.workflows.test_generation_agent import (
-        _find_source_files,
-    )
-    return _find_source_files(project_path)
+    """Find testable Java source files."""
+    from src.lib.java_discovery import find_source_files as _find
+    return _find(project_path)
 
 
 def classify_file(relative_path: str) -> str:
-    """Classify a Java source file by category.
-
-    Wraps src.workflows.test_generation_agent.classify_source_file
-    """
-    from src.workflows.test_generation_agent import classify_source_file
+    """Classify a Java source file by category."""
+    from src.lib.java_discovery import classify_source_file
     return classify_source_file(relative_path)
 
 
 def find_test_for_source(project_path: str, source_relative_path: str) -> str | None:
-    """Find existing test file for a source file, if any.
-
-    Wraps src.workflows.test_generation_agent.find_existing_test
-    """
-    from src.workflows.test_generation_agent import find_existing_test
+    """Find existing test file for a source file, if any."""
+    from src.lib.java_discovery import find_existing_test
     return find_existing_test(project_path, source_relative_path)
 
 
@@ -81,6 +70,17 @@ async def generate_adaptive_tests(project_path: str, source_file: str, **kwargs)
         generate_adaptive_tests as _generate,
     )
     return await _generate(project_path=project_path, source_file=source_file, **kwargs)
+
+
+async def fix_compilation_errors(test_code: str, compile_errors: str, class_name: str) -> str:
+    """Fix compilation errors in generated test code using LLM.
+
+    Wraps src.mcp_servers.test_generator.tools.generate_unit.fix_compilation_errors
+    """
+    from src.mcp_servers.test_generator.tools.generate_unit import (
+        fix_compilation_errors as _fix,
+    )
+    return await _fix(test_code, compile_errors, class_name)
 
 
 def parse_maven_errors(maven_output: str):

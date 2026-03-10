@@ -1,6 +1,7 @@
 """LangChain callbacks for LLM call logging."""
 
 import time
+import traceback
 from typing import Any
 
 from langchain_core.callbacks import BaseCallbackHandler
@@ -42,12 +43,19 @@ class LLMMetricsCallback(BaseCallbackHandler):
     def on_llm_error(self, error: BaseException, **kwargs: Any) -> None:
         duration = time.time() - self.start_time if self.start_time else None
         error_msg = str(error).lower()
+        cause = error.__cause__
+        cause_chain = []
+        e = error.__cause__
+        while e is not None:
+            cause_chain.append(f"{type(e).__name__}: {e}")
+            e = e.__cause__
         if "rate" in error_msg or "quota" in error_msg or "429" in error_msg:
             logger.warning(
                 "llm_rate_limit",
                 provider=self.provider,
                 model=self.model,
-                error=str(error)[:200],
+                error=str(error),
+                cause_chain=cause_chain,
             )
         else:
             logger.error(
@@ -55,7 +63,12 @@ class LLMMetricsCallback(BaseCallbackHandler):
                 provider=self.provider,
                 model=self.model,
                 duration_seconds=duration,
-                error=str(error)[:200],
+                error=str(error),
+                error_type=type(error).__name__,
+                cause=str(cause) if cause else None,
+                cause_type=type(cause).__name__ if cause else None,
+                cause_chain=cause_chain,
+                traceback="".join(traceback.format_exception(error)),
             )
 
 

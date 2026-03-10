@@ -1,6 +1,7 @@
 """Startup validation checks for TestBoost Lite."""
 
 import asyncio
+import re
 import traceback
 from typing import Any
 
@@ -87,8 +88,12 @@ async def _ping_llm_with_retry(llm: Any, timeout: int = STARTUP_TIMEOUT, max_ret
 
         except Exception as e:
             error_msg = str(e)
+            cause_chain = []
+            exc = e
+            while exc is not None:
+                cause_chain.append(f"{type(exc).__name__}: {exc}")
+                exc = exc.__cause__
             if "429" in error_msg or "rate limit" in error_msg.lower():
-                import re
                 retry_after = "unknown"
                 match = re.search(r"retry after (\d+)", error_msg, re.IGNORECASE)
                 if match:
@@ -100,7 +105,15 @@ async def _ping_llm_with_retry(llm: Any, timeout: int = STARTUP_TIMEOUT, max_ret
             if "401" in error_msg or "403" in error_msg or "unauthorized" in error_msg.lower():
                 logger.error("llm_auth_failed", error=error_msg)
                 raise LLMConnectionError(f"LLM authentication failed: {error_msg}") from e
-            logger.error("llm_ping_failed", error=str(e), error_type=type(e).__name__)
+            logger.error(
+                "llm_ping_failed",
+                error=error_msg,
+                error_type=type(e).__name__,
+                cause=str(e.__cause__) if e.__cause__ else None,
+                cause_type=type(e.__cause__).__name__ if e.__cause__ else None,
+                cause_chain=cause_chain,
+                traceback="".join(traceback.format_exception(e)),
+            )
             raise LLMConnectionError(f"LLM ping failed: {e}") from e
 
 

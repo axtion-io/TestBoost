@@ -94,11 +94,14 @@ class Settings(BaseSettings):
         """
         Parse provider from model string if format is 'provider/model-name'.
 
+        Filesystem paths (starting with '/' or containing '\\') are left as-is.
+
         Examples:
             MODEL=google-genai/gemini-2.0-flash -> llm_provider=google-genai, model=gemini-2.0-flash
             MODEL=anthropic/claude-sonnet-4-5 -> llm_provider=anthropic, model=claude-sonnet-4-5
+            MODEL=/data/models/Qwen3/ -> left unchanged (filesystem path)
         """
-        if "/" in self.model:
+        if "/" in self.model and not self.model.startswith("/") and "\\" not in self.model:
             provider_part, model_part = self.model.split("/", 1)
             provider_mapping = {
                 "google-genai": "google-genai",

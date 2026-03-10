@@ -212,11 +212,16 @@ def _create_openai_llm(
     from langchain_openai import ChatOpenAI
 
     settings = get_settings()
+<<<<<<< HEAD
     base_url = kwargs.pop("base_url", None) or settings.openai_api_base
+=======
+    base_url = settings.openai_api_base
+>>>>>>> 98f5dbd91afb9a7b27dd9e537c56cf0fff1d979b
 
     logger.debug("creating_openai_llm", model=model, base_url=base_url)
     callbacks = _add_metrics_callback("openai", model, kwargs)
 
+<<<<<<< HEAD
     return ChatOpenAI(  # type: ignore[call-arg]
         api_key=api_key,
         model=model,
@@ -227,6 +232,20 @@ def _create_openai_llm(
         **({"base_url": base_url} if base_url else {}),
         **kwargs,
     )
+=======
+    llm_kwargs: dict[str, Any] = {
+        "api_key": api_key,
+        "model": model,
+        "temperature": temperature,
+        "max_tokens": max_tokens,
+        "timeout": float(timeout),
+        "callbacks": callbacks,
+    }
+    if base_url:
+        llm_kwargs["base_url"] = base_url
+
+    return ChatOpenAI(**llm_kwargs, **kwargs)  # type: ignore[call-arg]
+>>>>>>> 98f5dbd91afb9a7b27dd9e537c56cf0fff1d979b
 
 
 __all__ = [

@@ -16,15 +16,7 @@ from langchain_core.messages import HumanMessage
 from langgraph.prebuilt import create_react_agent
 
 from src.agents.loader import AgentLoader
-from src.lib.agent_retry import (
-    AgentTimeoutError as BaseAgentTimeoutError,
-)
-from src.lib.agent_retry import (
-    ToolCallError as BaseToolCallError,
-)
-from src.lib.agent_retry import (
-    invoke_agent_with_retry,
-)
+from src.lib.agent_retry import invoke_agent_with_retry
 from src.lib.config import get_settings
 from src.lib.llm import get_llm
 from src.lib.logging import get_logger
@@ -43,33 +35,6 @@ class MavenAgentError(Exception):
     def __init__(self, message: str = "Maven agent workflow failed"):
         super().__init__(message)
 
-
-class ToolCallError(MavenAgentError, BaseToolCallError):
-    """Raised when agent fails to call expected tools (Maven-specific wrapper)."""
-
-    def __init__(
-        self,
-        message: str = "Agent failed to call expected tools",
-        expected_tools: list[str] | None = None,
-    ):
-        if expected_tools:
-            message = f"{message}. Expected tools: {', '.join(expected_tools)}"
-        MavenAgentError.__init__(self, message)
-        self.expected_tools = expected_tools
-
-
-class AgentTimeoutError(MavenAgentError, BaseAgentTimeoutError):
-    """Raised when agent invocation times out (Maven-specific wrapper)."""
-
-    def __init__(
-        self,
-        message: str = "Agent invocation timed out",
-        timeout_seconds: float | None = None,
-    ):
-        if timeout_seconds:
-            message = f"{message} after {timeout_seconds}s"
-        MavenAgentError.__init__(self, message)
-        self.timeout_seconds = timeout_seconds
 
 
 async def run_maven_maintenance_with_agent(
@@ -265,15 +230,7 @@ Remember: You have access to these tools:
         raise MavenAgentError(f"Maven maintenance workflow failed: {e}") from e
 
 
-# Re-export for backward compatibility
-_invoke_agent_with_retry = invoke_agent_with_retry
-
-
 __all__ = [
     "run_maven_maintenance_with_agent",
     "MavenAgentError",
-    "ToolCallError",
-    "AgentTimeoutError",
-    # Backward compatibility export
-    "_invoke_agent_with_retry",
 ]

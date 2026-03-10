@@ -379,7 +379,12 @@ async def _cmd_generate_async(args: argparse.Namespace) -> int:
         # Apply file filter if specified
         target_files = gaps
         if hasattr(args, "files") and args.files:
-            target_files = [f for f in gaps if any(pattern in f for pattern in args.files)]
+            # Normalize separators so "src/main/..." matches "src\main\..." on Windows
+            normalized_patterns = [p.replace("\\", "/") for p in args.files]
+            target_files = [
+                f for f in gaps
+                if any(pattern in f.replace("\\", "/") for pattern in normalized_patterns)
+            ]
             if not target_files:
                 logger.warn(f"No files matched filter: {args.files}")
                 target_files = gaps

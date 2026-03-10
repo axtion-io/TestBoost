@@ -329,12 +329,10 @@ class TestCmdGenerate:
         })
 
         gen_args = argparse.Namespace(
-            project_path=str(initialized_project), verbose=False, files=None, no_llm=False,
+            project_path=str(initialized_project), verbose=False, files=None,
         )
-        with (
-            patch("src.lib.startup_checks.check_llm_connection", new_callable=AsyncMock),
-            patch("testboost_lite.lib.testboost_bridge.generate_adaptive_tests", new_callable=AsyncMock, return_value=mock_result),
-        ):
+        with patch("src.lib.startup_checks.check_llm_connection", new_callable=AsyncMock), \
+             patch("testboost_lite.lib.testboost_bridge.generate_adaptive_tests", new_callable=AsyncMock, return_value=mock_result):
             result = await _cmd_generate_async(gen_args)
 
         assert result == 0
@@ -356,12 +354,10 @@ class TestCmdGenerate:
         })
 
         gen_args = argparse.Namespace(
-            project_path=str(initialized_project), verbose=False, files=None, no_llm=False,
+            project_path=str(initialized_project), verbose=False, files=None,
         )
-        with (
-            patch("src.lib.startup_checks.check_llm_connection", new_callable=AsyncMock),
-            patch("testboost_lite.lib.testboost_bridge.generate_adaptive_tests", new_callable=AsyncMock, return_value=mock_result),
-        ):
+        with patch("src.lib.startup_checks.check_llm_connection", new_callable=AsyncMock), \
+             patch("testboost_lite.lib.testboost_bridge.generate_adaptive_tests", new_callable=AsyncMock, return_value=mock_result):
             await _cmd_generate_async(gen_args)
 
         test_file = initialized_project / "src" / "test" / "java" / "com" / "example" / "OrderServiceTest.java"
@@ -372,7 +368,7 @@ class TestCmdGenerate:
     async def test_generate_without_gaps(self, initialized_project):
         from testboost_lite.lib.cli import _cmd_generate_async
         args = argparse.Namespace(
-            project_path=str(initialized_project), verbose=False, files=None, no_llm=False,
+            project_path=str(initialized_project), verbose=False, files=None,
         )
         result = await _cmd_generate_async(args)
         assert result == 1
@@ -503,21 +499,37 @@ class TestLLMErrorPropagation:
         await _cmd_gaps_async(args)
 
     @pytest.mark.asyncio
+    async def test_llm_connection_check_fails(self, initialized_project):
+        """When LLM connection check fails at startup, generate MUST fail with clear error."""
+        from testboost_lite.lib.cli import _cmd_generate_async
+        await self._setup_for_generate(initialized_project)
+
+        gen_args = argparse.Namespace(
+            project_path=str(initialized_project), verbose=False, files=None,
+        )
+        with patch(
+            "src.lib.startup_checks.check_llm_connection",
+            new_callable=AsyncMock,
+            side_effect=Exception("API key not configured for provider 'anthropic'"),
+        ):
+            result = await _cmd_generate_async(gen_args)
+
+        assert result == 1
+
+    @pytest.mark.asyncio
     async def test_llm_provider_error_propagates(self, initialized_project):
         """When LLM API key is missing, generate MUST fail with clear error."""
         from testboost_lite.lib.cli import _cmd_generate_async
         await self._setup_for_generate(initialized_project)
 
         gen_args = argparse.Namespace(
-            project_path=str(initialized_project), verbose=False, files=None, no_llm=False,
+            project_path=str(initialized_project), verbose=False, files=None,
         )
-        with (
-            patch("src.lib.startup_checks.check_llm_connection", new_callable=AsyncMock),
-            patch(
-                "testboost_lite.lib.testboost_bridge.generate_adaptive_tests",
-                new_callable=AsyncMock,
-                side_effect=Exception("API key not configured for provider 'anthropic'"),
-            ),
+        with patch("src.lib.startup_checks.check_llm_connection", new_callable=AsyncMock), \
+             patch(
+            "testboost_lite.lib.testboost_bridge.generate_adaptive_tests",
+            new_callable=AsyncMock,
+            side_effect=Exception("API key not configured for provider 'anthropic'"),
         ):
             result = await _cmd_generate_async(gen_args)
 
@@ -534,15 +546,13 @@ class TestLLMErrorPropagation:
         await self._setup_for_generate(initialized_project)
 
         gen_args = argparse.Namespace(
-            project_path=str(initialized_project), verbose=False, files=None, no_llm=False,
+            project_path=str(initialized_project), verbose=False, files=None,
         )
-        with (
-            patch("src.lib.startup_checks.check_llm_connection", new_callable=AsyncMock),
-            patch(
-                "testboost_lite.lib.testboost_bridge.generate_adaptive_tests",
-                new_callable=AsyncMock,
-                side_effect=TimeoutError("LLM request timed out after 120s"),
-            ),
+        with patch("src.lib.startup_checks.check_llm_connection", new_callable=AsyncMock), \
+             patch(
+            "testboost_lite.lib.testboost_bridge.generate_adaptive_tests",
+            new_callable=AsyncMock,
+            side_effect=TimeoutError("LLM request timed out after 120s"),
         ):
             result = await _cmd_generate_async(gen_args)
 
@@ -555,15 +565,13 @@ class TestLLMErrorPropagation:
         await self._setup_for_generate(initialized_project)
 
         gen_args = argparse.Namespace(
-            project_path=str(initialized_project), verbose=False, files=None, no_llm=False,
+            project_path=str(initialized_project), verbose=False, files=None,
         )
-        with (
-            patch("src.lib.startup_checks.check_llm_connection", new_callable=AsyncMock),
-            patch(
-                "testboost_lite.lib.testboost_bridge.generate_adaptive_tests",
-                new_callable=AsyncMock,
-                side_effect=ConnectionError("Failed to connect to LLM API"),
-            ),
+        with patch("src.lib.startup_checks.check_llm_connection", new_callable=AsyncMock), \
+             patch(
+            "testboost_lite.lib.testboost_bridge.generate_adaptive_tests",
+            new_callable=AsyncMock,
+            side_effect=ConnectionError("Failed to connect to LLM API"),
         ):
             result = await _cmd_generate_async(gen_args)
 

@@ -88,9 +88,11 @@ class CompilationError(TestGenerationError):
 
 def _find_source_files(project_path: str) -> list[str]:
     """
-    Find Java source files to generate tests for.
+    Find Java source files that are candidates for test generation.
 
-    Filters out test files, DTOs, entities, configuration, and other non-testable classes.
+    Uses an inclusive approach: collect ALL Java files under src/main/java,
+    then exclude only files that are clearly non-testable (package-info,
+    module-info, and test sources).
 
     Args:
         project_path: Path to the Java project root
@@ -101,60 +103,175 @@ def _find_source_files(project_path: str) -> list[str]:
     project_dir = Path(project_path)
     source_files = []
 
-    # Patterns to include (testable classes)
-    # Include all Java files, then filter with exclude patterns
-    include_patterns = [
-        "**/*.java",  # All Java files
-    ]
-
-    # Patterns to exclude
-    exclude_patterns = [
-        "**/test/**",  # Test files
-        "**/model/**",  # Entities, DTOs
-        "**/entity/**",
-        "**/dto/**",
-        "**/config/**",  # Configuration
-        "**/configuration/**",
-        "**/mapper/**",  # Mappers (usually simple)
-        # Note: Main Application classes are excluded only if they're simple Spring Boot launchers
-        # "**/*Application.java",  # Too restrictive - some Application classes have business logic
-        "**/*Config.java",
-        "**/*Configuration.java",
-        "**/*Request.java",  # Request/Response DTOs
-        "**/*Response.java",
-        "**/*DTO.java",
-        "**/*Exception.java",  # Exceptions
-    ]
+    # File-name patterns to exclude (not worth generating tests for)
+    exclude_filenames = {
+        "package-info.java",
+        "module-info.java",
+    }
 
     # Find all Java files in src/main/java
     main_java_dirs = list(project_dir.glob("**/src/main/java"))
 
     for main_java_dir in main_java_dirs:
-        for pattern in include_patterns:
-            for source_file in main_java_dir.glob(pattern):
-                # Check if file should be excluded
-                relative_path = str(source_file.relative_to(project_dir))
-                should_exclude = False
+        for source_file in main_java_dir.glob("**/*.java"):
+            if source_file.name in exclude_filenames:
+                continue
 
-                for exclude in exclude_patterns:
-                    # Simple pattern matching
-                    exclude_name = exclude.replace("**/*", "").replace("**", "")
-                    if exclude_name in relative_path or source_file.name.endswith(exclude_name.replace("*", "")):
-                        should_exclude = True
-                        break
+            relative_path = str(source_file.relative_to(project_dir))
 
-                if not should_exclude and relative_path not in source_files:
-                    source_files.append(relative_path)
+            # Skip test sources that may have ended up under main
+            if "/test/" in relative_path.replace("\\", "/"):
+                continue
 
+            if relative_path not in source_files:
+                source_files.append(relative_path)
+
+    source_files.sort()
     logger.info("source_files_found", count=len(source_files), project_path=project_path)
     return source_files
+
+
+def classify_source_file(relative_path: str) -> str:
+    """Classify a Java source file by category based on its path and name."""
+    path_lower = relative_path.replace("\\", "/").lower()
+    name = Path(relative_path).stem  # filename without extension
+
+    # Path-based classification (order matters: more specific first)
+    path_categories = [
+        ("/controller/", "controller"),
+        ("/web/", "controller"),
+        ("/rest/", "controller"),
+        ("/resource/", "controller"),
+        ("/api/", "api"),
+        ("/service/", "service"),
+        ("/repository/", "repository"),
+        ("/dao/", "repository"),
+        ("/entity/", "entity"),
+        ("/model/", "model"),
+        ("/dto/", "dto"),
+        ("/mapper/", "mapper"),
+        ("/converter/", "converter"),
+        ("/config/", "config"),
+        ("/configuration/", "config"),
+        ("/security/", "security"),
+        ("/exception/", "exception"),
+        ("/util/", "util"),
+        ("/utils/", "util"),
+        ("/helper/", "util"),
+        ("/builder/", "builder"),
+        ("/factory/", "factory"),
+        ("/validator/", "validator"),
+        ("/handler/", "handler"),
+        ("/listener/", "listener"),
+        ("/interceptor/", "interceptor"),
+        ("/filter/", "filter"),
+        ("/aop/", "aop"),
+        ("/aspect/", "aop"),
+        ("/document/", "document"),
+        ("/schema/", "schema"),
+        ("/imports/", "import"),
+        ("/math/", "math"),
+        ("/concurrent/", "concurrent"),
+        ("/description/", "description"),
+        ("/patch/", "patch"),
+        ("/pdf/", "pdf"),
+        ("/messages/", "messages"),
+        ("/core/", "core"),
+    ]
+
+    for pattern, category in path_categories:
+        if pattern in path_lower:
+            return category
+
+    # Name-based classification (suffix patterns)
+    name_categories = [
+        ("Controller", "controller"),
+        ("Resource", "controller"),
+        ("Service", "service"),
+        ("ServiceImpl", "service"),
+        ("Repository", "repository"),
+        ("Dao", "repository"),
+        ("Entity", "entity"),
+        ("Dto", "dto"),
+        ("DTO", "dto"),
+        ("Mapper", "mapper"),
+        ("Converter", "converter"),
+        ("Config", "config"),
+        ("Configuration", "config"),
+        ("Exception", "exception"),
+        ("Utils", "util"),
+        ("Util", "util"),
+        ("Helper", "util"),
+        ("Builder", "builder"),
+        ("Factory", "factory"),
+        ("Validator", "validator"),
+        ("Handler", "handler"),
+        ("Listener", "listener"),
+        ("Interceptor", "interceptor"),
+        ("Filter", "filter"),
+        ("Test", "test"),
+    ]
+
+    for suffix, category in name_categories:
+        if name.endswith(suffix):
+            return category
+
+    return "other"
+
+
+def find_existing_test(project_path: str, source_relative_path: str) -> str | None:
+    """Find the existing test file for a given source file, if any.
+
+    Searches for common test naming conventions:
+      - FooTest.java
+      - FooTests.java
+      - TestFoo.java
+
+    Returns the relative path to the test file, or None.
+    """
+    project_dir = Path(project_path)
+    source_path = Path(source_relative_path.replace("\\", "/"))
+    class_name = source_path.stem  # e.g. "OpusStringUtils"
+
+    # Derive the package-relative path (after src/main/java/)
+    parts = source_path.parts
+    try:
+        main_idx = list(parts).index("main")
+        # package path starts after src/main/java/
+        package_parts = parts[main_idx + 2 : -1]  # directories after "java/"
+    except (ValueError, IndexError):
+        package_parts = ()
+
+    test_names = [
+        f"{class_name}Test.java",
+        f"{class_name}Tests.java",
+        f"Test{class_name}.java",
+    ]
+
+    # Search in all test source roots
+    test_dirs = list(project_dir.glob("**/src/test/java"))
+    for test_dir in test_dirs:
+        # First try the matching package
+        if package_parts:
+            pkg_dir = test_dir.joinpath(*package_parts)
+            for test_name in test_names:
+                candidate = pkg_dir / test_name
+                if candidate.exists():
+                    return str(candidate.relative_to(project_dir))
+
+        # Fallback: search anywhere under test dir
+        for test_name in test_names:
+            matches = list(test_dir.glob(f"**/{test_name}"))
+            if matches:
+                return str(matches[0].relative_to(project_dir))
+
+    return None
 
 
 async def _generate_tests_directly(
     project_path: str,
     source_files: list[str],
     test_requirements: list[TestRequirement] | None = None,
-    use_llm: bool = True,
 ) -> list[dict[str, Any]]:
     """
     Generate tests by calling the generator tool for each source file.
@@ -163,8 +280,6 @@ async def _generate_tests_directly(
         project_path: Path to the Java project
         source_files: List of source files to generate tests for
         test_requirements: Optional test requirements from impact analysis
-        use_llm: If True (default), use LLM for intelligent test generation.
-                 If False, use template-based generation (for CI without LLM).
 
     Returns:
         List of generated test info dicts
@@ -194,12 +309,11 @@ async def _generate_tests_directly(
             # Get requirements for this file if any
             file_requirements = requirements_by_file.get(source_file)
 
-            # Call generator with LLM mode (production) or template mode (CI)
+            # Call generator
             result_json = await generate_adaptive_tests(
                 project_path=project_path,
                 source_file=source_file,
                 test_requirements=file_requirements,
-                use_llm=use_llm,
             )
 
             result = json.loads(result_json)
@@ -249,77 +363,10 @@ async def _generate_tests_directly(
     return generated_tests
 
 
-def _find_source_files(project_path: str) -> list[str]:
-    """
-    Find Java source files to generate tests for.
-
-    Filters out test files, DTOs, entities, configuration, and other non-testable classes.
-
-    Args:
-        project_path: Path to the Java project root
-
-    Returns:
-        List of relative paths to source files
-    """
-    project_dir = Path(project_path)
-    source_files = []
-
-    # Patterns to include (testable classes)
-    include_patterns = [
-        "**/web/**/*.java",  # Controllers, resources
-        "**/controller/**/*.java",
-        "**/service/**/*.java",
-        "**/application/**/*.java",
-        "**/api/**/*.java",
-    ]
-
-    # Patterns to exclude
-    exclude_patterns = [
-        "**/test/**",  # Test files
-        "**/model/**",  # Entities, DTOs
-        "**/entity/**",
-        "**/dto/**",
-        "**/config/**",  # Configuration
-        "**/configuration/**",
-        "**/mapper/**",  # Mappers (usually simple)
-        "**/*Application.java",  # Main classes
-        "**/*Config.java",
-        "**/*Configuration.java",
-        "**/*Request.java",  # Request/Response DTOs
-        "**/*Response.java",
-        "**/*DTO.java",
-        "**/*Exception.java",  # Exceptions
-    ]
-
-    # Find all Java files in src/main/java
-    main_java_dirs = list(project_dir.glob("**/src/main/java"))
-
-    for main_java_dir in main_java_dirs:
-        for pattern in include_patterns:
-            for source_file in main_java_dir.glob(pattern):
-                # Check if file should be excluded
-                relative_path = str(source_file.relative_to(project_dir))
-                should_exclude = False
-
-                for exclude in exclude_patterns:
-                    # Simple pattern matching
-                    exclude_name = exclude.replace("**/*", "").replace("**", "")
-                    if exclude_name in relative_path or source_file.name.endswith(exclude_name.replace("*", "")):
-                        should_exclude = True
-                        break
-
-                if not should_exclude and relative_path not in source_files:
-                    source_files.append(relative_path)
-
-    logger.info("source_files_found", count=len(source_files), project_path=project_path)
-    return source_files
-
-
 async def _generate_tests_directly(
     project_path: str,
     source_files: list[str],
     test_requirements: list[TestRequirement] | None = None,
-    use_llm: bool = True,
 ) -> list[dict[str, Any]]:
     """
     Generate tests directly by calling the generator tool for each source file.
@@ -331,8 +378,6 @@ async def _generate_tests_directly(
         project_path: Path to the Java project
         source_files: List of source files to generate tests for
         test_requirements: Optional test requirements from impact analysis
-        use_llm: If True (default), use LLM for intelligent test generation.
-                 If False, use template-based generation (for CI without LLM).
 
     Returns:
         List of generated test info dicts
@@ -367,7 +412,6 @@ async def _generate_tests_directly(
                 project_path=project_path,
                 source_file=source_file,
                 test_requirements=file_requirements,
-                use_llm=use_llm,
             )
 
             result = json.loads(result_json)
@@ -424,14 +468,9 @@ async def run_test_generation_with_agent(
     source_files: list[str] | None = None,
     coverage_target: float = 80.0,
     test_requirements: list[TestRequirement] | None = None,
-    use_llm: bool = True,
 ) -> dict[str, Any]:
     """
     Run test generation workflow.
-
-    Two modes:
-    - LLM mode (use_llm=True, default): Uses LLM for intelligent test generation
-    - Template mode (use_llm=False): Uses templates for CI without LLM access
 
     Implements:
     - T054-T055: Agent creation with create_react_agent()
@@ -448,24 +487,20 @@ async def run_test_generation_with_agent(
         source_files: Optional list of specific source files to test
         coverage_target: Target code coverage percentage
         test_requirements: Optional test requirements from impact analysis
-        use_llm: If True (default), use LLM for intelligent test generation.
-                 If False, use template-based generation (for CI without LLM).
 
     Returns:
         dict with workflow results including generated tests and metrics
 
     Raises:
         TestGenerationError: If generation fails after retries
-        LLMError: If LLM connection issues persist (only in LLM mode)
+        LLMError: If LLM connection issues persist
     """
     start_time = time.time()
-    generation_mode = "llm" if use_llm else "template"
     logger.info(
         "test_gen_workflow_start",
         session_id=str(session_id),
         project_path=project_path,
         coverage_target=coverage_target,
-        generation_mode=generation_mode,
     )
 
     # Initialize repositories
@@ -533,12 +568,11 @@ async def run_test_generation_with_agent(
             has_requirements=bool(test_requirements),
         )
 
-        # Step 2: Generate tests for each source file (LLM or template mode)
+        # Step 2: Generate tests for each source file
         generated_tests = await _generate_tests_directly(
             project_path=project_path,
             source_files=source_files,
             test_requirements=test_requirements,
-            use_llm=use_llm,
         )
 
         if not generated_tests:
@@ -587,7 +621,7 @@ async def run_test_generation_with_agent(
             "coverage_target": coverage_target,
             "tests_passing": feedback_result.get("success", False),
             "feedback_iterations": feedback_result.get("iterations", 0),
-            "generation_mode": "llm" if use_llm else "template",
+            "generation_mode": "llm",
             "source_files_processed": len(source_files),
         }
 

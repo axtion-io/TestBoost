@@ -25,12 +25,6 @@ bash testboost_lite/scripts/tb-generate.sh <project_path> --verbose
 bash testboost_lite/scripts/tb-generate.sh <project_path> --files ServiceA.java ServiceB.java
 ```
 
-   For template-only mode (no LLM, faster but lower quality):
-
-```bash
-bash testboost_lite/scripts/tb-generate.sh <project_path> --no-llm
-```
-
 3. Read the generation results at `<project_path>/.testboost/sessions/<current_session>/generation.md`
 4. **Present results** to the user:
    - How many test files were generated

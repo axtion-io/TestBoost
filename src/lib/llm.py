@@ -208,10 +208,13 @@ def _create_openai_llm(
     timeout: int,
     **kwargs: Any,
 ) -> BaseChatModel:
-    """Create OpenAI GPT LLM instance."""
+    """Create OpenAI or OpenAI-compatible (vLLM, Ollama, etc.) LLM instance."""
     from langchain_openai import ChatOpenAI
 
-    logger.debug("creating_openai_llm", model=model)
+    settings = get_settings()
+    base_url = kwargs.pop("base_url", None) or settings.openai_api_base
+
+    logger.debug("creating_openai_llm", model=model, base_url=base_url)
     callbacks = _add_metrics_callback("openai", model, kwargs)
 
     return ChatOpenAI(  # type: ignore[call-arg]
@@ -221,6 +224,7 @@ def _create_openai_llm(
         max_tokens=max_tokens,
         timeout=float(timeout),
         callbacks=callbacks,
+        **({"base_url": base_url} if base_url else {}),
         **kwargs,
     )
 

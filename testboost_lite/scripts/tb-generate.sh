@@ -1,12 +1,19 @@
 #!/usr/bin/env bash
 # TestBoost Lite - Generate tests for identified gaps
-# Usage: tb-generate.sh <project_path> [--no-llm] [--files file1 file2] [--verbose]
+# Usage: tb-generate.sh <project_path> [--files file1 file2] [--verbose]
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TESTBOOST_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
-PROJECT_PATH="${1:?Usage: tb-generate.sh <project_path> [--no-llm] [--files ...] [--verbose]}"
+# Activate virtual environment
+if [ -f "$TESTBOOST_ROOT/.venv/Scripts/activate" ]; then
+    source "$TESTBOOST_ROOT/.venv/Scripts/activate"
+elif [ -f "$TESTBOOST_ROOT/venv/bin/activate" ]; then
+    source "$TESTBOOST_ROOT/venv/bin/activate"
+fi
+
+PROJECT_PATH="${1:?Usage: tb-generate.sh <project_path> [--files ...] [--verbose]}"
 shift
 
 cd "$TESTBOOST_ROOT"

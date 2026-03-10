@@ -1,6 +1,7 @@
 """Startup validation checks for TestBoost Lite."""
 
 import asyncio
+import traceback
 from typing import Any
 
 from langchain_core.messages import HumanMessage
@@ -134,14 +135,12 @@ async def check_llm_connection(model: str | None = None) -> None:
 
     except FileNotFoundError as e:
         # Surface the missing file path for easier debugging (e.g. SSL cert, socket)
-        import traceback
-        tb_str = "".join(traceback.format_exception(e))
         logger.error(
             "llm_connection_failed",
             reason="file_not_found",
             error=str(e),
             error_type="FileNotFoundError",
-            traceback=tb_str,
+            traceback="".join(traceback.format_exception(e)),
         )
         raise LLMError(
             f"LLM connection check failed: file not found — {e}. "
@@ -149,14 +148,12 @@ async def check_llm_connection(model: str | None = None) -> None:
         ) from e
 
     except OSError as e:
-        import traceback
-        tb_str = "".join(traceback.format_exception(e))
         logger.error(
             "llm_connection_failed",
             reason="os_error",
             error=str(e),
             error_type=type(e).__name__,
-            traceback=tb_str,
+            traceback="".join(traceback.format_exception(e)),
         )
         raise LLMError(
             f"LLM connection check failed (OS error): {e}. "
@@ -164,14 +161,12 @@ async def check_llm_connection(model: str | None = None) -> None:
         ) from e
 
     except Exception as e:
-        import traceback
-        tb_str = "".join(traceback.format_exception(e))
         logger.error(
             "llm_connection_failed",
             reason="unexpected",
             error=str(e),
             error_type=type(e).__name__,
-            traceback=tb_str,
+            traceback="".join(traceback.format_exception(e)),
         )
         raise LLMError(f"LLM connection check failed: {e}") from e
 

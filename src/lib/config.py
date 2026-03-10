@@ -22,89 +22,70 @@ class Settings(BaseSettings):
     )
 
     # Application settings
-    app_name: str = Field(default="TestBoost", description="Application name")
-    debug: bool = Field(default=False, description="Enable debug mode")
-    log_level: str = Field(default="INFO", description="Logging level")
+    app_name: str = Field(description="Application name")
+    debug: bool = Field(description="Debug mode")
+    log_level: str = Field(description="Logging level")
 
-    # Database settings
-    database_url: str = Field(
-        default="postgresql+asyncpg://testboost:testboost@localhost:5433/testboost",
-        description="PostgreSQL connection URL",
-    )
+
 
     # LLM Provider settings
     llm_provider: Literal["anthropic", "google-genai", "openai"] = Field(
-        default="openai",
         description="LLM provider to use",
     )
     model: str = Field(
-        default="Qwen/Qwen3-Coder-30B-A3B-Instruct",
         description="Default LLM model",
     )
 
     # API Keys (loaded from environment only for security)
     anthropic_api_key: str | None = Field(
-        default=None,
         description="Anthropic API key",
     )
     google_api_key: str | None = Field(
-        default=None,
         description="Google API key for Gemini",
     )
     openai_api_key: str | None = Field(
-        default="dummy",
         description="OpenAI API key",
     )
     openai_api_base: str | None = Field(
-        default="https://codeia.dev.etat-ge.ch/v1",
         description="OpenAI-compatible API base URL (for vLLM, Ollama, etc.)",
     )
 
     # LangSmith tracing (optional)
     langsmith_api_key: str | None = Field(
-        default=None,
         description="LangSmith API key for tracing",
     )
     langsmith_tracing: bool = Field(
-        default=False,
         description="Enable LangSmith tracing",
     )
     langsmith_project: str = Field(
-        default="testboost",
         description="LangSmith project name",
     )
 
     # Timeout settings
     llm_timeout: int = Field(
-        default=120,
         description="LLM request timeout in seconds",
     )
     startup_timeout: int = Field(
-        default=5,
         description="Startup check timeout in seconds",
     )
 
     # Retry settings
     max_retries: int = Field(
-        default=3,
         description="Maximum retry attempts for transient errors",
     )
 
     # Data retention settings
     session_retention_days: int = Field(
-        default=365,
         description="Number of days to retain session data",
     )
 
     # Locking settings
     project_lock_timeout_seconds: int = Field(
-        default=300,
         description="Project lock timeout in seconds",
     )
 
     # API authentication
     api_key: str | None = Field(
-        default=None,
         description="API key for authentication",
     )
 

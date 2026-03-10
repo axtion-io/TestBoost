@@ -14,7 +14,7 @@
 
 | Document | Description |
 |----------|-------------|
-| [Architecture](./architecture.md) | Internal architecture: slash commands, CLI, MCP servers, bridge |
+| [Architecture](./architecture.md) | Internal architecture: slash commands, CLI, integrity tokens, installer, bridge |
 | [Prompts](./prompts.md) | LLM prompts used for analysis and test generation |
 
 ## Contributing

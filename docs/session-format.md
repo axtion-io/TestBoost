@@ -9,6 +9,14 @@ your-java-project/
 +-- .testboost/
 |   +-- config.yaml                       # Project-level settings
 |   +-- .gitignore                        # Ignores large log files
+|   +-- .tb_secret                        # Integrity token secret (git-ignored)
+|   +-- scripts/                          # Wrapper scripts (created by install)
+|   |   +-- tb-init.sh
+|   |   +-- tb-analyze.sh
+|   |   +-- tb-gaps.sh
+|   |   +-- tb-generate.sh
+|   |   +-- tb-validate.sh
+|   |   +-- tb-status.sh
 |   +-- sessions/
 |       +-- 001-test-generation/          # First session
 |       |   +-- spec.md                   # Session intent and progress
@@ -21,6 +29,12 @@ your-java-project/
 |       +-- 002-test-generation/          # Second session (if any)
 |           +-- ...
 ```
+
+## Integrity Token Secret
+
+The `.tb_secret` file contains a random 32-byte hex-encoded secret generated during `init` or `install`. It is used by the integrity token system to produce HMAC-SHA256 signatures that prove CLI output is authentic. This file is always git-ignored.
+
+See [Architecture](./architecture.md) for details on how the integrity token system works.
 
 ## Session Numbering
 

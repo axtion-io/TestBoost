@@ -30,6 +30,12 @@ by slash commands from LLM CLIs (Claude Code, OpenCode, etc.).
 | `/testboost.validate <path>` | Compile and run generated tests |
 | `/testboost.status <path>` | Show session progress and recent logs |
 
+### CLI-Only Command
+
+| Command | Purpose |
+|---------|---------|
+| `python -m testboost_lite install <path>` | Install slash commands and wrapper scripts into the Java project |
+
 ## Workflow
 
 The commands follow a sequential workflow:
@@ -47,6 +53,7 @@ LLM CLI (Claude Code / OpenCode)
   +-- slash command (.claude/commands/testboost.*.md)
       +-- shell script (testboost_lite/scripts/tb-*.sh)
           +-- Python CLI (testboost_lite/lib/cli.py)
+              +-- integrity token (testboost_lite/lib/integrity.py)
               +-- MCP server functions (src/mcp_servers/test_generator/*)
 ```
 

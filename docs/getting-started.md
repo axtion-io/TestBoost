@@ -92,33 +92,46 @@ python -m testboost_lite validate /path/to/java/project
 python -m testboost_lite status /path/to/java/project
 ```
 
-## Installing Slash Commands in Your Java Project
+## Installing TestBoost in Your Java Project
 
-If you prefer to work from your Java project directory instead of the TestBoost repo:
+If you prefer to work from your Java project directory instead of the TestBoost repo, use the `install` command:
 
 ```bash
-# From your Java project root:
-TESTBOOST_DIR="/path/to/TestBoost"
-
-# For Claude Code
-mkdir -p .claude/commands
-cp "$TESTBOOST_DIR"/.claude/commands/testboost.*.md .claude/commands/
-
-# For OpenCode
-mkdir -p .opencode/commands
-cp "$TESTBOOST_DIR"/.opencode/commands/testboost.*.md .opencode/commands/
+cd TestBoost
+source .venv/bin/activate
+python -m testboost_lite install /path/to/your/java/project
 ```
 
-> **Note:** The shell scripts in the slash commands use relative paths from `$TESTBOOST_DIR`. You may need to edit the paths in the copied command files if TestBoost is not at the expected location.
+This installs:
+- Slash commands in `.claude/commands/` and `.opencode/commands/`
+- Wrapper scripts in `.testboost/scripts/` with absolute paths to the TestBoost installation
+- An integrity token secret in `.testboost/.tb_secret`
+
+After installation, you can launch your LLM CLI directly from your Java project:
+
+```bash
+cd /path/to/your/java/project
+claude   # or opencode
+# /testboost.analyze .
+```
+
+The wrapper scripts handle virtualenv activation and path resolution automatically.
+
+> **Note:** If you move the TestBoost installation directory, re-run the `install` command to update the paths.
 
 ## What Happens in Your Java Project
 
-After running `init`, TestBoost creates a `.testboost/` directory in your Java project:
+After running `init` (or `install`), TestBoost creates a `.testboost/` directory in your Java project:
 
 ```
 your-java-project/
 +-- .testboost/
 |   +-- config.yaml
+|   +-- .tb_secret              # Integrity token secret (git-ignored)
+|   +-- scripts/                # Wrapper scripts (only after install)
+|   |   +-- tb-init.sh
+|   |   +-- tb-analyze.sh
+|   |   +-- ...
 |   +-- sessions/
 |       +-- 001-test-generation/
 |           +-- spec.md

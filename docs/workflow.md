@@ -24,6 +24,8 @@ Creates the `.testboost/` directory structure in your Java project and starts a 
 
 **Output:** `.testboost/sessions/001-test-generation/spec.md`
 
+**Integrity token:** An HMAC-SHA256 token is emitted at the end of every successful step (including `init`). The slash commands instruct the LLM to verify the token is present before proceeding. See [Architecture](./architecture.md) for details.
+
 ## 2. Analyze
 
 **Command:** `python -m testboost_lite analyze <project_path>`
@@ -131,6 +133,12 @@ When tests fail, the LLM CLI sees the errors and can help you fix them interacti
 **Command:** `python -m testboost_lite status <project_path>`
 
 Displays the current session progress. Shows which steps are completed, in progress, or pending.
+
+## Install (Setup)
+
+**Command:** `python -m testboost_lite install <project_path>`
+
+Installs TestBoost slash commands and wrapper scripts into a target Java project so that you can run TestBoost from your Java project directory. See [Getting Started](./getting-started.md#installing-testboost-in-your-java-project) for details.
 
 ## Interactive Workflow with LLM CLI
 

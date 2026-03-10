@@ -86,7 +86,50 @@ See [Session Format](./session-format.md) for details.
 - **stdout**: Concise `[+]` prefixed messages for the LLM CLI
 - **log files**: Detailed markdown tables in `.testboost/sessions/<id>/logs/`
 
-### 6. TestBoost Bridge
+### 6. Integrity Token
+
+`testboost_lite/lib/integrity.py` implements an HMAC-SHA256 token system that proves CLI output is genuine and was not fabricated by the LLM.
+
+**Why it exists:** When the LLM CLI runs a slash command, it calls a shell script and reads stdout. Without verification, the LLM could hallucinate a successful output instead of actually running the command. The integrity token prevents this.
+
+**How it works:**
+
+1. During `init`, a random 32-byte secret is generated and stored in `.testboost/.tb_secret` (git-ignored).
+2. At the end of every successful CLI step, the CLI computes `HMAC-SHA256(secret, "step:session_id:timestamp")` and prints it to stdout:
+   ```
+   [TESTBOOST_INTEGRITY:sha256=<hex_digest>:<step>:<session_id>:<timestamp>]
+   ```
+3. The slash-command markdown files instruct the LLM to verify the token's presence before proceeding to the next step.
+4. The LLM cannot forge the token because it does not have access to the `.tb_secret` file.
+
+**Verification:** `verify_token()` re-computes the HMAC from the payload and compares it to the claimed digest using `hmac.compare_digest` (constant-time comparison).
+
+### 7. Installer
+
+`testboost_lite/lib/installer.py` provides the `install` command that deploys TestBoost slash commands and wrapper scripts into a target Java project. This allows users to run TestBoost from their Java project directory rather than from the TestBoost repo root.
+
+**What gets installed:**
+
+```
+<java-project>/
+├── .claude/commands/testboost.*.md    # Claude Code slash commands
+├── .opencode/commands/testboost.*.md  # OpenCode slash commands
+└── .testboost/
+    ├── scripts/tb-*.sh                # Wrapper scripts with absolute paths
+    ├── .tb_secret                     # Integrity token secret
+    └── config.yaml                    # TestBoost configuration
+```
+
+**How it works:**
+
+1. Reads command templates from `testboost_lite/templates/commands/`.
+2. Rewrites script paths from relative (`testboost_lite/scripts/tb-*.sh`) to installed (`<project>/.testboost/scripts/tb-*.sh`).
+3. Generates wrapper shell scripts that activate the TestBoost virtualenv and call the CLI with absolute paths.
+4. Creates the integrity secret via `get_or_create_secret()`.
+
+**Usage:** `python -m testboost_lite install /path/to/java/project`
+
+### 8. TestBoost Bridge
 
 `testboost_lite/lib/testboost_bridge.py` is the boundary between the CLI layer and the core functions. It re-exports functions from `src/` so they can be easily mocked in tests.
 
@@ -116,11 +159,14 @@ TestBoost/
 +-- .opencode/commands/         # OpenCode slash commands
 +-- testboost_lite/
 |   +-- lib/
-|   |   +-- cli.py              # CLI entry point (6 commands)
+|   |   +-- cli.py              # CLI entry point (7 commands incl. install)
 |   |   +-- session_tracker.py  # Markdown-based session management
 |   |   +-- md_logger.py        # Dual-output logger
 |   |   +-- testboost_bridge.py # Bridge to core functions
+|   |   +-- integrity.py        # HMAC-SHA256 integrity token system
+|   |   +-- installer.py        # Persistent installer for target projects
 |   +-- scripts/                # Shell script wrappers
+|   +-- templates/commands/     # Slash command templates for installation
 +-- src/
 |   +-- mcp_servers/
 |   |   +-- test_generator/     # Core analysis + generation logic

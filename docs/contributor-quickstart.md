@@ -92,11 +92,14 @@ pytest && ruff check . && mypy src/
 TestBoost/
 +-- testboost_lite/             # CLI and session management
 |   +-- lib/
-|   |   +-- cli.py              # Main CLI (init, analyze, gaps, generate, validate, status)
+|   |   +-- cli.py              # Main CLI (7 commands incl. install)
 |   |   +-- session_tracker.py  # Markdown-based session tracking
 |   |   +-- md_logger.py        # Dual-output logger (stdout + .md files)
 |   |   +-- testboost_bridge.py # Bridge to core functions in src/
+|   |   +-- integrity.py        # HMAC-SHA256 integrity token system
+|   |   +-- installer.py        # Persistent installer for target projects
 |   +-- scripts/                # Shell script wrappers for slash commands
+|   +-- templates/commands/     # Slash command templates for installation
 |   +-- tests/                  # CLI unit tests
 +-- src/
 |   +-- mcp_servers/

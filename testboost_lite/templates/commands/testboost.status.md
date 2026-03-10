@@ -31,3 +31,7 @@ bash testboost_lite/scripts/tb-status.sh <project_path>
    - `validation.md` for validation details
 
 5. For detailed logs, read `<session_dir>/logs/<date>.md`
+
+## CRITICAL: Failure Protocol
+
+**If the bash command above fails**, report the error to the user and suggest running `python -m testboost_lite status <path>` directly. Do NOT fabricate status output.

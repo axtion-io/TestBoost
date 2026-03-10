@@ -40,6 +40,7 @@ except ImportError:
 
 def cmd_init(args: argparse.Namespace) -> int:
     """Initialize .testboost/ in a project."""
+    from testboost_lite.lib.integrity import emit_token, get_or_create_secret
     from testboost_lite.lib.session_tracker import create_session, init_project
 
     project_path = args.project_path
@@ -52,6 +53,9 @@ def cmd_init(args: argparse.Namespace) -> int:
     result = init_project(project_path)
     print(f"[+] {result['message']}")
 
+    # Ensure integrity secret exists
+    get_or_create_secret(project_path)
+
     # Create initial session
     session = create_session(
         project_path,
@@ -62,6 +66,7 @@ def cmd_init(args: argparse.Namespace) -> int:
     print(f"    Session directory: {session['session_dir']}")
     print(f"    Session ID: {session['session_id']}")
 
+    emit_token(project_path, "init", session["session_id"])
     return 0
 
 
@@ -196,6 +201,8 @@ async def _cmd_analyze_async(args: argparse.Namespace) -> int:
         # Print summary to stdout for the LLM
         logger.result("Analysis Complete", content)
 
+        from testboost_lite.lib.integrity import emit_token
+        emit_token(project_path, "analysis", session["session_id"])
         return 0
 
     except Exception as e:
@@ -312,6 +319,8 @@ async def _cmd_gaps_async(args: argparse.Namespace) -> int:
 
         logger.result("Coverage Gaps Identified", content)
 
+        from testboost_lite.lib.integrity import emit_token
+        emit_token(project_path, "coverage-gaps", session["session_id"])
         return 0
 
     except Exception as e:
@@ -469,6 +478,9 @@ async def _cmd_generate_async(args: argparse.Namespace) -> int:
         )
 
         logger.result("Test Generation Complete", content)
+
+        from testboost_lite.lib.integrity import emit_token
+        emit_token(project_path, "generation", session["session_id"])
         return 0
 
     except Exception as e:
@@ -613,6 +625,10 @@ async def _cmd_validate_async(args: argparse.Namespace) -> int:
         )
 
         logger.result("Validation Results", content)
+
+        if test_result.returncode == 0:
+            from testboost_lite.lib.integrity import emit_token
+            emit_token(project_path, "validation", session["session_id"])
         return 0 if test_result.returncode == 0 else 1
 
     except subprocess.TimeoutExpired:
@@ -628,6 +644,35 @@ async def _cmd_validate_async(args: argparse.Namespace) -> int:
             session_dir, "validation", STATUS_FAILED,
             f"# Validation - FAILED\n\n**Error**: {e}\n",
         )
+        return 1
+
+
+def cmd_install(args: argparse.Namespace) -> int:
+    """Install TestBoost commands into a target project.
+
+    Copies slash-command markdown files and shell scripts to the target
+    project, with paths resolved to the current TestBoost installation.
+    This ensures the LLM CLI always calls the real TestBoost CLI.
+    """
+    from testboost_lite.lib.installer import install_commands
+
+    project_path = args.project_path
+    if not Path(project_path).exists():
+        print(f"Error: Project path does not exist: {project_path}", file=sys.stderr)
+        return 1
+
+    result = install_commands(
+        project_path=project_path,
+        testboost_root=str(TESTBOOST_ROOT),
+    )
+
+    if result["success"]:
+        print(f"[+] {result['message']}")
+        for detail in result.get("details", []):
+            print(f"    {detail}")
+        return 0
+    else:
+        print(f"[X] {result['message']}", file=sys.stderr)
         return 1
 
 
@@ -693,6 +738,10 @@ def main() -> int:
     p_val.add_argument("project_path", help="Path to the Java project")
     p_val.add_argument("--verbose", "-v", action="store_true")
 
+    # install
+    p_install = subparsers.add_parser("install", help="Install TestBoost commands into a project")
+    p_install.add_argument("project_path", help="Path to the Java project")
+
     # status
     p_status = subparsers.add_parser("status", help="Show session status")
     p_status.add_argument("project_path", help="Path to the Java project")
@@ -705,6 +754,7 @@ def main() -> int:
         "gaps": cmd_gaps,
         "generate": cmd_generate,
         "validate": cmd_validate,
+        "install": cmd_install,
         "status": cmd_status,
     }
 

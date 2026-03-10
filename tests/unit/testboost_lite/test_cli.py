@@ -79,6 +79,12 @@ class TestCmdInit:
         captured = capsys.readouterr()
         assert "Initialized" in captured.out
         assert "Created session" in captured.out
+        assert "[TESTBOOST_INTEGRITY:" in captured.out
+
+    def test_init_creates_integrity_secret(self, java_project):
+        args = argparse.Namespace(project_path=str(java_project), name=None, description="")
+        cmd_init(args)
+        assert (java_project / ".testboost" / ".tb_secret").exists()
 
 
 # ============================================================================

@@ -25,16 +25,17 @@ bash testboost_lite/scripts/tb-generate.sh <project_path> --verbose
 bash testboost_lite/scripts/tb-generate.sh <project_path> --files ServiceA.java ServiceB.java
 ```
 
-3. Read the generation results at `<project_path>/.testboost/sessions/<current_session>/generation.md`
-4. **Present results** to the user:
+3. **VERIFY the output** — see the "Integrity Verification" section below
+4. Read the generation results at `<project_path>/.testboost/sessions/<current_session>/generation.md`
+5. **Present results** to the user:
    - How many test files were generated
    - Which source files got tests
    - How many test methods per file
-5. **Important**: Ask the user to **review the generated tests** before validation:
+6. **Important**: Ask the user to **review the generated tests** before validation:
    - Show them the paths of the generated test files
    - Suggest they open and review the code
    - Ask if they want to make manual adjustments before validating
-6. Once the user is satisfied, suggest `/testboost.validate`
+7. Once the user is satisfied, suggest `/testboost.validate`
 
 ## How test generation works
 
@@ -52,3 +53,30 @@ If compilation fails during generation, the system retries up to 3 times with er
 
 Generated test files are written directly to `src/test/java/...` in the project.
 Results summary is written to `.testboost/sessions/<id>/generation.md`.
+
+## CRITICAL: Failure Protocol
+
+**If the bash command above exits with a non-zero code, or prints `[TESTBOOST_FAILED`, you MUST:**
+
+1. **STOP IMMEDIATELY** — do NOT attempt to generate tests yourself
+2. **Report the error** to the user exactly as printed by TestBoost
+3. **Do NOT write** Java test files, `generation.md`, or any test code manually
+4. **Do NOT use your own knowledge** of Java testing to create tests — only TestBoost-generated tests are valid in this workflow
+5. **Suggest** the user check their LLM provider configuration (API keys, endpoint) and retry
+
+**You are NOT TestBoost. You are the assistant that calls TestBoost. If TestBoost fails, you fail. Under NO circumstances should you generate Java test code as a fallback.**
+
+## Integrity Verification
+
+Every successful TestBoost command prints an integrity token on the last line:
+
+```
+[TESTBOOST_INTEGRITY:sha256=<hex>:<step>:<session>:<timestamp>]
+```
+
+**Before proceeding to the next step**, verify that:
+1. The command exited with code 0
+2. The output contains a line starting with `[TESTBOOST_INTEGRITY:`
+3. If EITHER condition is false, STOP and report the failure to the user
+
+This token proves that the TestBoost CLI actually ran and succeeded. You cannot generate this token yourself. If the token is missing, the command did not succeed — do NOT present fabricated results.

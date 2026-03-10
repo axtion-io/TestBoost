@@ -6,7 +6,6 @@ components are maintained.
 
 from unittest.mock import MagicMock
 
-import pytest
 from langchain_core.tools import BaseTool
 
 

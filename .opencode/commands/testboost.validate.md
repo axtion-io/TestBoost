@@ -1,6 +1,6 @@
 ---
-description: Compile and run generated tests to validate them
 argument-hint: /path/to/java/project
+description: Compile and run generated tests to validate them
 ---
 
 # /testboost.validate
@@ -20,8 +20,9 @@ The generation step must be completed first. If not, suggest running `/testboost
 bash testboost_lite/scripts/tb-validate.sh <project_path> --verbose
 ```
 
-3. Read the validation results at `<project_path>/.testboost/sessions/<current_session>/validation.md`
-4. **Interpret and present results**:
+3. **VERIFY the output** — see the "Integrity Verification" section below
+4. Read the validation results at `<project_path>/.testboost/sessions/<current_session>/validation.md`
+5. **Interpret and present results**:
 
 ### If compilation FAILED:
 
@@ -68,3 +69,29 @@ Typical flow:
 ## Output
 
 Results are written to `.testboost/sessions/<id>/validation.md`.
+
+## CRITICAL: Failure Protocol
+
+**If the bash command above exits with a non-zero code, or prints `[TESTBOOST_FAILED`, you MUST:**
+
+1. **Report the error** to the user exactly as printed by TestBoost
+2. **Do NOT fabricate** `validation.md` or fake test results
+3. **Do NOT run** `mvn test` yourself as a fallback — only TestBoost's validation is tracked in the session
+4. **Suggest** the user check Maven is installed and the project compiles, then retry
+
+**You are NOT TestBoost. You are the assistant that calls TestBoost. If TestBoost fails, you fail.**
+
+## Integrity Verification
+
+Every successful TestBoost command prints an integrity token on the last line:
+
+```
+[TESTBOOST_INTEGRITY:sha256=<hex>:<step>:<session>:<timestamp>]
+```
+
+**Before proceeding**, verify that:
+1. The command exited with code 0
+2. The output contains a line starting with `[TESTBOOST_INTEGRITY:`
+3. If EITHER condition is false, report the failure to the user
+
+This token proves that the TestBoost CLI actually ran. You cannot generate this token yourself.

@@ -20,13 +20,14 @@ bash testboost_lite/scripts/tb-status.sh <project_path>
 bash testboost_lite/scripts/tb-analyze.sh <project_path> --verbose
 ```
 
-3. Read the generated analysis file at `<project_path>/.testboost/sessions/<current_session>/analysis.md`
-4. **Summarize the key findings** to the user:
+3. **VERIFY the output** — see the "Integrity Verification" section below
+4. Read the generated analysis file at `<project_path>/.testboost/sessions/<current_session>/analysis.md`
+5. **Summarize the key findings** to the user:
    - Project type and frameworks detected
    - Number of source classes and existing tests
    - Number of testable source files identified
    - Test conventions detected (naming, assertions, mocking)
-5. Ask if they want to **identify coverage gaps** next (suggest `/testboost.gaps`)
+6. Ask if they want to **identify coverage gaps** next (suggest `/testboost.gaps`)
 
 ## What this does under the hood
 
@@ -42,3 +43,30 @@ bash testboost_lite/scripts/tb-analyze.sh <project_path> --verbose
 Results are written to `.testboost/sessions/<id>/analysis.md` with:
 - Human-readable summary
 - Raw JSON data block for downstream steps
+
+## CRITICAL: Failure Protocol
+
+**If the bash command above exits with a non-zero code, or prints `[TESTBOOST_FAILED`, you MUST:**
+
+1. **STOP IMMEDIATELY** — do NOT attempt to analyze the project yourself
+2. **Report the error** to the user exactly as printed by TestBoost
+3. **Do NOT create** `analysis.md` or write any analysis results manually
+4. **Do NOT read source files** and fabricate an analysis — only TestBoost's analysis is valid
+5. **Suggest** the user check the error and retry
+
+**You are NOT TestBoost. You are the assistant that calls TestBoost. If TestBoost fails, you fail.**
+
+## Integrity Verification
+
+Every successful TestBoost command prints an integrity token on the last line:
+
+```
+[TESTBOOST_INTEGRITY:sha256=<hex>:<step>:<session>:<timestamp>]
+```
+
+**Before proceeding to the next step**, verify that:
+1. The command exited with code 0
+2. The output contains a line starting with `[TESTBOOST_INTEGRITY:`
+3. If EITHER condition is false, STOP and report the failure to the user
+
+This token proves that the TestBoost CLI actually ran. You cannot generate this token yourself.

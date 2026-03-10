@@ -211,18 +211,24 @@ def _create_openai_llm(
     """Create OpenAI GPT LLM instance."""
     from langchain_openai import ChatOpenAI
 
-    logger.debug("creating_openai_llm", model=model)
+    settings = get_settings()
+    base_url = settings.openai_api_base
+
+    logger.debug("creating_openai_llm", model=model, base_url=base_url)
     callbacks = _add_metrics_callback("openai", model, kwargs)
 
-    return ChatOpenAI(  # type: ignore[call-arg]
-        api_key=api_key,
-        model=model,
-        temperature=temperature,
-        max_tokens=max_tokens,
-        timeout=float(timeout),
-        callbacks=callbacks,
-        **kwargs,
-    )
+    llm_kwargs: dict[str, Any] = {
+        "api_key": api_key,
+        "model": model,
+        "temperature": temperature,
+        "max_tokens": max_tokens,
+        "timeout": float(timeout),
+        "callbacks": callbacks,
+    }
+    if base_url:
+        llm_kwargs["base_url"] = base_url
+
+    return ChatOpenAI(**llm_kwargs, **kwargs)  # type: ignore[call-arg]
 
 
 __all__ = [

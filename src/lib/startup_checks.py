@@ -37,6 +37,9 @@ def _is_retryable_error(exception: Exception) -> bool:
         return True
     if isinstance(exception, ConnectionError):
         return True
+    # OS-level errors (missing files, broken pipes, etc.) are not retryable
+    if isinstance(exception, OSError):
+        return False
     error_msg = str(exception).lower()
     if any(keyword in error_msg for keyword in ["401", "403", "unauthorized", "forbidden", "invalid api key"]):
         return False
@@ -129,8 +132,47 @@ async def check_llm_connection(model: str | None = None) -> None:
         logger.error("llm_connection_failed", reason="timeout", error=str(e))
         raise
 
+    except FileNotFoundError as e:
+        # Surface the missing file path for easier debugging (e.g. SSL cert, socket)
+        import traceback
+        tb_str = "".join(traceback.format_exception(e))
+        logger.error(
+            "llm_connection_failed",
+            reason="file_not_found",
+            error=str(e),
+            error_type="FileNotFoundError",
+            traceback=tb_str,
+        )
+        raise LLMError(
+            f"LLM connection check failed: file not found — {e}. "
+            f"Check SSL_CERT_FILE, REQUESTS_CA_BUNDLE, and OPENAI_API_BASE settings."
+        ) from e
+
+    except OSError as e:
+        import traceback
+        tb_str = "".join(traceback.format_exception(e))
+        logger.error(
+            "llm_connection_failed",
+            reason="os_error",
+            error=str(e),
+            error_type=type(e).__name__,
+            traceback=tb_str,
+        )
+        raise LLMError(
+            f"LLM connection check failed (OS error): {e}. "
+            f"Check network settings, proxy, and SSL configuration."
+        ) from e
+
     except Exception as e:
-        logger.error("llm_connection_failed", reason="unexpected", error=str(e), error_type=type(e).__name__)
+        import traceback
+        tb_str = "".join(traceback.format_exception(e))
+        logger.error(
+            "llm_connection_failed",
+            reason="unexpected",
+            error=str(e),
+            error_type=type(e).__name__,
+            traceback=tb_str,
+        )
         raise LLMError(f"LLM connection check failed: {e}") from e
 
 

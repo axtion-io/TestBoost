@@ -212,7 +212,7 @@ def _create_openai_llm(
     from langchain_openai import ChatOpenAI
 
     settings = get_settings()
-    base_url = settings.openai_api_base
+    base_url = kwargs.pop("base_url", None) or settings.openai_api_base
 
     logger.debug("creating_openai_llm", model=model, base_url=base_url)
     callbacks = _add_metrics_callback("openai", model, kwargs)

@@ -78,6 +78,55 @@ class TestVerifyToken:
         assert verify_token(str(project_with_testboost), "[TESTBOOST_INTEGRITY:md5=abc]") is False
 
 
+class TestCmdVerify:
+    """Tests for the CLI verify subcommand."""
+
+    def _make_args(self, project_path, token):
+        import argparse
+        return argparse.Namespace(project_path=project_path, token=token)
+
+    def test_valid_token_exits_zero(self, project_with_testboost, capsys):
+        from testboost_lite.lib.cli import cmd_verify
+
+        token = generate_token(str(project_with_testboost), "init", "001-test-generation")
+        args = self._make_args(str(project_with_testboost), token)
+        rc = cmd_verify(args)
+        captured = capsys.readouterr()
+        assert rc == 0
+        assert "[TESTBOOST_VERIFY:OK]" in captured.out
+
+    def test_fabricated_token_exits_one(self, project_with_testboost, capsys):
+        from testboost_lite.lib.cli import cmd_verify
+
+        get_or_create_secret(str(project_with_testboost))
+        fake = "[TESTBOOST_INTEGRITY:sha256=deadbeef:init:001-test-generation:20260310T120000Z]"
+        args = self._make_args(str(project_with_testboost), fake)
+        rc = cmd_verify(args)
+        captured = capsys.readouterr()
+        assert rc == 1
+        assert "[TESTBOOST_VERIFY:FAILED]" in captured.out
+
+    def test_garbage_input_exits_one(self, project_with_testboost, capsys):
+        from testboost_lite.lib.cli import cmd_verify
+
+        args = self._make_args(str(project_with_testboost), "not a token at all")
+        rc = cmd_verify(args)
+        captured = capsys.readouterr()
+        assert rc == 1
+        assert "[TESTBOOST_VERIFY:FAILED]" in captured.out
+
+    def test_tampered_digest_exits_one(self, project_with_testboost, capsys):
+        from testboost_lite.lib.cli import cmd_verify
+
+        token = generate_token(str(project_with_testboost), "analysis", "001-test-generation")
+        tampered = token[:30] + ("a" if token[30] != "a" else "b") + token[31:]
+        args = self._make_args(str(project_with_testboost), tampered)
+        rc = cmd_verify(args)
+        captured = capsys.readouterr()
+        assert rc == 1
+        assert "[TESTBOOST_VERIFY:FAILED]" in captured.out
+
+
 class TestEmitToken:
     def test_emit_prints_token(self, project_with_testboost, capsys):
         token = emit_token(str(project_with_testboost), "generation", "001-test-generation")

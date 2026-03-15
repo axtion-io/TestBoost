@@ -175,6 +175,232 @@ def _extract_project_context(project_path: str) -> str:
         return ""
 
 
+@lru_cache(maxsize=16)
+def _detect_test_dependencies(project_path: str) -> dict[str, Any]:
+    """Detect available test framework and libraries from pom.xml.
+
+    Returns dict with framework ('junit4' or 'junit5'), available libraries,
+    and flags for mockito, assertj, hamcrest.
+    """
+    result: dict[str, Any] = {
+        "framework": "junit5",
+        "has_mockito": False,
+        "has_assertj": False,
+        "has_hamcrest": False,
+        "has_spring_test": False,
+        "available_deps": [],
+    }
+
+    pom_file = Path(project_path) / "pom.xml"
+    if not pom_file.exists():
+        return result
+
+    try:
+        tree = ET.parse(pom_file)
+        root = tree.getroot()
+        ns = {"m": "http://maven.apache.org/POM/4.0.0"}
+
+        has_junit4 = False
+        has_junit5 = False
+
+        for dep_path, use_ns in [(".//m:dependency", ns), (".//dependency", {})]:
+            deps = root.findall(dep_path, use_ns) if use_ns else root.findall(dep_path)
+            for dep in deps:
+                artifact = dep.find("m:artifactId", ns) if use_ns else dep.find("artifactId")
+                if artifact is None or not artifact.text:
+                    continue
+                aid = artifact.text
+
+                if aid in ("junit", "junit-dep"):
+                    has_junit4 = True
+                    result["available_deps"].append(aid)
+                elif aid in ("junit-jupiter", "junit-jupiter-api", "junit-jupiter-engine"):
+                    has_junit5 = True
+                    result["available_deps"].append(aid)
+                elif aid == "spring-boot-starter-test":
+                    # Spring Boot 2.2+ bundles JUnit 5; explicit junit dep overrides
+                    has_junit5 = True
+                    result["has_spring_test"] = True
+                    result["available_deps"].append(aid)
+                elif "mockito" in aid:
+                    result["has_mockito"] = True
+                    result["available_deps"].append(aid)
+                elif aid == "assertj-core":
+                    result["has_assertj"] = True
+                    result["available_deps"].append(aid)
+                elif "hamcrest" in aid:
+                    result["has_hamcrest"] = True
+                    result["available_deps"].append(aid)
+
+            if result["available_deps"]:
+                break
+
+        # JUnit 5 wins when both are present
+        if has_junit5:
+            result["framework"] = "junit5"
+        elif has_junit4:
+            result["framework"] = "junit4"
+
+        return result
+
+    except Exception as e:
+        logger.debug("test_dependency_detection_error", error=str(e))
+        return result
+
+
+def _build_framework_instructions(test_deps: dict[str, Any]) -> str:
+    """Build framework-specific instructions for the LLM prompt."""
+    fw = test_deps["framework"]
+    has_mockito = test_deps["has_mockito"]
+    has_assertj = test_deps["has_assertj"]
+
+    parts: list[str] = []
+
+    if fw == "junit4":
+        parts.append("## Test Framework: JUnit 4")
+        parts.append("CRITICAL: This project uses **JUnit 4**, NOT JUnit 5.")
+        parts.append("- Import `org.junit.Test` (NOT `org.junit.jupiter.api.Test`)")
+        parts.append("- Use `@Before` / `@After` (NOT `@BeforeEach` / `@AfterEach`)")
+        parts.append("- Do NOT use `@DisplayName` (JUnit 5 only)")
+        parts.append("- Do NOT use `@ExtendWith` (JUnit 5 only)")
+        parts.append("- Do NOT use `@Nested` (JUnit 5 only)")
+    else:
+        parts.append("## Test Framework: JUnit 5")
+        parts.append("- Import `org.junit.jupiter.api.Test`")
+        parts.append("- Use `@BeforeEach` / `@AfterEach`")
+        parts.append("- Use `@DisplayName` for readable test descriptions")
+
+    # Mockito (shared rules, framework-specific runner)
+    if has_mockito:
+        runner = (
+            "- Use `@RunWith(MockitoJUnitRunner.class)` on the test class"
+            if fw == "junit4"
+            else "- Use `@ExtendWith(MockitoExtension.class)` on the test class"
+        )
+        parts.append(runner)
+        parts.append("- Use `@Mock` and `@InjectMocks` annotations")
+        parts.append("")
+        parts.append("### Mockito Rules (compilation fails if violated):")
+        parts.append(
+            "- `void` methods: use `doNothing().when(mock).method()` "
+            "-- NEVER `when(mock.method()).thenReturn(null)`"
+        )
+        parts.append(
+            "- `void` methods that should throw: "
+            "use `doThrow(new XxxException()).when(mock).method()`"
+        )
+        parts.append(
+            "- Mock arg matchers: use `any(ExactClass.class)` "
+            "-- NOT `anyString()` for non-String params"
+        )
+    else:
+        parts.append("- Mockito is NOT available -- do NOT import or use Mockito")
+        if fw == "junit4":
+            parts.append("- Create test instances manually, use real or stub implementations")
+        else:
+            parts.append("- Create test instances manually")
+
+    # Assertion library
+    if has_assertj:
+        parts.append("- Use AssertJ: `assertThat(x).isEqualTo(y)`")
+    elif fw == "junit4":
+        parts.append("- Use JUnit 4 assertions: `Assert.assertEquals()`, `Assert.assertTrue()`")
+        parts.append("- Import from `org.junit.Assert`")
+    else:
+        parts.append("- Use JUnit 5 assertions: `Assertions.assertEquals()`, etc.")
+
+    deps = test_deps.get("available_deps", [])
+    if deps:
+        parts.append(f"\n**Available test dependencies**: {', '.join(deps)}")
+        parts.append(
+            "CRITICAL: Only use libraries listed above. Do NOT import unavailable libraries."
+        )
+
+    return "\n".join(parts) + "\n"
+
+
+@lru_cache(maxsize=32)
+def _find_existing_test_example(
+    project_path: str, package: str, skip_class: str = "",
+) -> str:
+    """Find an existing test file in the project as a style reference.
+
+    Returns formatted prompt section, or empty string if none found.
+    """
+    project_dir = Path(project_path)
+    test_dir = project_dir / "src" / "test" / "java"
+
+    if not test_dir.exists():
+        return ""
+
+    package_path = package.replace(".", "/")
+    skip_filename = f"{skip_class}Test.java" if skip_class else ""
+
+    test_files: list[Path] = []
+
+    # Look in same package first
+    same_pkg = test_dir / package_path
+    if same_pkg.exists():
+        test_files = sorted(same_pkg.glob("*Test.java"))
+
+    # Fallback: parent package
+    if not test_files:
+        parent_parts = package_path.split("/")[:-1]
+        if parent_parts:
+            parent_pkg = test_dir / "/".join(parent_parts)
+            if parent_pkg.exists():
+                test_files = sorted(parent_pkg.glob("*Test.java"))[:3]
+
+    # Fallback: any test file in the project
+    if not test_files:
+        test_files = sorted(test_dir.rglob("*Test.java"))[:5]
+
+    if not test_files:
+        return ""
+
+    for test_file in test_files:
+        if skip_filename and test_file.name == skip_filename:
+            continue
+        try:
+            content = test_file.read_text(encoding="utf-8", errors="replace")
+            lines = content.split("\n")[:80]
+            truncated = "\n".join(lines)
+            if len(content.split("\n")) > 80:
+                truncated += "\n// ... (truncated)"
+            return (
+                "\n## Existing Test Example (follow this style and imports):\n"
+                f"```java\n{truncated}\n```\n"
+            )
+        except Exception:
+            continue
+
+    return ""
+
+
+def _validate_generated_imports(test_code: str, test_deps: dict[str, Any]) -> list[str]:
+    """Check that generated test imports match available dependencies."""
+    warnings: list[str] = []
+    fw = test_deps["framework"]
+
+    if fw == "junit4":
+        if "org.junit.jupiter" in test_code:
+            warnings.append("Uses JUnit 5 imports but project has JUnit 4")
+        if "@ExtendWith" in test_code:
+            warnings.append("Uses @ExtendWith (JUnit 5) but project has JUnit 4")
+        if "@BeforeEach" in test_code:
+            warnings.append("Uses @BeforeEach (JUnit 5) but project has JUnit 4")
+        if "@DisplayName" in test_code:
+            warnings.append("Uses @DisplayName (JUnit 5) but project has JUnit 4")
+
+    if not test_deps["has_mockito"]:
+        if "org.mockito" in test_code:
+            warnings.append("Uses Mockito but it is not in pom.xml")
+
+    if not test_deps["has_assertj"]:
+        if "org.assertj" in test_code:
+            warnings.append("Uses AssertJ but it is not in pom.xml")
+
+    return warnings
 
 
 def _extract_dependency_signatures(project_path: str, dependencies: list[dict]) -> str:
@@ -220,14 +446,52 @@ def _extract_public_signatures(source_code: str) -> str:
     return "\n".join(sigs[:20])
 
 
+def _extract_token_usage(response: object) -> dict[str, int | None]:
+    """Extract token usage from a LangChain response (AIMessage)."""
+    usage: dict[str, int | None] = {
+        "prompt_tokens": None, "completion_tokens": None, "total_tokens": None,
+    }
+    # Try response_metadata (Anthropic, OpenAI)
+    meta = getattr(response, "response_metadata", None) or {}
+    tu = meta.get("token_usage") or meta.get("usage") or {}
+    if tu:
+        usage["prompt_tokens"] = tu.get("prompt_tokens") or tu.get("input_tokens")
+        usage["completion_tokens"] = tu.get("completion_tokens") or tu.get("output_tokens")
+        usage["total_tokens"] = tu.get("total_tokens")
+    # Try usage_metadata (Google GenAI / newer LangChain)
+    um = getattr(response, "usage_metadata", None)
+    if um and not usage["total_tokens"]:
+        usage["prompt_tokens"] = getattr(um, "input_tokens", None)
+        usage["completion_tokens"] = getattr(um, "output_tokens", None)
+        usage["total_tokens"] = getattr(um, "total_tokens", None)
+    return usage
+
+
 async def fix_compilation_errors(test_code: str, compile_errors: str, class_name: str) -> str:
     """Fix compilation errors in generated test code using LLM."""
     llm = get_llm()
     template = load_prompt_template("testing/compilation_fix.md")
     prompt = render_template(template, compile_errors=compile_errors, test_code=test_code)
+
+    logger.debug(
+        "llm_fix_prompt",
+        class_name=class_name,
+        prompt_length=len(prompt),
+        error_lines=compile_errors.count("\n") + 1,
+    )
+
     response = await llm.ainvoke(prompt)
     raw = response.content if hasattr(response, "content") else str(response)
     code = str(raw) if not isinstance(raw, str) else raw
+
+    usage = _extract_token_usage(response)
+    logger.debug(
+        "llm_fix_response",
+        class_name=class_name,
+        response_length=len(raw),
+        **usage,
+    )
+
     if "```java" in code:
         code = code.split("```java")[1].split("```")[0].strip()
     elif "```" in code:
@@ -260,6 +524,19 @@ async def _generate_test_code_with_llm(context: dict[str, Any], source_code: str
     # Extract project context from pom.xml
     project_context = _extract_project_context(project_path) if project_path else ""
 
+    # Detect test framework and available dependencies (P1/P2)
+    test_deps = _detect_test_dependencies(project_path) if project_path else {
+        "framework": "junit5", "has_mockito": True, "has_assertj": True,
+        "has_hamcrest": False, "has_spring_test": False, "available_deps": [],
+    }
+    framework_instructions = _build_framework_instructions(test_deps)
+
+    # Find existing test example for style reference (P4)
+    existing_test_example = (
+        _find_existing_test_example(project_path, package, class_name)
+        if project_path else ""
+    )
+
     # Extract method signatures of dependency classes so the LLM uses exact types
     dep_signatures = _extract_dependency_signatures(project_path, dependencies)
     dep_section = ""
@@ -288,30 +565,40 @@ async def _generate_test_code_with_llm(context: dict[str, Any], source_code: str
 - **Uses @ParameterizedTest**: {'yes - prefer parameterized tests for similar scenarios' if setup.get('uses_parameterized') else 'no'}
 """
 
-    # Build class-type-specific instructions
+    # Build class-type-specific instructions (framework-aware)
+    fw = test_deps["framework"]
+    mockito_runner = (
+        "@RunWith(MockitoJUnitRunner.class)" if fw == "junit4"
+        else "@ExtendWith(MockitoExtension.class)"
+    )
+    spring_runner = (
+        "@RunWith(SpringRunner.class)\n- Use " if fw == "junit4"
+        else ""
+    )
+
     class_type_instructions = ""
     if class_type == "controller":
-        class_type_instructions = """
+        class_type_instructions = f"""
 ## Controller-Specific Instructions:
-- Use @WebMvcTest({class_name}.class) for test class annotation
+- Use {spring_runner}@WebMvcTest({{class_name}}.class) for test class annotation
 - Use @MockBean for service dependencies (NOT @Mock)
 - Use MockMvc for HTTP request testing
 - Test HTTP status codes, response body, and content type
 - Skip null parameter tests (Spring @Valid handles validation)
 """
     elif class_type == "service":
-        class_type_instructions = """
+        class_type_instructions = f"""
 ## Service-Specific Instructions:
-- Use @ExtendWith(MockitoExtension.class)
+- Use {mockito_runner}
 - Use @Mock for repository and other dependencies
 - Use @InjectMocks for the service under test
 - Verify mock interactions with verify()
 - Test business logic, validation, and exception scenarios
 """
     elif class_type == "repository":
-        class_type_instructions = """
+        class_type_instructions = f"""
 ## Repository-Specific Instructions:
-- Use @DataJpaTest for repository testing
+- Use {spring_runner}@DataJpaTest for repository testing
 - Use TestEntityManager for test data setup
 - Test custom query methods
 - Verify data persistence and retrieval
@@ -332,9 +619,11 @@ async def _generate_test_code_with_llm(context: dict[str, Any], source_code: str
     prompt = render_template(
         template,
         project_context=project_context,
+        framework_instructions=framework_instructions,
         conventions_section=conventions_section,
         class_type_instructions=class_type_instructions,
         dep_section=dep_section,
+        existing_test_example=existing_test_example,
         source_code=source_code,
         class_name=class_name,
         package=package,
@@ -346,12 +635,27 @@ async def _generate_test_code_with_llm(context: dict[str, Any], source_code: str
 
     try:
         # Call LLM to generate tests
+        logger.debug(
+            "llm_generate_prompt",
+            class_name=class_name,
+            prompt_length=len(prompt),
+            class_type=class_type,
+        )
+
         response = await llm.ainvoke(prompt)
 
         # Extract the test code from response
         raw_content = response.content if hasattr(response, 'content') else str(response)
         # Ensure test_code is a string (LangChain content can be str or list)
         test_code: str = str(raw_content) if not isinstance(raw_content, str) else raw_content
+
+        usage = _extract_token_usage(response)
+        logger.debug(
+            "llm_generate_response",
+            class_name=class_name,
+            response_length=len(test_code),
+            **usage,
+        )
 
         # Clean up any markdown code blocks if present
         if "```java" in test_code:
@@ -369,6 +673,15 @@ async def _generate_test_code_with_llm(context: dict[str, Any], source_code: str
             raise ValueError(
                 f"LLM generated invalid test code for {class_name}: "
                 "output does not contain @Test annotation or class declaration"
+            )
+
+        # Validate imports match available dependencies (P5)
+        import_warnings = _validate_generated_imports(test_code, test_deps)
+        if import_warnings:
+            logger.warning(
+                "generated_test_import_mismatch",
+                class_name=class_name,
+                warnings=import_warnings,
             )
 
         logger.info(

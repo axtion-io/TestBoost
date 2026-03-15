@@ -65,8 +65,7 @@ class TestCmdInit:
         result = cmd_init(args)
         assert result == 0
         sessions = list((java_project / ".testboost" / "sessions").iterdir())
-        assert len(sessions) == 1
-        assert "auth-tests" in sessions[0].name
+        assert any("auth-tests" in s.name for s in sessions)
 
     def test_init_nonexistent_path(self, tmp_path):
         args = argparse.Namespace(project_path=str(tmp_path / "nonexistent"), name=None, description="")
@@ -164,9 +163,13 @@ class TestCmdAnalyze:
         assert "UserController" in content
 
     @pytest.mark.asyncio
-    async def test_analyze_no_session(self, java_project):
+    async def test_analyze_no_session(self, tmp_path):
         from testboost_lite.lib.cli import _cmd_analyze_async
-        args = argparse.Namespace(project_path=str(java_project), verbose=False)
+        # Use a bare directory with no .testboost/ at all
+        bare_project = tmp_path / "bare-java"
+        bare_project.mkdir()
+        (bare_project / "pom.xml").write_text("<project/>")
+        args = argparse.Namespace(project_path=str(bare_project), verbose=False)
         result = await _cmd_analyze_async(args)
         assert result == 1
 
@@ -465,8 +468,12 @@ class TestCmdValidate:
 
 
 class TestCmdStatus:
-    def test_status_no_session(self, java_project, capsys):
-        args = argparse.Namespace(project_path=str(java_project))
+    def test_status_no_session(self, tmp_path, capsys):
+        # Use a bare directory with no .testboost/ at all
+        bare_project = tmp_path / "bare-java"
+        bare_project.mkdir()
+        (bare_project / "pom.xml").write_text("<project/>")
+        args = argparse.Namespace(project_path=str(bare_project))
         result = cmd_status(args)
         assert result == 0
         captured = capsys.readouterr()

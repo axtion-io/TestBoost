@@ -529,6 +529,9 @@ async def _cmd_generate_async(args: argparse.Namespace) -> int:
         return 1
 
 
+_MAX_COMPILE_FIX_ATTEMPTS = 3
+
+
 async def _attempt_compile_fix(
     project_path: str,
     test_file: Path,
@@ -538,7 +541,7 @@ async def _attempt_compile_fix(
     session_dir: str | None = None,
     maven_compile_cmd: str | None = None,
 ) -> str:
-    """Run mvn test-compile and use LLM to fix any compilation errors in the generated file.
+    """Run mvn test-compile and use LLM to fix compilation errors, retrying up to N times.
 
     Uses maven_compile_cmd from analysis.md if available, so profiles and
     custom properties set there are respected.
@@ -547,44 +550,61 @@ async def _attempt_compile_fix(
     if not cmd:
         cmd = [shutil.which("mvn") or shutil.which("mvn.cmd") or "mvn", "test-compile", "-q", "--no-transfer-progress"]
 
-    try:
-        result = subprocess.run(cmd, cwd=project_path, capture_output=True, text=True, timeout=120)
-    except (subprocess.TimeoutExpired, FileNotFoundError) as e:
-        logger.warn(f"Compile check skipped ({class_name}): {e}")
-        return test_code
+    current_code = test_code
 
-    if result.returncode == 0:
-        logger.info(f"Compilation OK: {class_name}")
-        return test_code
+    for attempt in range(1, _MAX_COMPILE_FIX_ATTEMPTS + 1):
+        # --- compile ---
+        try:
+            result = subprocess.run(cmd, cwd=project_path, capture_output=True, text=True, timeout=120)
+        except (subprocess.TimeoutExpired, FileNotFoundError) as e:
+            logger.warn(f"Compile check skipped ({class_name}): {e}")
+            return current_code
 
-    all_errors = result.stdout + result.stderr
-    file_name = test_file.name
-    file_error_lines = [ln for ln in all_errors.splitlines() if file_name in ln]
+        if result.returncode == 0:
+            if attempt == 1:
+                logger.info(f"Compilation OK: {class_name}")
+            else:
+                logger.info(f"Compilation OK after {attempt - 1} fix(es): {class_name}")
+            return current_code
 
-    if not file_error_lines:
-        # Errors are not in our generated file — likely a project config issue
-        _warn_maven_config_issue(all_errors, session_dir, project_path, logger)
-        return test_code
+        # --- parse errors for our file ---
+        all_errors = result.stdout + result.stderr
+        file_name = test_file.name
+        file_error_lines = [ln for ln in all_errors.splitlines() if file_name in ln]
 
-    # Build error context: lines referencing our file + [ERROR] summary lines
-    relevant_lines = [ln for ln in all_errors.splitlines() if file_name in ln or "[ERROR]" in ln]
-    relevant_errors = "\n".join(relevant_lines[:80])
+        if not file_error_lines:
+            _warn_maven_config_issue(all_errors, session_dir, project_path, logger)
+            return current_code
 
-    logger.warn(f"Compilation errors in {class_name} — asking LLM to fix...")
-    try:
-        from testboost_lite.lib.testboost_bridge import fix_compilation_errors
-        fixed = await fix_compilation_errors(test_code, relevant_errors, class_name)
-        test_file.write_text(fixed, encoding="utf-8")
+        relevant_lines = [ln for ln in all_errors.splitlines() if file_name in ln or "[ERROR]" in ln]
+        relevant_errors = "\n".join(relevant_lines[:80])
 
-        verify = subprocess.run(cmd, cwd=project_path, capture_output=True, text=True, timeout=120)
-        if verify.returncode == 0:
-            logger.info(f"Fixed {class_name}: compiles OK")
-        else:
-            logger.warn(f"Fixed {class_name} still has errors — leaving for manual correction")
-        return fixed
-    except Exception as e:
-        logger.warn(f"Auto-fix failed for {class_name}: {e}")
-        return test_code
+        # Log compilation errors at INFO so they appear in generation.md
+        logger.info(
+            f"Compilation errors in {class_name} "
+            f"(attempt {attempt}/{_MAX_COMPILE_FIX_ATTEMPTS}):\n"
+            + "\n".join(file_error_lines[:15])
+        )
+
+        if attempt == _MAX_COMPILE_FIX_ATTEMPTS:
+            logger.info(f"Max fix attempts reached for {class_name} — leaving for manual correction")
+            return current_code
+
+        # --- ask LLM to fix ---
+        try:
+            from testboost_lite.lib.testboost_bridge import fix_compilation_errors
+            fixed = await fix_compilation_errors(current_code, relevant_errors, class_name)
+            if fixed == current_code:
+                logger.info(f"LLM returned identical code for {class_name} — stopping retries")
+                return current_code
+            test_file.write_text(fixed, encoding="utf-8")
+            current_code = fixed
+            logger.info(f"Applied fix attempt {attempt} for {class_name}, recompiling...")
+        except Exception as e:
+            logger.warn(f"Auto-fix failed for {class_name}: {e}")
+            return current_code
+
+    return current_code
 
 
 def cmd_validate(args: argparse.Namespace) -> int:
@@ -779,6 +799,25 @@ def cmd_install(args: argparse.Namespace) -> int:
         return 1
 
 
+def cmd_verify(args: argparse.Namespace) -> int:
+    """Verify an integrity token.
+
+    Exits 0 and prints VERIFIED if the token is valid.
+    Exits 1 and prints FAILED if the token is invalid or malformed.
+    """
+    from testboost_lite.lib.integrity import verify_token
+
+    project_path = args.project_path
+    token_line = args.token.strip()
+
+    if verify_token(project_path, token_line):
+        print("[TESTBOOST_VERIFY:OK]")
+        return 0
+    else:
+        print("[TESTBOOST_VERIFY:FAILED]")
+        return 1
+
+
 def cmd_status(args: argparse.Namespace) -> int:
     """Show current session status."""
     from testboost_lite.lib.session_tracker import get_session_status
@@ -965,6 +1004,11 @@ def main() -> int:
     p_val.add_argument("project_path", help="Path to the Java project")
     p_val.add_argument("--verbose", "-v", action="store_true")
 
+    # verify
+    p_verify = subparsers.add_parser("verify", help="Verify an integrity token")
+    p_verify.add_argument("project_path", help="Path to the Java project")
+    p_verify.add_argument("token", help="The full integrity token string to verify")
+
     # install
     p_install = subparsers.add_parser("install", help="Install TestBoost commands into a project")
     p_install.add_argument("project_path", help="Path to the Java project")
@@ -981,6 +1025,7 @@ def main() -> int:
         "gaps": cmd_gaps,
         "generate": cmd_generate,
         "validate": cmd_validate,
+        "verify": cmd_verify,
         "install": cmd_install,
         "status": cmd_status,
     }

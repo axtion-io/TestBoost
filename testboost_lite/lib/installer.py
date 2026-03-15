@@ -70,7 +70,7 @@ def _install_scripts(project: Path, tb_root: Path) -> list[str]:
     scripts_dir = project / ".testboost" / "scripts"
     scripts_dir.mkdir(parents=True, exist_ok=True)
 
-    steps = ["init", "analyze", "gaps", "generate", "validate", "status"]
+    steps = ["init", "analyze", "gaps", "generate", "validate", "verify", "status"]
     details = []
 
     for step in steps:

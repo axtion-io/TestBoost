@@ -33,11 +33,20 @@ class LLMMetricsCallback(BaseCallbackHandler):
 
     def on_llm_end(self, response: LLMResult, **kwargs: Any) -> None:
         duration = time.time() - self.start_time if self.start_time else None
+
+        # Extract token usage from LLM output when available
+        token_usage: dict[str, Any] = {}
+        if response.llm_output:
+            token_usage = response.llm_output.get("token_usage", {}) or {}
+
         logger.debug(
             "llm_call_success",
             provider=self.provider,
             model=self.model,
-            duration_seconds=duration,
+            duration_seconds=round(duration, 2) if duration else None,
+            prompt_tokens=token_usage.get("prompt_tokens"),
+            completion_tokens=token_usage.get("completion_tokens"),
+            total_tokens=token_usage.get("total_tokens"),
         )
 
     def on_llm_error(self, error: BaseException, **kwargs: Any) -> None:

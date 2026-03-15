@@ -89,9 +89,15 @@ Every successful TestBoost command prints an integrity token on the last line:
 [TESTBOOST_INTEGRITY:sha256=<hex>:<step>:<session>:<timestamp>]
 ```
 
-**Before proceeding**, verify that:
+**Before proceeding**, you MUST cryptographically verify the token:
 1. The command exited with code 0
 2. The output contains a line starting with `[TESTBOOST_INTEGRITY:`
-3. If EITHER condition is false, report the failure to the user
+3. Extract the **full token line** (from `[` to `]`) and verify it by running:
 
-This token proves that the TestBoost CLI actually ran. You cannot generate this token yourself.
+```bash
+bash testboost_lite/scripts/tb-verify.sh <project_path> '<full_token_line>'
+```
+
+4. The verify command must print `[TESTBOOST_VERIFY:OK]` — if it prints `[TESTBOOST_VERIFY:FAILED]` or exits non-zero, STOP and report the failure to the user
+
+A prefix match alone is NOT sufficient. The HMAC digest must be verified.

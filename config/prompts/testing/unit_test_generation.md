@@ -1,12 +1,15 @@
-You are an expert Java test engineer specializing in unit testing with JUnit 5, Mockito, and AssertJ. Generate comprehensive, mutation-resistant unit tests for the following Java class.
+You are an expert Java test engineer. Generate comprehensive, mutation-resistant unit tests for the following Java class.
 
-{{project_context}}{{conventions_section}}{{class_type_instructions}}{{dep_section}}
-## CRITICAL Mockito/Java Rules (compilation fails if violated):
-- `void` methods: use `doNothing().when(mock).method()` — NEVER `when(mock.method()).thenReturn(null)`
-- `void` methods that should throw: use `doThrow(new XxxException()).when(mock).method()`
+{{project_context}}{{framework_instructions}}{{conventions_section}}{{class_type_instructions}}{{dep_section}}{{existing_test_example}}
+## CRITICAL: No Placeholder Classes
+- NEVER define fake, stub, or shadow classes/interfaces that duplicate real project classes
+- NEVER create inner classes that shadow or re-implement the class under test or its dependencies
+- All imports MUST reference real project classes or standard test libraries
+- If a dependency cannot be imported, mock it using the mocking library or skip that test
+
+## Additional Java/Reflection Rules:
 - Private parent fields: CANNOT be accessed in anonymous subclasses — use ReflectionTestUtils.setField() or restructure
 - Reflection: always call `field.setAccessible(true)` before `.get()` / `.getInt()` — declare `throws Exception` on test method
-- Mock arg matchers: use `any(ExactClass.class)` matching exact signature types above — NOT `anyString()` for non-String params
 
 ## Source Code to Test:
 ```java
@@ -24,25 +27,23 @@ You are an expert Java test engineer specializing in unit testing with JUnit 5, 
 {{test_requirements_section}}
 
 ## Instructions:
-1. Generate a complete, compilable JUnit 5 test class
-2. Use Mockito for mocking dependencies (constructor injection pattern)
-3. Include @BeforeEach setup method
+1. Generate a complete, compilable test class using the framework specified above
+2. Mock dependencies using the approach specified above
+3. Include a setup method with the correct annotation for the test framework
 4. For each public method, generate:
    - Happy path test (valid inputs, expected output)
    - Edge case tests (null handling, boundary values)
    - Error scenario tests where applicable
-5. Use @DisplayName for readable test descriptions
-6. Use meaningful test data, not generic placeholders (e.g. "john@example.com" not "test")
-7. For reactive types (Mono/Flux), use StepVerifier
-8. Follow AAA pattern: Arrange, Act, Assert
-9. Include proper imports at the top
-10. Make tests mutation-resistant:
+5. Use meaningful test data, not generic placeholders (e.g. "john@example.com" not "test")
+6. For reactive types (Mono/Flux), use StepVerifier
+7. Follow AAA pattern: Arrange, Act, Assert
+8. Include proper imports at the top
+9. Make tests mutation-resistant:
     - Assert exact return values, not just non-null
     - Test boundary conditions (at, below, above)
     - Verify both true AND false paths for boolean returns
     - Use specific equality assertions
-    - Use verify() to check mock interaction count
-    - Use ArgumentCaptor to verify exact argument values passed to mocks
+    - If using Mockito: verify() for interaction count, ArgumentCaptor for argument values
 
 ## JPA Entity Guidelines (CRITICAL):
 - NEVER call setId() on @GeneratedValue fields - use ReflectionTestUtils.setField(entity, "id", 1L)

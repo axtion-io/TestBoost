@@ -26,6 +26,8 @@ async def generate_adaptive_tests(
     conventions: dict[str, Any] | None = None,
     coverage_target: float = 80,
     test_requirements: list[dict[str, Any]] | None = None,
+    class_index: dict[str, dict[str, Any]] | None = None,
+    test_examples: list[dict[str, str]] | None = None,
 ) -> str:
     """
     Generate unit tests adapted to project conventions.
@@ -81,6 +83,8 @@ async def generate_adaptive_tests(
         "is_record": class_info.get("is_record", False),
         "source_code": source_code,
         "project_path": project_path,
+        "class_index": class_index,
+        "test_examples": test_examples,
     }
 
     # Generate test code using LLM
@@ -446,6 +450,65 @@ def _extract_public_signatures(source_code: str) -> str:
     return "\n".join(sigs[:20])
 
 
+def _resolve_dependency_signatures_from_index(
+    dependencies: list[dict[str, Any]], class_index: dict[str, dict[str, Any]]
+) -> str:
+    """Resolve dependency method signatures from the pre-built class index.
+
+    Replaces _extract_dependency_signatures() when a class_index is available.
+    Provides richer context: field types (fixes BigDecimal vs Double problems),
+    inheritance chain, and all public method signatures — without filesystem I/O.
+    """
+    results = []
+    for dep in dependencies:
+        dep_type = dep.get("type", "").split("<")[0].strip()
+        if not dep_type or _is_primitive_type(dep_type):
+            continue
+        entry = class_index.get(dep_type)
+        if not entry:
+            continue
+
+        lines = [f"**{dep_type}** (field: `{dep.get('name', dep_type)}`)"]
+
+        if entry.get("extends"):
+            lines.append(f"  extends: {entry['extends']}")
+        if entry.get("implements"):
+            lines.append(f"  implements: {', '.join(entry['implements'])}")
+
+        # Field types — critical for correct mock values (BigDecimal vs Double, etc.)
+        fields = entry.get("fields", [])
+        if fields:
+            lines.append("  Fields:")
+            for f in fields[:10]:
+                ann_str = f" [{', '.join(f.get('annotations', []))}]" if f.get("annotations") else ""
+                lines.append(f"    - `{f['type']} {f['name']}`{ann_str}")
+
+        sigs = entry.get("public_signatures", "")
+        if sigs:
+            lines.append("  Methods:")
+            lines.append(sigs)
+
+        results.append("\n".join(lines))
+
+    return "\n\n".join(results)
+
+
+def _build_test_examples_section(test_examples: list[dict[str, str]]) -> str:
+    """Build the test style examples section from pre-extracted examples.
+
+    Replaces _find_existing_test_example() (1 file, 80 lines) with
+    up to 3 complete examples (150 lines each).
+    """
+    if not test_examples:
+        return ""
+    parts = ["\n## Existing Test Examples (follow this style and imports exactly):\n"]
+    for example in test_examples[:3]:
+        path = example.get("path", "unknown")
+        content = example.get("content", "")
+        parts.append(f"### Example from `{path}`:\n```java\n{content}\n```\n")
+    return "\n".join(parts)
+
+
 def _extract_token_usage(response: object) -> dict[str, int | None]:
     """Extract token usage from a LangChain response (AIMessage)."""
     usage: dict[str, int | None] = {
@@ -520,6 +583,8 @@ async def _generate_test_code_with_llm(context: dict[str, Any], source_code: str
     test_requirements = context.get("test_requirements", [])
     conventions = context.get("conventions", {})
     project_path = context.get("project_path", "")
+    class_index: dict[str, dict[str, Any]] | None = context.get("class_index")
+    test_examples: list[dict[str, str]] | None = context.get("test_examples")
 
     # Extract project context from pom.xml
     project_context = _extract_project_context(project_path) if project_path else ""
@@ -531,14 +596,23 @@ async def _generate_test_code_with_llm(context: dict[str, Any], source_code: str
     }
     framework_instructions = _build_framework_instructions(test_deps)
 
-    # Find existing test example for style reference (P4)
+    # Test style examples: use pre-extracted multi-examples when available,
+    # fall back to lazy single-file lookup.
     existing_test_example = (
-        _find_existing_test_example(project_path, package, class_name)
-        if project_path else ""
+        _build_test_examples_section(test_examples)
+        if test_examples
+        else (
+            _find_existing_test_example(project_path, package, class_name)
+            if project_path else ""
+        )
     )
 
-    # Extract method signatures of dependency classes so the LLM uses exact types
-    dep_signatures = _extract_dependency_signatures(project_path, dependencies)
+    # Dependency signatures: use pre-built class index when available,
+    # fall back to lazy filesystem lookup.
+    if class_index:
+        dep_signatures = _resolve_dependency_signatures_from_index(dependencies, class_index)
+    else:
+        dep_signatures = _extract_dependency_signatures(project_path, dependencies)
     dep_section = ""
     if dep_signatures:
         dep_section = (
@@ -546,6 +620,25 @@ async def _generate_test_code_with_llm(context: dict[str, Any], source_code: str
             "(use EXACT parameter types in any() matchers and doThrow/doNothing calls):\n"
             + dep_signatures + "\n"
         )
+
+    # Inheritance context: if the class extends a parent in the index, provide parent details.
+    inheritance_context = ""
+    if class_index:
+        class_entry = class_index.get(class_name, {})
+        parent_name = class_entry.get("extends")
+        if parent_name:
+            parent_entry = class_index.get(parent_name, {})
+            if parent_entry:
+                parent_sigs = parent_entry.get("public_signatures", "")
+                parent_fields = parent_entry.get("fields", [])
+                field_lines = "\n".join(
+                    f"  - `{f['type']} {f['name']}`" for f in parent_fields[:10]
+                )
+                inheritance_context = (
+                    f"\n## Parent Class `{parent_name}` (inherited by `{class_name}`):\n"
+                    + (f"Fields:\n{field_lines}\n" if field_lines else "")
+                    + (f"Methods:\n{parent_sigs}\n" if parent_sigs else "")
+                )
 
     # Build conventions section for the prompt
     conventions_section = ""
@@ -623,6 +716,7 @@ async def _generate_test_code_with_llm(context: dict[str, Any], source_code: str
         conventions_section=conventions_section,
         class_type_instructions=class_type_instructions,
         dep_section=dep_section,
+        inheritance_context=inheritance_context,
         existing_test_example=existing_test_example,
         source_code=source_code,
         class_name=class_name,

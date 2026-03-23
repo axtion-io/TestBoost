@@ -124,15 +124,22 @@ class TestCmdAnalyze:
 
         with patch("testboost_lite.lib.testboost_bridge.analyze_project_context", new_callable=AsyncMock, return_value=mock_context), \
              patch("testboost_lite.lib.testboost_bridge.detect_test_conventions", new_callable=AsyncMock, return_value=mock_conventions), \
-             patch("testboost_lite.lib.testboost_bridge.find_source_files", return_value=mock_files):
+             patch("testboost_lite.lib.testboost_bridge.find_source_files", return_value=mock_files), \
+             patch("testboost_lite.lib.testboost_bridge.build_class_index", return_value={}), \
+             patch("testboost_lite.lib.testboost_bridge.extract_test_examples", return_value=[]):
             result = await _cmd_analyze_async(args)
 
         assert result == 0
 
+        # Session-level analysis.md still exists (lightweight reference)
         session = get_current_session(str(initialized_project))
         analysis_file = Path(session["session_dir"]) / "analysis.md"
         assert analysis_file.exists()
-        content = analysis_file.read_text()
+
+        # Rich content is in the project-level .testboost/analysis.md
+        project_analysis = Path(initialized_project) / ".testboost" / "analysis.md"
+        assert project_analysis.exists()
+        content = project_analysis.read_text()
         assert "status: completed" in content
         assert "spring-boot" in content
         assert "maven" in content
@@ -153,12 +160,14 @@ class TestCmdAnalyze:
         args = argparse.Namespace(project_path=str(initialized_project), verbose=False)
         with patch("testboost_lite.lib.testboost_bridge.analyze_project_context", new_callable=AsyncMock, return_value=mock_context), \
              patch("testboost_lite.lib.testboost_bridge.detect_test_conventions", new_callable=AsyncMock, return_value=json.dumps({"success": False})), \
-             patch("testboost_lite.lib.testboost_bridge.find_source_files", return_value=mock_files):
+             patch("testboost_lite.lib.testboost_bridge.find_source_files", return_value=mock_files), \
+             patch("testboost_lite.lib.testboost_bridge.build_class_index", return_value={}), \
+             patch("testboost_lite.lib.testboost_bridge.extract_test_examples", return_value=[]):
             await _cmd_analyze_async(args)
 
-        session = get_current_session(str(initialized_project))
-        analysis_file = Path(session["session_dir"]) / "analysis.md"
-        content = analysis_file.read_text()
+        # Rich content (source file names) is in the project-level .testboost/analysis.md
+        project_analysis = Path(initialized_project) / ".testboost" / "analysis.md"
+        content = project_analysis.read_text()
         assert "UserService" in content
         assert "UserController" in content
 
@@ -187,11 +196,14 @@ class TestCmdAnalyze:
         args = argparse.Namespace(project_path=str(initialized_project), verbose=False)
         with patch("testboost_lite.lib.testboost_bridge.analyze_project_context", new_callable=AsyncMock, return_value=mock_context), \
              patch("testboost_lite.lib.testboost_bridge.detect_test_conventions", new_callable=AsyncMock, return_value=json.dumps({"success": False})), \
-             patch("testboost_lite.lib.testboost_bridge.find_source_files", return_value=[]):
+             patch("testboost_lite.lib.testboost_bridge.find_source_files", return_value=[]), \
+             patch("testboost_lite.lib.testboost_bridge.build_class_index", return_value={}), \
+             patch("testboost_lite.lib.testboost_bridge.extract_test_examples", return_value=[]):
             await _cmd_analyze_async(args)
 
-        session = get_current_session(str(initialized_project))
-        content = (Path(session["session_dir"]) / "analysis.md").read_text()
+        # Java version is in the project-level .testboost/analysis.md
+        project_analysis = Path(initialized_project) / ".testboost" / "analysis.md"
+        content = project_analysis.read_text()
         assert "17" in content
 
     @pytest.mark.asyncio
@@ -214,11 +226,14 @@ class TestCmdAnalyze:
         args = argparse.Namespace(project_path=str(initialized_project), verbose=False)
         with patch("testboost_lite.lib.testboost_bridge.analyze_project_context", new_callable=AsyncMock, return_value=mock_context), \
              patch("testboost_lite.lib.testboost_bridge.detect_test_conventions", new_callable=AsyncMock, return_value=mock_conventions), \
-             patch("testboost_lite.lib.testboost_bridge.find_source_files", return_value=[]):
+             patch("testboost_lite.lib.testboost_bridge.find_source_files", return_value=[]), \
+             patch("testboost_lite.lib.testboost_bridge.build_class_index", return_value={}), \
+             patch("testboost_lite.lib.testboost_bridge.extract_test_examples", return_value=[]):
             await _cmd_analyze_async(args)
 
-        session = get_current_session(str(initialized_project))
-        content = (Path(session["session_dir"]) / "analysis.md").read_text()
+        # Conventions are in the project-level .testboost/analysis.md
+        project_analysis = Path(initialized_project) / ".testboost" / "analysis.md"
+        content = project_analysis.read_text()
         assert "Conventions" in content
         assert "assertj" in content
 
@@ -246,7 +261,9 @@ class TestCmdGaps:
         args = argparse.Namespace(project_path=str(project_path), verbose=False)
         with patch("testboost_lite.lib.testboost_bridge.analyze_project_context", new_callable=AsyncMock, return_value=mock_context), \
              patch("testboost_lite.lib.testboost_bridge.detect_test_conventions", new_callable=AsyncMock, return_value=json.dumps({"success": False})), \
-             patch("testboost_lite.lib.testboost_bridge.find_source_files", return_value=mock_files):
+             patch("testboost_lite.lib.testboost_bridge.find_source_files", return_value=mock_files), \
+             patch("testboost_lite.lib.testboost_bridge.build_class_index", return_value={}), \
+             patch("testboost_lite.lib.testboost_bridge.extract_test_examples", return_value=[]):
             await _cmd_analyze_async(args)
 
     @pytest.mark.asyncio
@@ -320,7 +337,9 @@ class TestCmdGenerate:
         args = argparse.Namespace(project_path=str(project_path), verbose=False)
         with patch("testboost_lite.lib.testboost_bridge.analyze_project_context", new_callable=AsyncMock, return_value=mock_context), \
              patch("testboost_lite.lib.testboost_bridge.detect_test_conventions", new_callable=AsyncMock, return_value=json.dumps({"success": False})), \
-             patch("testboost_lite.lib.testboost_bridge.find_source_files", return_value=mock_files):
+             patch("testboost_lite.lib.testboost_bridge.find_source_files", return_value=mock_files), \
+             patch("testboost_lite.lib.testboost_bridge.build_class_index", return_value={}), \
+             patch("testboost_lite.lib.testboost_bridge.extract_test_examples", return_value=[]):
             await _cmd_analyze_async(args)
         await _cmd_gaps_async(args)
 
@@ -511,7 +530,9 @@ class TestLLMErrorPropagation:
         args = argparse.Namespace(project_path=str(project_path), verbose=False)
         with patch("testboost_lite.lib.testboost_bridge.analyze_project_context", new_callable=AsyncMock, return_value=mock_context), \
              patch("testboost_lite.lib.testboost_bridge.detect_test_conventions", new_callable=AsyncMock, return_value=json.dumps({"success": False})), \
-             patch("testboost_lite.lib.testboost_bridge.find_source_files", return_value=mock_files):
+             patch("testboost_lite.lib.testboost_bridge.find_source_files", return_value=mock_files), \
+             patch("testboost_lite.lib.testboost_bridge.build_class_index", return_value={}), \
+             patch("testboost_lite.lib.testboost_bridge.extract_test_examples", return_value=[]):
             await _cmd_analyze_async(args)
         await _cmd_gaps_async(args)
 

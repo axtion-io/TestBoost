@@ -338,3 +338,68 @@ class TestPathHelpers:
     def test_get_sessions_dir(self, tmp_path):
         result = get_sessions_dir(str(tmp_path))
         assert result == tmp_path / ".testboost" / "sessions"
+
+
+# ============================================================================
+# Project-level analysis
+# ============================================================================
+
+
+class TestProjectAnalysis:
+    def test_get_project_analysis_path(self, tmp_path):
+        from testboost_lite.lib.session_tracker import get_project_analysis_path
+        result = get_project_analysis_path(str(tmp_path))
+        assert result == tmp_path / ".testboost" / "analysis.md"
+
+    def test_write_and_read_project_analysis(self, tmp_path):
+        from testboost_lite.lib.session_tracker import (
+            read_project_analysis_data,
+            write_project_analysis,
+        )
+        init_project(str(tmp_path))
+        data = {
+            "class_index": {"Foo": {"class_name": "Foo", "category": "service"}},
+            "source_files": ["src/main/java/Foo.java"],
+            "maven_compile_cmd": "mvn test-compile -q",
+        }
+        path = write_project_analysis(str(tmp_path), "# Project Analysis\n\nSome content.\n", data)
+        assert path.exists()
+        assert "analysis.md" in str(path)
+        # Not inside sessions/
+        assert "sessions" not in str(path)
+
+        result = read_project_analysis_data(str(tmp_path))
+        assert result is not None
+        assert "class_index" in result
+        assert result["class_index"]["Foo"]["class_name"] == "Foo"
+        assert result["maven_compile_cmd"] == "mvn test-compile -q"
+
+    def test_write_project_analysis_has_frontmatter(self, tmp_path):
+        from testboost_lite.lib.session_tracker import (
+            get_project_analysis_path,
+            write_project_analysis,
+        )
+        init_project(str(tmp_path))
+        write_project_analysis(str(tmp_path), "# Title\n", {"key": "val"})
+        content = get_project_analysis_path(str(tmp_path)).read_text()
+        assert "---" in content
+        assert "status: completed" in content
+        assert "updated_at:" in content
+
+    def test_read_project_analysis_returns_none_when_missing(self, tmp_path):
+        from testboost_lite.lib.session_tracker import read_project_analysis_data
+        result = read_project_analysis_data(str(tmp_path))
+        assert result is None
+
+    def test_read_project_analysis_returns_none_on_invalid_json(self, tmp_path):
+        from testboost_lite.lib.session_tracker import (
+            get_project_analysis_path,
+            read_project_analysis_data,
+        )
+        init_project(str(tmp_path))
+        # Write a file with no valid JSON block
+        get_project_analysis_path(str(tmp_path)).write_text(
+            "---\nstatus: completed\n---\n\n# No JSON here\n", encoding="utf-8"
+        )
+        result = read_project_analysis_data(str(tmp_path))
+        assert result is None

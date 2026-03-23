@@ -397,3 +397,69 @@ def _update_spec_progress(session_dir: Path, step_name: str, status: str, timest
         new_content = re.sub(r"(?<=status: )\S+", status, new_content)
 
     spec_path.write_text(new_content, encoding="utf-8")
+
+
+# ---------------------------------------------------------------------------
+# Project-level analysis (shared across sessions)
+# ---------------------------------------------------------------------------
+
+_PROJECT_ANALYSIS_FILE = "analysis.md"
+
+
+def get_project_analysis_path(project_path: str) -> Path:
+    """Return the path to the project-level analysis.md file.
+
+    This file lives at .testboost/analysis.md (NOT under sessions/).
+    It is built by `cmd_analyze` and shared across all sessions.
+    """
+    return get_testboost_dir(project_path) / _PROJECT_ANALYSIS_FILE
+
+
+def write_project_analysis(project_path: str, content: str, data: dict[str, Any]) -> Path:
+    """Write the project-level analysis.md file.
+
+    Analogous to update_step_file() but writes to .testboost/analysis.md
+    (not under a session directory).
+
+    Args:
+        project_path: Path to the Java project root.
+        content: Markdown body content (without frontmatter or JSON block).
+        data: Structured data dict (class_index, conventions, etc.).
+
+    Returns:
+        Path to the written file.
+    """
+    analysis_path = get_project_analysis_path(project_path)
+    now = _now_iso()
+
+    md = _make_frontmatter(status=STATUS_COMPLETED, updated_at=now)
+    md += content
+    md += "\n\n## Raw Data\n\n"
+    md += "```json\n"
+    md += json.dumps(data, indent=2, default=str)
+    md += "\n```\n"
+
+    analysis_path.write_text(md, encoding="utf-8")
+    return analysis_path
+
+
+def read_project_analysis_data(project_path: str) -> dict[str, Any] | None:
+    """Read the structured data from the project-level analysis.md.
+
+    Returns:
+        The parsed JSON data dict, or None if the file doesn't exist
+        or contains no valid JSON block (backward-compat: old sessions
+        without a project-level analysis will get None and fall back to
+        the session-level analysis.md).
+    """
+    analysis_path = get_project_analysis_path(project_path)
+    if not analysis_path.exists():
+        return None
+    content = analysis_path.read_text(encoding="utf-8")
+    blocks = re.findall(r"```json\n(.*?)```", content, re.DOTALL)
+    for block in blocks:
+        try:
+            return json.loads(block)
+        except json.JSONDecodeError:
+            continue
+    return None

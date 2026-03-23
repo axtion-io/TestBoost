@@ -1,6 +1,6 @@
 You are an expert Java test engineer. Generate comprehensive, mutation-resistant unit tests for the following Java class.
 
-{{project_context}}{{framework_instructions}}{{conventions_section}}{{class_type_instructions}}{{dep_section}}{{existing_test_example}}
+{{project_context}}{{framework_instructions}}{{conventions_section}}{{class_type_instructions}}{{dep_section}}{{inheritance_context}}{{existing_test_example}}
 ## CRITICAL: No Placeholder Classes
 - NEVER define fake, stub, or shadow classes/interfaces that duplicate real project classes
 - NEVER create inner classes that shadow or re-implement the class under test or its dependencies

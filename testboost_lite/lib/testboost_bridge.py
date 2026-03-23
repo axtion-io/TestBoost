@@ -83,6 +83,26 @@ async def fix_compilation_errors(test_code: str, compile_errors: str, class_name
     return await _fix(test_code, compile_errors, class_name)
 
 
+def build_class_index(project_path: str, source_files: list[str]) -> dict[str, dict]:
+    """Build the full class index for all source files.
+
+    Wraps src.lib.java_class_analyzer.build_class_index
+    """
+    from src.lib.java_class_analyzer import build_class_index as _build
+    return _build(project_path, source_files)
+
+
+def extract_test_examples(
+    project_path: str, max_examples: int = 3, max_lines: int = 150
+) -> list[dict]:
+    """Extract representative test file examples from the project.
+
+    Wraps src.lib.java_class_analyzer.extract_test_examples
+    """
+    from src.lib.java_class_analyzer import extract_test_examples as _extract
+    return _extract(project_path, max_examples=max_examples, max_lines=max_lines)
+
+
 def parse_maven_errors(maven_output: str):
     """Parse Maven compilation errors into structured format.
 

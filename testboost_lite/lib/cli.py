@@ -106,10 +106,16 @@ async def _cmd_analyze_async(args: argparse.Namespace) -> int:
 
     try:
         # --- Reuse existing TestBoost functions via bridge ---
+        from testboost_lite.lib.session_tracker import (
+            get_project_analysis_path,
+            write_project_analysis,
+        )
         from testboost_lite.lib.testboost_bridge import (
             analyze_project_context,
+            build_class_index,
             classify_file,
             detect_test_conventions,
+            extract_test_examples,
             find_source_files,
             find_test_for_source,
         )
@@ -197,21 +203,67 @@ async def _cmd_analyze_async(args: argparse.Namespace) -> int:
         content += f"- **Test command**: `{maven_config['test_cmd']}`\n"
         for note in maven_config["notes"]:
             content += f"- {note}\n"
-        content += "\n> **Customize**: edit `maven_compile_cmd` / `maven_test_cmd` in the JSON block below "
-        content += "(e.g. add `-P corp` for profiles, `-Dskip.integration=true` for properties).\n\n"
+        content += "\n> **Customize**: edit `maven_compile_cmd` / `maven_test_cmd` in the session "
+        content += "`analysis.md` JSON block (e.g. add `-P corp` for profiles, "
+        content += "`-Dskip.integration=true` for properties).\n\n"
 
-        logger.info(f"Analysis complete: {len(source_files)} source files, {src_struct.get('class_count', 0)} classes")
+        # --- Build class index (project-level, persisted across sessions) ---
+        logger.info(f"Building class index for {len(source_files)} source files...")
+        class_index = build_class_index(project_path, source_files)
+        logger.info(f"Class index built: {len(class_index)} classes analyzed")
 
-        # Write the step file
+        # Class index summary table
+        content += "## Class Index\n\n"
+        content += "| Class | Package | Category | Extends | Has Test |\n"
+        content += "|-------|---------|----------|---------|----------|\n"
+        tested_classes = {Path(fd["path"]).stem for fd in file_details if fd["has_test"]}
+        for cls_name, entry in sorted(class_index.items()):
+            pkg = entry.get("package", "")
+            cat = entry.get("category", "")
+            ext = entry.get("extends") or "-"
+            has_test_cls = "Yes" if cls_name in tested_classes else "No"
+            content += f"| `{cls_name}` | `{pkg}` | {cat} | {ext} | {has_test_cls} |\n"
+        content += "\n"
+
+        # --- Extract test examples (for LLM style reference) ---
+        test_examples = extract_test_examples(project_path, max_examples=3, max_lines=150)
+        if test_examples:
+            content += "## Test Pattern Examples\n\n"
+            for i, ex in enumerate(test_examples, 1):
+                content += f"### Example {i}: `{ex['path']}`\n\n"
+                content += f"```java\n{ex['content']}\n```\n\n"
+
+        logger.info(f"Analysis complete: {len(source_files)} source files, {len(class_index)} classes indexed, {len(test_examples)} test examples")
+
+        # --- Write project-level analysis.md (.testboost/analysis.md) ---
+        project_analysis_data = {
+            "project_context": result,
+            "conventions": conventions,
+            "source_files": source_files,
+            "source_file_details": file_details,
+            "maven_compile_cmd": maven_config["compile_cmd"],
+            "maven_test_cmd": maven_config["test_cmd"],
+            "class_index": class_index,
+            "test_examples": test_examples,
+        }
+        project_analysis_path = write_project_analysis(project_path, content, project_analysis_data)
+        logger.info(f"Project-level analysis written to: {project_analysis_path}")
+
+        # --- Write session-level analysis.md (lightweight reference) ---
+        session_content = (
+            "# Session Analysis\n\n"
+            f"This session uses the project-level analysis at "
+            f"`{get_project_analysis_path(project_path)}`.\n\n"
+            "## Maven Command Overrides\n\n"
+            "> Edit `maven_compile_cmd` / `maven_test_cmd` in the JSON block below\n"
+            "> to add profiles (`-P`) or properties (`-D`) for this session only.\n\n"
+        )
         update_step_file(
-            session["session_dir"], "analysis", STATUS_COMPLETED, content,
+            session["session_dir"], "analysis", STATUS_COMPLETED, session_content,
             data={
-                "project_context": result,
-                "conventions": conventions,
-                "source_files": source_files,
-                "source_file_details": file_details,
                 "maven_compile_cmd": maven_config["compile_cmd"],
                 "maven_test_cmd": maven_config["test_cmd"],
+                "project_analysis_path": str(project_analysis_path),
             },
         )
 
@@ -267,11 +319,17 @@ async def _cmd_gaps_async(args: argparse.Namespace) -> int:
     logger.info("Identifying test coverage gaps...")
 
     try:
-        # Read analysis data
-        analysis_content = analysis_file.read_text(encoding="utf-8")
+        # Read source_files: project-level analysis first, session fallback for backward compat
+        from testboost_lite.lib.session_tracker import read_project_analysis_data
+        source_files = None
+        project_data = read_project_analysis_data(project_path)
+        if project_data:
+            source_files = project_data.get("source_files")
 
-        # Extract source files from the JSON block in analysis.md
-        source_files = _extract_json_field(analysis_content, "source_files")
+        if not source_files:
+            analysis_content = analysis_file.read_text(encoding="utf-8")
+            source_files = _extract_json_field(analysis_content, "source_files")
+
         if not source_files:
             logger.error("No source files found in analysis. Re-run analyze.")
             return 1
@@ -395,14 +453,36 @@ async def _cmd_generate_async(args: argparse.Namespace) -> int:
             )
             return 0
 
-        # Extract conventions and Maven config from the analysis step
-        analysis_file = Path(session_dir) / "analysis.md"
+        # Load analysis data: project-level for class_index/test_examples/conventions,
+        # session-level for maven command overrides (allows per-session customization).
+        from testboost_lite.lib.session_tracker import read_project_analysis_data
+        class_index = None
+        test_examples = None
         conventions = None
         maven_compile_cmd = None
+
+        project_data = read_project_analysis_data(project_path)
+        if project_data:
+            class_index = project_data.get("class_index")
+            test_examples = project_data.get("test_examples")
+            conventions = project_data.get("conventions")
+            maven_compile_cmd = project_data.get("maven_compile_cmd")
+        else:
+            logger.warn(
+                "No project-level class index found. Re-run `analyze` to build it "
+                "for improved generation quality. Falling back to lazy dependency loading."
+            )
+
+        # Session analysis overrides (maven commands edited by user take priority)
+        analysis_file = Path(session_dir) / "analysis.md"
         if analysis_file.exists():
             analysis_content = analysis_file.read_text(encoding="utf-8")
-            conventions = _extract_json_field(analysis_content, "conventions")
-            maven_compile_cmd = _extract_json_field(analysis_content, "maven_compile_cmd")
+            session_conventions = _extract_json_field(analysis_content, "conventions")
+            session_compile_cmd = _extract_json_field(analysis_content, "maven_compile_cmd")
+            if session_conventions:
+                conventions = session_conventions
+            if session_compile_cmd:
+                maven_compile_cmd = session_compile_cmd
 
         # Apply file filter if specified
         target_files = gaps
@@ -439,6 +519,8 @@ async def _cmd_generate_async(args: argparse.Namespace) -> int:
                     project_path=project_path,
                     source_file=source_file,
                     conventions=conventions,
+                    class_index=class_index,
+                    test_examples=test_examples,
                 )
                 result = json.loads(result_json)
                 if result.get("success") and result.get("test_code") and "@Test" in result.get("test_code", ""):

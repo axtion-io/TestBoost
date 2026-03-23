@@ -143,7 +143,7 @@ def _add_metrics_callback(provider: str, model: str, kwargs: dict[str, Any]) -> 
     """Create metrics callback and add to callbacks list."""
     callbacks = kwargs.pop("callbacks", [])
     callbacks.append(LLMMetricsCallback(provider=provider, model=model))
-    return callbacks
+    return callbacks  # type: ignore[no-any-return]
 
 
 def _create_anthropic_llm(
@@ -228,7 +228,7 @@ def _create_openai_llm(
     if base_url:
         llm_kwargs["base_url"] = base_url
 
-    return ChatOpenAI(**llm_kwargs, **kwargs)  # type: ignore[call-arg]
+    return ChatOpenAI(**llm_kwargs, **kwargs)
 
 
 __all__ = [

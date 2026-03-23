@@ -13,6 +13,7 @@ eggs/
 lib/
 !src/lib/
 !testboost_lite/lib/
+!tests/unit/src/lib/
 lib64/
 parts/
 sdist/

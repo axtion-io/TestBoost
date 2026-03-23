@@ -78,8 +78,8 @@ class Settings(BaseSettings):
         description="LLM request timeout in seconds",
     )
     startup_timeout: int = Field(
-        default=5,
-        description="Startup check timeout in seconds",
+        default=15,
+        description="Startup check timeout in seconds (Gemini requires min 10s)",
     )
 
     # Retry settings

@@ -502,7 +502,10 @@ async def _cmd_generate_async(args: argparse.Namespace) -> int:
         # --- Reuse existing TestBoost test generation via bridge ---
         # Verify LLM connectivity before generating tests
         from src.lib.startup_checks import check_llm_connection
-        from testboost_lite.lib.testboost_bridge import generate_adaptive_tests
+        from testboost_lite.lib.testboost_bridge import (
+            analyze_edge_cases,
+            generate_adaptive_tests,
+        )
         try:
             await check_llm_connection()
         except Exception as e:
@@ -515,12 +518,38 @@ async def _cmd_generate_async(args: argparse.Namespace) -> int:
         for source_file in target_files:
             logger.info(f"Generating tests for: {source_file}")
             try:
+                # --- Edge case analysis (enriches test generation) ---
+                edge_cases: list[dict] = []
+                try:
+                    source_path = Path(source_file)
+                    if not source_path.exists():
+                        source_path = Path(project_path) / source_file
+                    if source_path.exists():
+                        source_code = source_path.read_text(encoding="utf-8", errors="replace")
+                        class_name = source_path.stem
+                        # Determine class type from class_index or heuristic
+                        class_type = "service"
+                        if class_index and class_name in class_index:
+                            class_type = class_index[class_name].get("category", "service").lower()
+                        elif "controller" in source_file.lower():
+                            class_type = "controller"
+                        elif "repository" in source_file.lower():
+                            class_type = "repository"
+                        elif "model" in source_file.lower() or "entity" in source_file.lower():
+                            class_type = "model"
+                        edge_cases = await analyze_edge_cases(source_code, class_name, class_type)
+                        if edge_cases:
+                            logger.info(f"Edge case analysis: {len(edge_cases)} scenarios for {class_name}")
+                except Exception as ec_err:
+                    logger.warn(f"Edge case analysis skipped for {source_file}: {ec_err}")
+
                 result_json = await generate_adaptive_tests(
                     project_path=project_path,
                     source_file=source_file,
                     conventions=conventions,
                     class_index=class_index,
                     test_examples=test_examples,
+                    test_requirements=edge_cases if edge_cases else None,
                 )
                 result = json.loads(result_json)
                 if result.get("success") and result.get("test_code") and "@Test" in result.get("test_code", ""):
@@ -852,6 +881,325 @@ async def _cmd_validate_async(args: argparse.Namespace) -> int:
         return 1
 
 
+def cmd_mutate(args: argparse.Namespace) -> int:
+    """Run mutation testing and analyze results."""
+    return asyncio.run(_cmd_mutate_async(args))
+
+
+async def _cmd_mutate_async(args: argparse.Namespace) -> int:
+    from testboost_lite.lib.md_logger import MdLogger
+    from testboost_lite.lib.session_tracker import (
+        STATUS_COMPLETED,
+        STATUS_FAILED,
+        STATUS_IN_PROGRESS,
+        get_current_session,
+        update_step_file,
+    )
+
+    project_path = args.project_path
+    session = get_current_session(project_path)
+
+    if not session:
+        print("Error: No active session. Run `init` first.", file=sys.stderr)
+        return 1
+
+    session_dir = session["session_dir"]
+    logger = MdLogger(session_dir, "mutation", verbose=getattr(args, "verbose", False))
+
+    # Check prerequisites: validation must have run
+    val_file = Path(session_dir) / "validation.md"
+    if not val_file.exists():
+        logger.error("Validation step not completed. Run `validate` first.")
+        return 1
+
+    update_step_file(session_dir, "mutation", STATUS_IN_PROGRESS, "# Mutation Testing\n\nRunning PIT...")
+
+    try:
+        from testboost_lite.lib.testboost_bridge import analyze_mutants, run_mutation_testing
+
+        # Build PIT arguments
+        pit_kwargs: dict[str, Any] = {}
+        if hasattr(args, "target_classes") and args.target_classes:
+            pit_kwargs["target_classes"] = args.target_classes
+        if hasattr(args, "target_tests") and args.target_tests:
+            pit_kwargs["target_tests"] = args.target_tests
+        min_score = getattr(args, "min_score", 80)
+
+        # Step 1: Run mutation testing
+        logger.info("Running PIT mutation testing...")
+        pit_result_json = await run_mutation_testing(project_path, **pit_kwargs)
+        pit_result = json.loads(pit_result_json)
+
+        if not pit_result.get("success"):
+            error_msg = pit_result.get("error", "PIT execution failed")
+            logger.error(f"Mutation testing failed: {error_msg}")
+            content = f"# Mutation Testing - FAILED\n\n**Error**: {error_msg}\n"
+            if pit_result.get("output"):
+                content += f"\n### PIT Output\n\n```\n{pit_result['output'][-3000:]}\n```\n"
+            update_step_file(session_dir, "mutation", STATUS_FAILED, content)
+            logger.result("Mutation Testing Failed", content)
+            return 1
+
+        mutation_score = pit_result.get("mutation_score", 0)
+        mutations = pit_result.get("mutations", {})
+        surviving = pit_result.get("surviving_mutants", [])
+
+        logger.info(
+            f"PIT complete: score={mutation_score}%, "
+            f"killed={mutations.get('killed', 0)}, "
+            f"survived={mutations.get('survived', 0)}, "
+            f"total={mutations.get('total', 0)}"
+        )
+
+        # Step 2: Analyze mutants
+        logger.info("Analyzing mutation results...")
+        report_path = pit_result.get("report_path")
+        analysis_json = await analyze_mutants(
+            project_path, report_path=report_path, min_score=min_score,
+        )
+        analysis = json.loads(analysis_json)
+
+        # Build report
+        content = "# Mutation Testing Results\n\n"
+        content += f"**Mutation score**: {mutation_score}%\n"
+        content += f"**Threshold**: {min_score}%\n"
+        content += f"**Meets threshold**: {'Yes' if analysis.get('meets_threshold') else 'No'}\n\n"
+
+        content += "## Summary\n\n"
+        content += "| Metric | Count |\n"
+        content += "|--------|-------|\n"
+        content += f"| Total mutants | {mutations.get('total', 0)} |\n"
+        content += f"| Killed | {mutations.get('killed', 0)} |\n"
+        content += f"| Survived | {mutations.get('survived', 0)} |\n"
+        content += f"| No coverage | {mutations.get('no_coverage', 0)} |\n"
+        content += f"| Timed out | {mutations.get('timed_out', 0)} |\n\n"
+
+        # By-class breakdown
+        by_class = pit_result.get("by_class", [])
+        if by_class:
+            content += "## Mutation Score by Class\n\n"
+            content += "| Class | Killed | Total | Score |\n"
+            content += "|-------|--------|-------|-------|\n"
+            for cls in by_class:
+                cls_name = cls["class"].split(".")[-1]
+                content += f"| `{cls_name}` | {cls['killed']} | {cls['total']} | {cls['score']}% |\n"
+            content += "\n"
+
+        # Hard-to-kill patterns
+        hard_to_kill = analysis.get("hard_to_kill", [])
+        if hard_to_kill:
+            content += "## Hard-to-Kill Mutant Patterns\n\n"
+            for pattern in hard_to_kill:
+                content += f"### {pattern['mutator']} ({pattern['count']} surviving)\n\n"
+                for ex in pattern.get("examples", []):
+                    content += f"- `{ex['class']}.{ex['method']}` line {ex['line']}: {ex['description']}\n"
+                content += "\n"
+
+        # Recommendations
+        recommendations = analysis.get("recommendations", [])
+        if recommendations:
+            content += "## Recommendations\n\n"
+            for rec in recommendations:
+                content += f"- {rec}\n"
+            content += "\n"
+
+        # Priority improvements
+        priorities = analysis.get("priority_improvements", [])
+        if priorities:
+            content += "## Priority Improvements\n\n"
+            content += "| Class | Method | Type | Count | Action |\n"
+            content += "|-------|--------|------|-------|--------|\n"
+            for p in priorities:
+                content += f"| `{p['class']}` | `{p['method']}` | {p['type']} | {p['count']} | {p['action']} |\n"
+            content += "\n"
+
+        if surviving:
+            content += f"\n**{len(surviving)} surviving mutants** can be targeted with `/testboost.killer`.\n"
+
+        update_step_file(
+            session_dir, "mutation", STATUS_COMPLETED, content,
+            data={
+                "mutation_score": mutation_score,
+                "meets_threshold": analysis.get("meets_threshold", False),
+                "mutations": mutations,
+                "surviving_mutants": surviving,
+                "report_path": report_path,
+                "recommendations": recommendations,
+            },
+        )
+
+        logger.result("Mutation Testing Complete", content)
+
+        from testboost_lite.lib.integrity import emit_token
+        emit_token(project_path, "mutation", session["session_id"])
+        return 0
+
+    except Exception as e:
+        logger.error(f"Mutation testing failed: {e}")
+        update_step_file(
+            session_dir, "mutation", STATUS_FAILED,
+            f"# Mutation Testing - FAILED\n\n**Error**: {e}\n",
+        )
+        return 1
+
+
+def cmd_killer(args: argparse.Namespace) -> int:
+    """Generate killer tests for surviving mutants."""
+    return asyncio.run(_cmd_killer_async(args))
+
+
+async def _cmd_killer_async(args: argparse.Namespace) -> int:
+    from testboost_lite.lib.md_logger import MdLogger
+    from testboost_lite.lib.session_tracker import (
+        STATUS_COMPLETED,
+        STATUS_FAILED,
+        STATUS_IN_PROGRESS,
+        get_current_session,
+        update_step_file,
+    )
+
+    project_path = args.project_path
+    session = get_current_session(project_path)
+
+    if not session:
+        print("Error: No active session. Run `init` first.", file=sys.stderr)
+        return 1
+
+    session_dir = session["session_dir"]
+    logger = MdLogger(session_dir, "killer-tests", verbose=getattr(args, "verbose", False))
+
+    # Check prerequisites: mutation step must have run
+    mutation_file = Path(session_dir) / "mutation.md"
+    if not mutation_file.exists():
+        logger.error("Mutation testing step not completed. Run `mutate` first.")
+        return 1
+
+    update_step_file(
+        session_dir, "killer-tests", STATUS_IN_PROGRESS,
+        "# Killer Tests\n\nGenerating tests to kill surviving mutants...",
+    )
+
+    try:
+        # Read surviving mutants from mutation step
+        mutation_content = mutation_file.read_text(encoding="utf-8")
+        surviving_mutants = _extract_json_field(mutation_content, "surviving_mutants")
+
+        if not surviving_mutants:
+            logger.info("No surviving mutants found. All mutants already killed!")
+            update_step_file(
+                session_dir, "killer-tests", STATUS_COMPLETED,
+                "# Killer Tests\n\nNo surviving mutants — mutation score is already perfect.\n",
+            )
+            from testboost_lite.lib.integrity import emit_token
+            emit_token(project_path, "killer-tests", session["session_id"])
+            return 0
+
+        max_tests = getattr(args, "max_tests", 10)
+        logger.info(f"Generating killer tests for {len(surviving_mutants)} surviving mutants (max {max_tests})...")
+
+        # Verify LLM connectivity
+        from src.lib.startup_checks import check_llm_connection
+        from testboost_lite.lib.testboost_bridge import generate_killer_tests
+        try:
+            await check_llm_connection()
+        except Exception as e:
+            logger.error(f"LLM connection failed: {e}")
+            print(f"\nERROR: Cannot connect to LLM provider. {e}")
+            return 1
+
+        result_json = await generate_killer_tests(
+            project_path, surviving_mutants, max_tests=max_tests,
+        )
+        result = json.loads(result_json)
+
+        if not result.get("success"):
+            error_msg = result.get("error", "Killer test generation failed")
+            logger.error(f"Generation failed: {error_msg}")
+            update_step_file(
+                session_dir, "killer-tests", STATUS_FAILED,
+                f"# Killer Tests - FAILED\n\n**Error**: {error_msg}\n",
+            )
+            return 1
+
+        generated_tests = result.get("generated_tests", [])
+
+        # Write killer test files
+        content = "# Killer Test Generation Results\n\n"
+        content += f"**Surviving mutants targeted**: {result.get('total_mutants_targeted', 0)}\n"
+        content += f"**Test classes generated**: {len(generated_tests)}\n"
+        content += f"**Total test methods**: {result.get('total_tests', 0)}\n\n"
+
+        if generated_tests:
+            content += "## Generated Killer Tests\n\n"
+            content += "| # | Class | Test File | Mutants Targeted |\n"
+            content += "|---|-------|-----------|------------------|\n"
+
+            written_files = []
+            for i, test in enumerate(generated_tests, 1):
+                class_name = test.get("class", "").split(".")[-1]
+                test_path = test.get("test_file", "")
+                test_code = test.get("test_code", "")
+                mutants_targeted = test.get("mutants_targeted", 0)
+
+                content += f"| {i} | `{class_name}` | `{test_path}` | {mutants_targeted} |\n"
+
+                # Write test file to disk
+                if test_path and test_code:
+                    full_path = Path(project_path) / test_path
+                    full_path.parent.mkdir(parents=True, exist_ok=True)
+                    full_path.write_text(test_code, encoding="utf-8")
+                    logger.info(f"Wrote killer test: {test_path}")
+                    written_files.append((full_path, test))
+
+            content += "\n"
+
+            # Compile-and-fix loop for killer tests
+            maven_compile_cmd = None
+            from testboost_lite.lib.session_tracker import read_project_analysis_data
+            project_data = read_project_analysis_data(project_path)
+            if project_data:
+                maven_compile_cmd = project_data.get("maven_compile_cmd")
+
+            for full_path, test in written_files:
+                class_name = test.get("class", "").split(".")[-1]
+                fixed = await _attempt_compile_fix(
+                    project_path, full_path, test.get("test_code", ""),
+                    class_name, logger, session_dir, maven_compile_cmd,
+                )
+                if fixed != test.get("test_code", ""):
+                    test["test_code"] = fixed
+
+            content += "## Next Steps\n\n"
+            content += "1. Run `/testboost.validate` to compile and execute the killer tests\n"
+            content += "2. Run `/testboost.mutate` again to verify the mutation score improved\n"
+
+        update_step_file(
+            session_dir, "killer-tests", STATUS_COMPLETED, content,
+            data={
+                "generated_tests": [
+                    {k: v for k, v in t.items() if k != "test_code"}
+                    for t in generated_tests
+                ],
+                "total_mutants_targeted": result.get("total_mutants_targeted", 0),
+                "total_tests": result.get("total_tests", 0),
+            },
+        )
+
+        logger.result("Killer Test Generation Complete", content)
+
+        from testboost_lite.lib.integrity import emit_token
+        emit_token(project_path, "killer-tests", session["session_id"])
+        return 0
+
+    except Exception as e:
+        logger.error(f"Killer test generation failed: {e}")
+        update_step_file(
+            session_dir, "killer-tests", STATUS_FAILED,
+            f"# Killer Tests - FAILED\n\n**Error**: {e}\n",
+        )
+        return 1
+
+
 def cmd_install(args: argparse.Namespace) -> int:
     """Install TestBoost commands into a target project.
 
@@ -1108,6 +1456,20 @@ def main() -> int:
     p_val.add_argument("project_path", help="Path to the Java project")
     p_val.add_argument("--verbose", "-v", action="store_true")
 
+    # mutate
+    p_mutate = subparsers.add_parser("mutate", help="Run mutation testing with PIT")
+    p_mutate.add_argument("project_path", help="Path to the Java project")
+    p_mutate.add_argument("--target-classes", nargs="*", help="Class patterns to mutate")
+    p_mutate.add_argument("--target-tests", nargs="*", help="Test patterns to run")
+    p_mutate.add_argument("--min-score", type=float, default=80, help="Minimum mutation score threshold")
+    p_mutate.add_argument("--verbose", "-v", action="store_true")
+
+    # killer
+    p_killer = subparsers.add_parser("killer", help="Generate killer tests for surviving mutants")
+    p_killer.add_argument("project_path", help="Path to the Java project")
+    p_killer.add_argument("--max-tests", type=int, default=10, help="Maximum killer tests to generate")
+    p_killer.add_argument("--verbose", "-v", action="store_true")
+
     # verify
     p_verify = subparsers.add_parser("verify", help="Verify an integrity token")
     p_verify.add_argument("project_path", help="Path to the Java project")
@@ -1129,6 +1491,8 @@ def main() -> int:
         "gaps": cmd_gaps,
         "generate": cmd_generate,
         "validate": cmd_validate,
+        "mutate": cmd_mutate,
+        "killer": cmd_killer,
         "verify": cmd_verify,
         "install": cmd_install,
         "status": cmd_status,

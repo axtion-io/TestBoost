@@ -24,7 +24,7 @@ TESTBOOST_DIR = ".testboost"
 SESSIONS_DIR = "sessions"
 
 # Step names in order
-STEPS = ["analysis", "coverage-gaps", "generation", "validation"]
+STEPS = ["analysis", "coverage-gaps", "generation", "validation", "mutation", "killer-tests"]
 
 # Frontmatter status values
 STATUS_PENDING = "pending"

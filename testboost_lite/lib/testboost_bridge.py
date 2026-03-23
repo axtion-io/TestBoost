@@ -103,6 +103,50 @@ def extract_test_examples(
     return _extract(project_path, max_examples=max_examples, max_lines=max_lines)
 
 
+async def analyze_edge_cases(source_code: str, class_name: str, class_type: str) -> list[dict]:
+    """Analyze a Java class for edge case test scenarios using LLM.
+
+    Wraps src.mcp_servers.test_generator.tools.generate_unit.analyze_edge_cases
+    """
+    from src.mcp_servers.test_generator.tools.generate_unit import (
+        analyze_edge_cases as _analyze,
+    )
+    return await _analyze(source_code, class_name, class_type)
+
+
+async def run_mutation_testing(project_path: str, **kwargs) -> str:
+    """Run PIT mutation testing on a Java project.
+
+    Wraps src.mcp_servers.test_generator.tools.mutation.run_mutation_testing
+    """
+    from src.mcp_servers.test_generator.tools.mutation import (
+        run_mutation_testing as _run,
+    )
+    return await _run(project_path, **kwargs)
+
+
+async def analyze_mutants(project_path: str, **kwargs) -> str:
+    """Analyze mutation testing results for insights and recommendations.
+
+    Wraps src.mcp_servers.test_generator.tools.analyze_mutants.analyze_mutants
+    """
+    from src.mcp_servers.test_generator.tools.analyze_mutants import (
+        analyze_mutants as _analyze,
+    )
+    return await _analyze(project_path, **kwargs)
+
+
+async def generate_killer_tests(project_path: str, surviving_mutants: list[dict], **kwargs) -> str:
+    """Generate tests to kill surviving mutants.
+
+    Wraps src.mcp_servers.test_generator.tools.killer_tests.generate_killer_tests
+    """
+    from src.mcp_servers.test_generator.tools.killer_tests import (
+        generate_killer_tests as _generate,
+    )
+    return await _generate(project_path, surviving_mutants, **kwargs)
+
+
 def parse_maven_errors(maven_output: str):
     """Parse Maven compilation errors into structured format.
 

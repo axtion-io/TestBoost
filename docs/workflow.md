@@ -95,7 +95,6 @@ Generates unit tests for files identified as lacking coverage.
 
 **Options:**
 - `--files ServiceA.java ServiceB.java` -- Generate tests only for specific files
-- `--no-llm` -- Use template-based generation (faster, lower quality)
 - `--verbose` / `-v` -- Show detailed output
 
 **Output:** `.testboost/sessions/<id>/generation.md` + test files on disk
@@ -152,6 +151,20 @@ Displays the current session progress. Shows which steps are completed, in progr
 **Command:** `python -m testboost_lite install <project_path>`
 
 Installs TestBoost slash commands and wrapper scripts into a target Java project so that you can run TestBoost from your Java project directory. See [Getting Started](./getting-started.md#installing-testboost-in-your-java-project) for details.
+
+## Verify (Auxiliary)
+
+**Command:** `python -m testboost_lite verify <project_path> <token>`
+
+Verifies an HMAC integrity token emitted at the end of a CLI step.
+
+**Usage:** Each successful CLI step prints a line like:
+```
+[TESTBOOST_INTEGRITY:sha256=<hex>:<step>:<session_id>:<timestamp>]
+```
+Pass this entire line as the `<token>` argument. The command exits 0 and prints `[TESTBOOST_VERIFY:OK]` if the token is authentic, or exits 1 with `[TESTBOOST_VERIFY:FAILED]` if it is invalid or forged.
+
+This command is primarily used by slash commands to confirm that CLI output is genuine before proceeding to the next step. See [Architecture](./architecture.md) for details on the integrity token system.
 
 ## Interactive Workflow with LLM CLI
 

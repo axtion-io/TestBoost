@@ -29,12 +29,14 @@ by slash commands from LLM CLIs (Claude Code, OpenCode, etc.).
 | `/testboost.generate <path>` | Generate tests using LLM |
 | `/testboost.validate <path>` | Compile and run generated tests |
 | `/testboost.status <path>` | Show session progress and recent logs |
+| `/testboost.verify <path> <token>` | Verify an integrity token from CLI output |
 
-### CLI-Only Command
+### CLI-Only Commands
 
 | Command | Purpose |
 |---------|---------|
 | `python -m testboost_lite install <path>` | Install slash commands and wrapper scripts into the Java project |
+| `python -m testboost_lite verify <path> <token>` | Verify an HMAC integrity token |
 
 ## Workflow
 

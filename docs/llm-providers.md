@@ -20,10 +20,10 @@ export GOOGLE_API_KEY="AIza..."       # Google Gemini
 export ANTHROPIC_API_KEY="sk-ant-..." # Anthropic Claude
 export OPENAI_API_KEY="sk-..."        # OpenAI
 
-# Choose the model (optional -- defaults to gemini-2.0-flash)
-export MODEL="gemini-2.0-flash"
-export MODEL="anthropic/claude-sonnet-4-20250514"
-export MODEL="openai/gpt-4o"
+# Choose the provider and model (default: anthropic + claude-sonnet-4-6)
+export LLM_PROVIDER="google-genai" && export MODEL="gemini-2.0-flash"
+export LLM_PROVIDER="anthropic"    && export MODEL="claude-sonnet-4-6"
+export LLM_PROVIDER="openai"       && export MODEL="gpt-4o"
 ```
 
 You can also set these in a `.env` file at the TestBoost root.

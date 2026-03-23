@@ -162,40 +162,6 @@ diff --git a/src/main/java/com/example/repository/UserRepository.java b/src/main
 
 
 @pytest.fixture
-def sample_impact():
-    """Pre-generated Impact object for testing."""
-    from src.models.impact import ChangeCategory, Impact, PyramidLevel, RiskLevel
-
-    return Impact(
-        id="IMP-001",
-        file_path="src/main/java/com/example/service/PaymentService.java",
-        category=ChangeCategory.BUSINESS_RULE,
-        risk_level=RiskLevel.BUSINESS_CRITICAL,
-        affected_components=["PaymentService", "processPayment"],
-        required_test_type=PyramidLevel.UNIT,
-        change_summary="Added payment processing method with validation",
-        is_bug_fix=False,
-    )
-
-
-@pytest.fixture
-def sample_bugfix_impact():
-    """Impact object representing a bug fix."""
-    from src.models.impact import ChangeCategory, Impact, PyramidLevel, RiskLevel
-
-    return Impact(
-        id="IMP-002",
-        file_path="src/main/java/com/example/service/OrderService.java",
-        category=ChangeCategory.BUSINESS_RULE,
-        risk_level=RiskLevel.BUSINESS_CRITICAL,
-        affected_components=["OrderService", "calculateTotal"],
-        required_test_type=PyramidLevel.UNIT,
-        change_summary="Fixed calculation error in order total",
-        is_bug_fix=True,
-    )
-
-
-@pytest.fixture
 def mock_subprocess_success():
     """Mock for successful subprocess execution."""
 

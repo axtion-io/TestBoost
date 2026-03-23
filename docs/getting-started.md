@@ -33,12 +33,15 @@ export ANTHROPIC_API_KEY="sk-ant-..."
 export OPENAI_API_KEY="sk-..."
 ```
 
-Optionally set `MODEL` to choose a specific model:
+Set `LLM_PROVIDER` and `MODEL` for your provider (default: `anthropic` / `claude-sonnet-4-6`):
 
 ```bash
-export MODEL="gemini-2.0-flash"              # default
-export MODEL="anthropic/claude-sonnet-4-20250514"   # for Claude
-export MODEL="openai/gpt-4o"                 # for OpenAI
+# Google Gemini
+export LLM_PROVIDER="google-genai" && export MODEL="gemini-2.0-flash"
+# Anthropic Claude (default)
+export LLM_PROVIDER="anthropic"    && export MODEL="claude-sonnet-4-6"
+# OpenAI
+export LLM_PROVIDER="openai"       && export MODEL="gpt-4o"
 ```
 
 See [LLM Providers](./llm-providers.md) for a full comparison.

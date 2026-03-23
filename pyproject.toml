@@ -92,6 +92,7 @@ addopts = "-v --durations=50 --durations-min=0.01"
 markers = [
     "unit: mark test as unit test",
     "integration: mark test as integration test",
+    "e2e: mark test as end-to-end test",
     "slow: mark test as slow-running",
 ]
 filterwarnings = [
@@ -103,8 +104,8 @@ filterwarnings = [
 branch = true
 source = ["src", "testboost_lite"]
 omit = ["*/tests/*", "*/__pycache__/*"]
-
 [tool.coverage.report]
+show_missing = true
 exclude_lines = [
     "pragma: no cover",
     "def __repr__",

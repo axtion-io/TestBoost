@@ -67,7 +67,7 @@ These ensure the correct working directory and Python module path.
 
 ### 3. Python CLI
 
-The main entry point: `testboost_lite/lib/cli.py`. Uses `argparse` to dispatch to six commands: `init`, `analyze`, `gaps`, `generate`, `validate`, `status`.
+The main entry point: `testboost_lite/lib/cli.py`. Uses `argparse` to dispatch to eight commands: `init`, `analyze`, `gaps`, `generate`, `validate`, `status`, `install`, `verify`.
 
 Each command:
 1. Reads the current session state from `.testboost/`
@@ -105,7 +105,7 @@ See [Session Format](./session-format.md) for details.
 
 **Verification:** `verify_token()` re-computes the HMAC from the payload and compares it to the claimed digest using `hmac.compare_digest` (constant-time comparison).
 
-### 7. Installer
+### 7. Installer and Verify
 
 `testboost_lite/lib/installer.py` provides the `install` command that deploys TestBoost slash commands and wrapper scripts into a target Java project. This allows users to run TestBoost from their Java project directory rather than from the TestBoost repo root.
 
@@ -130,6 +130,8 @@ See [Session Format](./session-format.md) for details.
 
 **Usage:** `python -m testboost_lite install /path/to/java/project`
 
+The `verify` command (`testboost_lite/lib/integrity.py`) re-computes the HMAC of a token printed to stdout and exits 0 if authentic. See the Integrity Token section above for details.
+
 ### 8. TestBoost Bridge
 
 `testboost_lite/lib/testboost_bridge.py` is the boundary between the CLI layer and the core functions. It re-exports functions from `src/` so they can be easily mocked in tests.
@@ -147,7 +149,7 @@ See [Session Format](./session-format.md) for details.
 | `fix_compilation_errors()` | `src/mcp_servers/test_generator/tools/generate_unit.py` |
 | `parse_maven_errors()` | `src/lib/maven_error_parser.py` |
 
-### 7. Core Functions (MCP Servers)
+### 9. Core Functions (MCP Servers)
 
 The actual analysis and generation logic lives in `src/mcp_servers/test_generator/`:
 
@@ -157,7 +159,7 @@ The actual analysis and generation logic lives in `src/mcp_servers/test_generato
 
 These modules use the LLM abstraction in `src/lib/llm.py` which supports Google Gemini, Anthropic Claude, and OpenAI through LangChain.
 
-### 8. Shared Library (`src/lib/`)
+### 10. Shared Library (`src/lib/`)
 
 Supporting modules used across the core:
 

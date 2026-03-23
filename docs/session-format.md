@@ -18,6 +18,7 @@ your-java-project/
 |   |   +-- tb-generate.sh
 |   |   +-- tb-validate.sh
 |   |   +-- tb-status.sh
+|   |   +-- tb-verify.sh
 |   +-- sessions/
 |       +-- 001-test-generation/          # First session
 |       |   +-- spec.md                   # Session intent and progress

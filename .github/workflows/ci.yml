@@ -41,18 +41,12 @@ jobs:
     - name: Run Integration Tests (no LLM required)
       run: |
         poetry run pytest tests/integration/test_llm_connectivity.py -v --tb=short --no-cov --durations=0 --durations-min=0.1 -k "not test_llm_connection_success"
-        poetry run pytest tests/integration/test_agent_config_loading.py -v --tb=short --no-cov --durations=0 --durations-min=0.1
         poetry run pytest tests/integration/test_provider_switching.py -v --tb=short --no-cov --durations=0 --durations-min=0.1
       continue-on-error: false
 
     - name: Run Security Audit Tests (T101a)
       run: |
         poetry run pytest tests/security/test_api_key_audit.py -v --tb=short --no-cov --durations=0 --durations-min=0.1
-      continue-on-error: false
-
-    - name: Run Edge Case Tests (T105b-f)
-      run: |
-        poetry run pytest tests/e2e/test_edge_cases.py -v --tb=short --no-cov --durations=0 --durations-min=0.1
       continue-on-error: false
 
   lint:

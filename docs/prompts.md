@@ -11,10 +11,15 @@ Prompt files use `{{placeholder}}` syntax. The double braces are intentional —
 ```
 config/prompts/
 +-- testing/
-|   +-- unit_test_generation.md    # Main test generation prompt
-|   +-- compilation_fix.md         # Fix compilation errors in generated tests
+|   +-- unit_test_generation.md      # Main test generation prompt
+|   +-- unit_test_strategy.md        # Unit test strategy (agent system prompt)
+|   +-- compilation_fix.md           # Fix compilation errors in generated tests
+|   +-- test_review.md               # Post-generation quality review pass
+|   +-- mutation_killer.md           # LLM-powered killer tests for surviving mutants
+|   +-- edge_case_analysis.md        # Pre-generation edge case scenario analysis
 +-- maven/
-|   +-- compilation_errors_format.md  # Format Maven errors for LLM consumption
+|   +-- compilation_errors_format.md # Format Maven errors for LLM consumption
+|   +-- system_agent.md              # Maven maintenance agent system prompt
 ```
 
 ## Unit Test Generation
@@ -71,6 +76,51 @@ Used by `MavenErrorParser.format_for_llm()` to produce a structured error report
 |-------------|-------------|
 | `{{total_errors}}` | Total number of compilation errors |
 | `{{error_details}}` | Per-file, per-error markdown blocks with type, message, and fix suggestion |
+
+## Test Review (Post-Generation Quality Pass)
+
+**File:** `config/prompts/testing/test_review.md`
+
+Used by `_review_generated_tests()` in `generate_unit.py`. Runs automatically after test generation to fix weak assertions, missing mock verifications, and anti-patterns.
+
+| Placeholder | Description |
+|-------------|-------------|
+| `{{test_code}}` | The generated test class to review |
+| `{{source_code}}` | Source code of the class under test |
+
+### What the prompt fixes
+
+- Weak assertions (`isNotNull` → exact value checks)
+- Missing `verify()` calls for important side-effects
+- `Thread.sleep()` → `Awaitility`
+- `try/catch` swallowing → `assertThatThrownBy()`
+- Missing tests for untested public methods
+- Missing boundary value tests for numeric comparisons
+
+## Mutation Killer (LLM-Powered)
+
+**File:** `config/prompts/testing/mutation_killer.md`
+
+Used by `_generate_killer_tests_llm()` in `killer_tests.py`. Replaces the static template-based killer test generation with LLM-powered tests that use real parameter values computed from the source code.
+
+| Placeholder | Description |
+|-------------|-------------|
+| `{{surviving_mutants}}` | JSON array of surviving mutants from PIT analysis |
+| `{{source_code}}` | Full source code of the class with surviving mutants |
+| `{{class_name}}` | Simple class name |
+| `{{package}}` | Java package |
+
+## Edge Case Analysis (Pre-Generation)
+
+**File:** `config/prompts/testing/edge_case_analysis.md`
+
+Used by `analyze_edge_cases()` in `generate_unit.py`. Returns a JSON array of edge case scenarios (null inputs, boundaries, empty collections, exception paths) that can be fed into `test_requirements` for targeted generation.
+
+| Placeholder | Description |
+|-------------|-------------|
+| `{{source_code}}` | Full source code of the class to analyze |
+| `{{class_name}}` | Simple class name |
+| `{{class_type}}` | controller, service, repository, utility, model |
 
 ## How Conventions Flow into Prompts
 

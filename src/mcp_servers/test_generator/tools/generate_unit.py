@@ -778,6 +778,9 @@ async def _generate_test_code_with_llm(context: dict[str, Any], source_code: str
                 warnings=import_warnings,
             )
 
+        # Quality review pass — let LLM fix weak assertions and missing coverage
+        test_code = await _review_generated_tests(test_code, source_code, class_name)
+
         logger.info(
             "llm_test_generation_success",
             class_name=class_name,
@@ -794,6 +797,79 @@ async def _generate_test_code_with_llm(context: dict[str, Any], source_code: str
         # CRITICAL: Do NOT silently fall back to templates.
         # If the LLM is unreachable, the error must propagate immediately.
         raise
+
+
+async def _review_generated_tests(test_code: str, source_code: str, class_name: str) -> str:
+    """Run a quality review pass on generated tests using the test_review prompt.
+
+    Fixes weak assertions, missing coverage, mock anti-patterns.
+    Falls back to original code if the review produces invalid output.
+    """
+    try:
+        template = load_prompt_template("testing/test_review.md")
+        prompt = render_template(template, test_code=test_code, source_code=source_code)
+
+        llm = get_llm()
+        response = await llm.ainvoke(prompt)
+        raw = response.content if hasattr(response, "content") else str(response)
+        reviewed = str(raw) if not isinstance(raw, str) else raw
+
+        # Clean markdown fences
+        if "```java" in reviewed:
+            reviewed = reviewed.split("```java")[1].split("```")[0].strip()
+        elif "```" in reviewed:
+            reviewed = reviewed.split("```")[1].split("```")[0].strip()
+
+        if "@Test" not in reviewed or "class" not in reviewed:
+            logger.warning("test_review_invalid_output", class_name=class_name)
+            return test_code
+
+        logger.info(
+            "test_review_applied",
+            class_name=class_name,
+            original_tests=test_code.count("@Test"),
+            reviewed_tests=reviewed.count("@Test"),
+        )
+        return reviewed
+    except Exception as e:
+        logger.warning("test_review_skipped", class_name=class_name, error=str(e))
+        return test_code
+
+
+async def analyze_edge_cases(source_code: str, class_name: str, class_type: str) -> list[dict[str, Any]]:
+    """Analyze a Java class for edge case test scenarios using the edge_case_analysis prompt.
+
+    Returns a list of edge case scenarios as dicts with method, scenario, description,
+    input_hint, expected_behavior, and category fields.
+    """
+    template = load_prompt_template("testing/edge_case_analysis.md")
+    prompt = render_template(
+        template,
+        source_code=source_code,
+        class_name=class_name,
+        class_type=class_type,
+    )
+
+    llm = get_llm()
+    response = await llm.ainvoke(prompt)
+    raw = response.content if hasattr(response, "content") else str(response)
+    text = str(raw) if not isinstance(raw, str) else raw
+
+    # Extract JSON from response (may be wrapped in markdown fences)
+    if "```json" in text:
+        text = text.split("```json")[1].split("```")[0].strip()
+    elif "```" in text:
+        text = text.split("```")[1].split("```")[0].strip()
+
+    try:
+        scenarios = json.loads(text)
+        if isinstance(scenarios, list):
+            logger.info("edge_case_analysis_success", class_name=class_name, scenarios=len(scenarios))
+            return scenarios
+    except json.JSONDecodeError:
+        logger.warning("edge_case_analysis_parse_error", class_name=class_name)
+
+    return []
 
 
 def _analyze_class(source_code: str) -> dict[str, Any]:

@@ -248,19 +248,19 @@ class TestPromptTemplateLoading:
     """Test prompt template loading functionality (T082)."""
 
     def test_prompt_template_loads(self):
-        """Test that dependency_update.md prompt loads correctly (T082).
+        """Test that system_agent.md prompt loads correctly (T082).
 
-        Assert dependency_update.md exists and loads,
+        Assert system_agent.md exists and loads,
         assert prompt length > 100 chars,
         assert prompt contains expected keywords (e.g., 'dependency', 'Maven').
         """
         # Check file exists
-        prompt_path = Path("config/prompts/maven/dependency_update.md")
+        prompt_path = Path("config/prompts/maven/system_agent.md")
         assert prompt_path.exists(), f"Prompt template not found: {prompt_path}"
 
         # Load the prompt
         loader = AgentLoader(config_dir="config/agents")
-        prompt_content = loader.load_prompt("dependency_update", category="maven")
+        prompt_content = loader.load_prompt("system_agent", category="maven")
 
         # Assert prompt is non-empty and has substantial content
         assert (
@@ -272,7 +272,7 @@ class TestPromptTemplateLoading:
         assert "dependency" in prompt_lower, "Prompt should contain 'dependency'"
         assert "maven" in prompt_lower, "Prompt should contain 'maven'"
 
-        # Additional keywords that should be present for dependency update prompts
+        # Additional keywords that should be present for Maven agent prompts
         expected_keywords = ["update", "version", "project"]
         for keyword in expected_keywords:
             assert keyword in prompt_lower, f"Prompt should contain '{keyword}'"

@@ -28,7 +28,7 @@ class TestConfigHotReload:
                 "temperature": 0.3,
             },
             "tools": {"mcp_servers": []},
-            "prompts": {"system": "config/prompts/common/java_expert.md"},
+            "prompts": {"system": "config/prompts/testing/unit_test_strategy.md"},
             "workflow": {"graph_name": "test", "node_name": "test"},
             "error_handling": {"max_retries": 3, "timeout_seconds": 120},
         }
@@ -61,7 +61,7 @@ class TestConfigHotReload:
                 "temperature": 0.3,
             },
             "tools": {"mcp_servers": []},
-            "prompts": {"system": "config/prompts/common/java_expert.md"},
+            "prompts": {"system": "config/prompts/testing/unit_test_strategy.md"},
             "workflow": {"graph_name": "test", "node_name": "test"},
             "error_handling": {"max_retries": 3, "timeout_seconds": 120},
         }
@@ -103,7 +103,7 @@ class TestConfigHotReload:
                 "temperature": 0.3,
             },
             "tools": {"mcp_servers": []},
-            "prompts": {"system": "config/prompts/common/java_expert.md"},
+            "prompts": {"system": "config/prompts/testing/unit_test_strategy.md"},
             "workflow": {"graph_name": "test", "node_name": "test"},
             "error_handling": {"max_retries": 3, "timeout_seconds": 120},
         }
@@ -139,7 +139,7 @@ class TestConfigHotReload:
                 "temperature": 0.3,
             },
             "tools": {"mcp_servers": []},
-            "prompts": {"system": "config/prompts/common/java_expert.md"},
+            "prompts": {"system": "config/prompts/testing/unit_test_strategy.md"},
             "workflow": {"graph_name": "test", "node_name": "test"},
             "error_handling": {"max_retries": 3, "timeout_seconds": 120},
         }
@@ -207,7 +207,7 @@ class TestConfigValidation:
                 "max_tokens": 8192,
             },
             "tools": {"mcp_servers": ["maven-maintenance"]},
-            "prompts": {"system": "config/prompts/maven/dependency_update.md"},
+            "prompts": {"system": "config/prompts/maven/system_agent.md"},
             "workflow": {"graph_name": "test", "node_name": "test"},
             "error_handling": {"max_retries": 3, "timeout_seconds": 120},
         }
@@ -242,7 +242,7 @@ class TestConfigValidation:
                 "temperature": 0.3,
             },
             "tools": {"mcp_servers": []},
-            "prompts": {"system": "config/prompts/common/java_expert.md"},
+            "prompts": {"system": "config/prompts/testing/unit_test_strategy.md"},
             "workflow": {"graph_name": "test", "node_name": "test"},
             "error_handling": {"max_retries": 3, "timeout_seconds": 120},
         }
@@ -275,7 +275,7 @@ class TestConfigValidation:
                 "temperature": 3.0,  # Invalid: > 2.0
             },
             "tools": {"mcp_servers": []},
-            "prompts": {"system": "config/prompts/common/java_expert.md"},
+            "prompts": {"system": "config/prompts/testing/unit_test_strategy.md"},
             "workflow": {"graph_name": "test", "node_name": "test"},
             "error_handling": {"max_retries": 3, "timeout_seconds": 120},
         }
@@ -308,7 +308,7 @@ class TestConfigValidation:
                 "temperature": 0.3,
             },
             "tools": {"mcp_servers": ["non-existent-server"]},
-            "prompts": {"system": "config/prompts/common/java_expert.md"},
+            "prompts": {"system": "config/prompts/testing/unit_test_strategy.md"},
             "workflow": {"graph_name": "test", "node_name": "test"},
             "error_handling": {"max_retries": 3, "timeout_seconds": 120},
         }
@@ -342,7 +342,7 @@ class TestConfigValidation:
                 "temperature": 0.3,
             },
             "tools": {"mcp_servers": []},
-            "prompts": {"system": "config/prompts/common/java_expert.md"},
+            "prompts": {"system": "config/prompts/testing/unit_test_strategy.md"},
             "workflow": {"graph_name": "test", "node_name": "test"},
             "error_handling": {"max_retries": 3, "timeout_seconds": 120},
         }
@@ -358,7 +358,7 @@ class TestConfigValidation:
                 "temperature": 0.3,
             },
             "tools": {"mcp_servers": []},
-            "prompts": {"system": "config/prompts/common/java_expert.md"},
+            "prompts": {"system": "config/prompts/testing/unit_test_strategy.md"},
             "workflow": {"graph_name": "test", "node_name": "test"},
             "error_handling": {"max_retries": 3, "timeout_seconds": 120},
         }
@@ -445,7 +445,7 @@ class TestConfigVersioning:
                 "temperature": 0.3,
             },
             "tools": {"mcp_servers": []},
-            "prompts": {"system": "config/prompts/common/java_expert.md"},
+            "prompts": {"system": "config/prompts/testing/unit_test_strategy.md"},
             "workflow": {"graph_name": "test", "node_name": "test"},
             "error_handling": {"max_retries": 3, "timeout_seconds": 120},
         }
@@ -479,7 +479,7 @@ class TestConfigVersioning:
                 "temperature": 0.3,
             },
             "tools": {"mcp_servers": []},
-            "prompts": {"system": "config/prompts/common/java_expert.md"},
+            "prompts": {"system": "config/prompts/testing/unit_test_strategy.md"},
             "workflow": {"graph_name": "test", "node_name": "test"},
             "error_handling": {"max_retries": 3, "timeout_seconds": 120},
         }
@@ -519,7 +519,7 @@ class TestConfigVersioning:
                 "temperature": 0.3,
             },
             "tools": {"mcp_servers": []},
-            "prompts": {"system": "config/prompts/common/java_expert.md"},
+            "prompts": {"system": "config/prompts/testing/unit_test_strategy.md"},
             "workflow": {"graph_name": "test", "node_name": "test"},
             "error_handling": {"max_retries": 3, "timeout_seconds": 120},
         }

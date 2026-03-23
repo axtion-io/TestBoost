@@ -874,8 +874,15 @@ def _detect_maven_build_config(project_path: str) -> dict:
                     )
                     if active_by_default is not None and active_by_default.text == "true":
                         profile_id = profile.find("maven:id", ns) or profile.find("id")
-                        if profile_id is not None:
-                            active_profiles.append(profile_id.text)
+                        if profile_id is not None and profile_id.text:
+                            pid = profile_id.text.strip()
+                            if re.match(r"^[a-zA-Z0-9_.\-]+$", pid):
+                                active_profiles.append(pid)
+                            else:
+                                notes.append(
+                                    f"Skipped profile with invalid ID: {pid!r} "
+                                    f"(only alphanumeric, _, ., - allowed)"
+                                )
         except ET.ParseError:
             pass
 
@@ -897,10 +904,19 @@ def _detect_maven_build_config(project_path: str) -> dict:
     }
 
 
+_ALLOWED_MAVEN_BINARIES = {"mvn", "mvn.cmd", "./mvnw", "mvnw"}
+
+
 def _parse_maven_cmd(cmd_str: str) -> list[str]:
     """Parse a Maven command string into a list, resolving the mvn binary.
 
+    Only binaries in _ALLOWED_MAVEN_BINARIES are accepted to prevent arbitrary
+    command execution from user-editable analysis.md fields.
+
     Example: "mvn test-compile -q -P corp" -> ["/usr/bin/mvn", "test-compile", "-q", "-P", "corp"]
+
+    Raises:
+        ValueError: If the command starts with a disallowed binary.
     """
     try:
         parts = shlex.split(cmd_str)
@@ -911,6 +927,12 @@ def _parse_maven_cmd(cmd_str: str) -> list[str]:
         return []
 
     binary = parts[0]
+    if binary not in _ALLOWED_MAVEN_BINARIES:
+        raise ValueError(
+            f"Disallowed Maven binary in command: {binary!r}. "
+            f"Allowed values: {sorted(_ALLOWED_MAVEN_BINARIES)}"
+        )
+
     if binary in ("mvn", "mvn.cmd"):
         resolved = shutil.which("mvn") or shutil.which("mvn.cmd") or "mvn"
         return [resolved] + parts[1:]

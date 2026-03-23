@@ -38,20 +38,28 @@ Scans the Java project to understand its structure, frameworks, and testing conv
 - Identifies Java version and project type
 - Finds all testable source files (services, controllers, repositories, utilities)
 - Detects existing test conventions: naming patterns, assertion styles, mocking frameworks
+- Builds a **full class index** for every source file (fields with exact types, methods, annotations, extends/implements hierarchy)
+- Extracts up to 3 representative test examples (one service, one controller, one repository) for LLM style reference
 
-**Output:** `.testboost/sessions/<id>/analysis.md`
+**Output:**
+- `.testboost/analysis.md` — project-level class index, test examples, conventions (shared across sessions)
+- `.testboost/sessions/<id>/analysis.md` — lightweight Maven command overrides for this session
 
-The analysis report includes:
+The project-level analysis report includes:
 - Project type and build system
 - Detected application and testing frameworks
 - Source file count and package structure
-- List of all testable source files
+- Classified source file table with existing test coverage
 - Detected conventions (naming, assertions, mocking)
+- Full class index table (class → package, category, parent class)
+- Embedded test pattern examples from real project tests
 
 **Core functions used:**
 - `analyze_project_context()` from `src/mcp_servers/test_generator/tools/analyze.py`
 - `detect_test_conventions()` from `src/mcp_servers/test_generator/tools/conventions.py`
-- `find_source_files()` from `src/workflows/test_generation_agent.py`
+- `find_source_files()` from `src/lib/java_discovery.py`
+- `build_class_index()` from `src/lib/java_class_analyzer.py`
+- `extract_test_examples()` from `src/lib/java_class_analyzer.py`
 
 ## 3. Gaps
 
@@ -102,10 +110,15 @@ The generation report includes:
 
 The LLM prompt includes:
 - Class information (name, type, package, methods, dependencies)
+- **Full dependency signatures** from the class index (exact field types, all public methods) — avoids hallucinated method names and wrong types
+- **Inheritance context** — if the tested class extends another class in the index, the parent's fields and methods are included
+- **Multiple test examples** from the project (up to 3 real files, one per category) — gives the LLM concrete style references
 - Project conventions detected in the analysis step
 - JUnit 5 / Mockito best practices
 - Class-type-specific patterns (controller, service, repository)
 - Mutation-resistant testing patterns
+
+If `.testboost/analysis.md` is absent (project analyzed before this feature existed), generation falls back to lazy dependency loading — re-running `analyze` will rebuild it.
 
 See [Prompts](./prompts.md) for details on the LLM prompts.
 

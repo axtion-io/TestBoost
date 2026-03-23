@@ -8,6 +8,7 @@ TestBoost tracks all state in markdown files inside a `.testboost/` directory cr
 your-java-project/
 +-- .testboost/
 |   +-- config.yaml                       # Project-level settings
+|   +-- analysis.md                       # Project-level class index (shared across sessions)
 |   +-- .gitignore                        # Ignores large log files
 |   +-- .tb_secret                        # Integrity token secret (git-ignored)
 |   +-- scripts/                          # Wrapper scripts (created by install)
@@ -20,7 +21,7 @@ your-java-project/
 |   +-- sessions/
 |       +-- 001-test-generation/          # First session
 |       |   +-- spec.md                   # Session intent and progress
-|       |   +-- analysis.md               # Project analysis results
+|       |   +-- analysis.md               # Maven command overrides (lightweight)
 |       |   +-- coverage-gaps.md          # Gap analysis
 |       |   +-- generation.md             # Test generation results
 |       |   +-- validation.md             # Compilation + test results
@@ -29,6 +30,21 @@ your-java-project/
 |       +-- 002-test-generation/          # Second session (if any)
 |           +-- ...
 ```
+
+## Project-Level Analysis File
+
+`.testboost/analysis.md` is created by `analyze` and **shared across all sessions**. It contains:
+
+- A full class index for every Java source file (class name, package, category, extends/implements, annotations, fields with exact types, public methods)
+- Up to 3 representative test examples extracted from the project (one service, one controller, one repository)
+- Detected test conventions
+- Maven compile and test commands
+
+This file persists between runs of `analyze`. The `generate` command reads it to give the LLM precise context about the whole project — not just the class being tested.
+
+The **session-level** `analysis.md` (under `sessions/<id>/`) is intentionally lightweight: it only stores Maven command overrides (`maven_compile_cmd`, `maven_test_cmd`). Edit those values to add profiles (`-P`) or properties (`-D`) that are specific to this session, without affecting other sessions.
+
+See [Architecture](./architecture.md#project-level-analysis) for the full design rationale.
 
 ## Integrity Token Secret
 

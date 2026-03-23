@@ -33,6 +33,7 @@ TestBoost is a Python toolkit that generates tests for Java projects using LLMs.
 +--------------------------------------------------+
 |  .testboost/ (in the target Java project)         |
 |  +-- config.yaml                                  |
+|  +-- analysis.md        <- project-level index    |
 |  +-- sessions/                                    |
 |      +-- 001-test-generation/                     |
 |          +-- spec.md, analysis.md, ...            |
@@ -140,6 +141,8 @@ See [Session Format](./session-format.md) for details.
 | `find_source_files()` | `src/lib/java_discovery.py` |
 | `classify_file()` | `src/lib/java_discovery.py` |
 | `find_test_for_source()` | `src/lib/java_discovery.py` |
+| `build_class_index()` | `src/lib/java_class_analyzer.py` |
+| `extract_test_examples()` | `src/lib/java_class_analyzer.py` |
 | `generate_adaptive_tests()` | `src/mcp_servers/test_generator/tools/generate_unit.py` |
 | `fix_compilation_errors()` | `src/mcp_servers/test_generator/tools/generate_unit.py` |
 | `parse_maven_errors()` | `src/lib/maven_error_parser.py` |
@@ -159,6 +162,7 @@ These modules use the LLM abstraction in `src/lib/llm.py` which supports Google 
 Supporting modules used across the core:
 
 - **java_discovery.py** -- Finds and classifies Java source files in Maven projects (`src/main/java`); locates existing test files
+- **java_class_analyzer.py** -- Builds a full class index from Java source files: extracts class name, package, category, extends/implements, annotations, fields (with exact types and annotations), public methods, and dependencies. Also extracts representative test examples for LLM prompts. See [Project-Level Analysis](#project-level-analysis) below.
 - **maven_error_parser.py** -- Parses Maven compilation output into structured errors with fix suggestions
 - **prompt_utils.py** -- Shared `load_prompt_template()` (disk-read cached) and `render_template()` used by all LLM prompt construction; `{{placeholder}}` syntax avoids conflicts with Java `{` braces
 - **llm.py** -- LLM provider abstraction (Google Gemini, Anthropic Claude, OpenAI via LangChain)
@@ -186,6 +190,7 @@ TestBoost/
 |   +-- lib/
 |   |   +-- llm.py              # LLM provider abstraction
 |   |   +-- java_discovery.py   # Java source file finder + classifier
+|   |   +-- java_class_analyzer.py  # Full class index builder + test example extractor
 |   |   +-- maven_error_parser.py
 |   |   +-- prompt_utils.py     # Shared template load+render
 |   +-- workflows/
@@ -195,6 +200,64 @@ TestBoost/
 +-- tests/                      # Test suite
 +-- docs/                       # Documentation
 ```
+
+## Project-Level Analysis
+
+A key design goal is to give the LLM maximum context about the target Java project without re-reading files on every generation call.
+
+### Two-level analysis files
+
+`analyze` produces **two** output files:
+
+| File | Location | Lifetime | Purpose |
+|------|----------|----------|---------|
+| `.testboost/analysis.md` | Project root | Persists across sessions | Full class index, test examples, conventions |
+| `.testboost/sessions/<id>/analysis.md` | Session directory | Per session | Lightweight Maven command overrides only |
+
+The project-level file is built once and reused by every subsequent `generate` call (even in new sessions). The session file exists only to allow per-session customization of Maven flags (e.g. `-P corp-profile`).
+
+### Class Index
+
+`build_class_index()` reads every Java source file and extracts a `ClassIndexEntry` for each class:
+
+```json
+{
+  "BankingServiceImpl": {
+    "class_name": "BankingServiceImpl",
+    "package": "com.example.service",
+    "category": "service",
+    "extends": "AbstractService",
+    "implements": ["BankingService"],
+    "annotations": ["Service", "Transactional"],
+    "fields": [
+      {"name": "accountRepo", "type": "AccountRepository", "annotations": ["Autowired"]}
+    ],
+    "methods": [
+      {"name": "transfer", "return_type": "void",
+       "parameters": "Long from, Long to, BigDecimal amount",
+       "visibility": "public"}
+    ],
+    "is_jpa_entity": false,
+    "jpa_info": {"id_field": null, "id_type": null, "has_generated_value": false}
+  }
+}
+```
+
+### Why it matters for test generation
+
+Before this, the LLM received only the source file being tested plus lazily-loaded signatures of its direct dependencies. This led to:
+- Invented method names and incorrect signatures
+- Wrong field types (e.g. `BigDecimal` confused with `Double`)
+- Missing parent class context when testing classes that extend another class
+
+With the class index:
+- **Exact types** for all dependency fields (e.g. `BigDecimal amount`, not `double amount`)
+- **Inheritance context** — when a tested class extends another class in the index, the parent's fields and methods are injected into the prompt as `{{inheritance_context}}`
+- **Multiple test examples** — up to 3 real test files (one service, one controller, one repository) replace the previous single 80-line truncated example
+
+### Backward compatibility
+
+If `.testboost/analysis.md` does not exist (project analyzed with an older version), `generate` automatically falls back to the original lazy-loading behavior. Re-running `analyze` rebuilds the project-level index.
 
 ## Design Principles
 

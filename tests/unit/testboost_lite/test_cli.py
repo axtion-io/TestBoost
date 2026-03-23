@@ -18,6 +18,7 @@ import pytest
 
 from testboost_lite.lib.cli import (
     _extract_json_field,
+    _read_step_status,
     cmd_init,
     cmd_status,
 )
@@ -649,6 +650,31 @@ class TestExtractJsonField:
 
 
 # ============================================================================
+# _read_step_status helper
+# ============================================================================
+
+
+class TestReadStepStatus:
+    def test_reads_completed_status(self, tmp_path):
+        f = tmp_path / "step.md"
+        f.write_text("---\nstatus: completed\nstep: validation\n---\n\n# Done\n")
+        assert _read_step_status(f) == "completed"
+
+    def test_reads_failed_status(self, tmp_path):
+        f = tmp_path / "step.md"
+        f.write_text("---\nstatus: failed\nstep: validation\n---\n\n# Failed\n")
+        assert _read_step_status(f) == "failed"
+
+    def test_returns_unknown_for_missing_file(self, tmp_path):
+        assert _read_step_status(tmp_path / "nonexistent.md") == "unknown"
+
+    def test_returns_unknown_for_no_frontmatter(self, tmp_path):
+        f = tmp_path / "step.md"
+        f.write_text("# No frontmatter here\n")
+        assert _read_step_status(f) == "unknown"
+
+
+# ============================================================================
 # cmd_mutate (with mocked bridge)
 # ============================================================================
 
@@ -710,6 +736,23 @@ class TestCmdMutate:
     @pytest.mark.asyncio
     async def test_mutate_without_validation(self, initialized_project):
         from testboost_lite.lib.cli import _cmd_mutate_async
+
+        args = argparse.Namespace(
+            project_path=str(initialized_project), verbose=False,
+            target_classes=None, target_tests=None, min_score=80,
+        )
+        result = await _cmd_mutate_async(args)
+        assert result == 1
+
+    @pytest.mark.asyncio
+    async def test_mutate_blocked_by_failed_validation(self, initialized_project):
+        """Mutation testing must refuse to run when validation failed."""
+        from testboost_lite.lib.cli import _cmd_mutate_async
+        from testboost_lite.lib.session_tracker import STATUS_FAILED
+
+        session = get_current_session(str(initialized_project))
+        update_step_file(session["session_dir"], "generation", STATUS_COMPLETED, "# Generation\n\nDone.")
+        update_step_file(session["session_dir"], "validation", STATUS_FAILED, "# Validation\n\nTests failed.")
 
         args = argparse.Namespace(
             project_path=str(initialized_project), verbose=False,
@@ -865,6 +908,45 @@ class TestCmdKiller:
         )
         result = await _cmd_killer_async(args)
         assert result == 1
+
+    @pytest.mark.asyncio
+    async def test_killer_blocked_by_failed_mutation(self, initialized_project):
+        """Killer generation must refuse to run when mutation step failed."""
+        from testboost_lite.lib.cli import _cmd_killer_async
+        from testboost_lite.lib.session_tracker import STATUS_FAILED
+
+        session = get_current_session(str(initialized_project))
+        update_step_file(session["session_dir"], "generation", STATUS_COMPLETED, "# Gen\n\nDone.")
+        update_step_file(session["session_dir"], "validation", STATUS_COMPLETED, "# Val\n\nPassed.")
+        update_step_file(session["session_dir"], "mutation", STATUS_FAILED, "# Mutation\n\nPIT crashed.")
+
+        args = argparse.Namespace(
+            project_path=str(initialized_project), verbose=False, max_tests=10,
+        )
+        result = await _cmd_killer_async(args)
+        assert result == 1
+
+    @pytest.mark.asyncio
+    async def test_killer_fails_when_surviving_mutants_data_missing(self, initialized_project):
+        """A completed mutation.md without surviving_mutants JSON must fail, not report perfect score."""
+        from testboost_lite.lib.cli import _cmd_killer_async
+
+        session = get_current_session(str(initialized_project))
+        update_step_file(session["session_dir"], "generation", STATUS_COMPLETED, "# Gen\n\nDone.")
+        update_step_file(session["session_dir"], "validation", STATUS_COMPLETED, "# Val\n\nPassed.")
+        # Write a completed mutation.md but WITHOUT any JSON data block
+        update_step_file(
+            session["session_dir"], "mutation", STATUS_COMPLETED,
+            "# Mutation\n\nDone but data was lost.",
+        )
+
+        args = argparse.Namespace(
+            project_path=str(initialized_project), verbose=False, max_tests=10,
+        )
+        result = await _cmd_killer_async(args)
+        assert result == 1
+        content = (Path(session["session_dir"]) / "killer-tests.md").read_text()
+        assert "FAILED" in content
 
     @pytest.mark.asyncio
     async def test_killer_no_surviving_mutants(self, initialized_project):

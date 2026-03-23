@@ -906,10 +906,18 @@ async def _cmd_mutate_async(args: argparse.Namespace) -> int:
     session_dir = session["session_dir"]
     logger = MdLogger(session_dir, "mutation", verbose=getattr(args, "verbose", False))
 
-    # Check prerequisites: validation must have run
+    # Check prerequisites: validation must have passed
     val_file = Path(session_dir) / "validation.md"
     if not val_file.exists():
         logger.error("Validation step not completed. Run `validate` first.")
+        return 1
+    val_status = _read_step_status(val_file)
+    if val_status != "completed":
+        logger.error(
+            f"Validation step has status '{val_status}'. "
+            "Tests must pass before running mutation testing. "
+            "Fix the failing tests and re-run `validate`."
+        )
         return 1
 
     update_step_file(session_dir, "mutation", STATUS_IN_PROGRESS, "# Mutation Testing\n\nRunning PIT...")
@@ -1068,10 +1076,18 @@ async def _cmd_killer_async(args: argparse.Namespace) -> int:
     session_dir = session["session_dir"]
     logger = MdLogger(session_dir, "killer-tests", verbose=getattr(args, "verbose", False))
 
-    # Check prerequisites: mutation step must have run
+    # Check prerequisites: mutation step must have passed
     mutation_file = Path(session_dir) / "mutation.md"
     if not mutation_file.exists():
         logger.error("Mutation testing step not completed. Run `mutate` first.")
+        return 1
+    mutation_status = _read_step_status(mutation_file)
+    if mutation_status != "completed":
+        logger.error(
+            f"Mutation step has status '{mutation_status}'. "
+            "Mutation testing must succeed before generating killer tests. "
+            "Fix the issue and re-run `mutate`."
+        )
         return 1
 
     update_step_file(
@@ -1084,7 +1100,20 @@ async def _cmd_killer_async(args: argparse.Namespace) -> int:
         mutation_content = mutation_file.read_text(encoding="utf-8")
         surviving_mutants = _extract_json_field(mutation_content, "surviving_mutants")
 
-        if not surviving_mutants:
+        # Distinguish None (missing data / corrupt file) from [] (genuinely zero survivors)
+        if surviving_mutants is None:
+            logger.error(
+                "Could not read surviving_mutants from mutation.md. "
+                "The mutation step may have been corrupted. Re-run `mutate`."
+            )
+            update_step_file(
+                session_dir, "killer-tests", STATUS_FAILED,
+                "# Killer Tests - FAILED\n\n"
+                "**Error**: No surviving_mutants data found in mutation.md. Re-run `mutate`.\n",
+            )
+            return 1
+
+        if len(surviving_mutants) == 0:
             logger.info("No surviving mutants found. All mutants already killed!")
             update_step_file(
                 session_dir, "killer-tests", STATUS_COMPLETED,
@@ -1404,6 +1433,24 @@ def _warn_maven_config_issue(
     ]
     for line in lines:
         logger.warn(line)
+
+
+def _read_step_status(step_file: Path) -> str:
+    """Read the status from a step markdown file's YAML frontmatter.
+
+    Returns the status string (e.g. "completed", "failed", "in_progress")
+    or "unknown" if the file cannot be parsed.
+    """
+    try:
+        content = step_file.read_text(encoding="utf-8")
+        match = re.match(r"^---\n(.*?)\n---", content, re.DOTALL)
+        if match:
+            for line in match.group(1).split("\n"):
+                if line.startswith("status:"):
+                    return line.partition(":")[2].strip()
+    except OSError:
+        pass
+    return "unknown"
 
 
 def _extract_json_field(markdown_content: str, field_name: str) -> Any:

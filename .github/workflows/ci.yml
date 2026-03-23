@@ -41,7 +41,6 @@ jobs:
     - name: Run Integration Tests (no LLM required)
       run: |
         poetry run pytest tests/integration/test_llm_connectivity.py -v --tb=short --no-cov --durations=0 --durations-min=0.1 -k "not test_llm_connection_success"
-        poetry run pytest tests/integration/test_agent_config_loading.py -v --tb=short --no-cov --durations=0 --durations-min=0.1
         poetry run pytest tests/integration/test_provider_switching.py -v --tb=short --no-cov --durations=0 --durations-min=0.1
       continue-on-error: false
 

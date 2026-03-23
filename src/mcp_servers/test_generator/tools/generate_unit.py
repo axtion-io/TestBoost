@@ -1114,3 +1114,39 @@ def _parse_parameters(params_str: str) -> list[dict[str, str]]:
             result.append({"type": param_type, "name": param_name})
 
     return result
+
+
+async def analyze_edge_cases(source_code: str, class_name: str, class_type: str) -> list[dict[str, Any]]:
+    """Analyze a Java class for edge case test scenarios using the edge_case_analysis prompt.
+
+    Returns a list of edge case scenarios as dicts with method, scenario, description,
+    input_hint, expected_behavior, and category fields.
+    """
+    template = load_prompt_template("testing/edge_case_analysis.md")
+    prompt = render_template(
+        template,
+        source_code=source_code,
+        class_name=class_name,
+        class_type=class_type,
+    )
+
+    llm = get_llm()
+    response = await llm.ainvoke(prompt)
+    raw = response.content if hasattr(response, "content") else str(response)
+    text = str(raw) if not isinstance(raw, str) else raw
+
+    # Extract JSON from response (may be wrapped in markdown fences)
+    if "```json" in text:
+        text = text.split("```json")[1].split("```")[0].strip()
+    elif "```" in text:
+        text = text.split("```")[1].split("```")[0].strip()
+
+    try:
+        scenarios = json.loads(text)
+        if isinstance(scenarios, list):
+            logger.info("edge_case_analysis_success", class_name=class_name, scenarios=len(scenarios))
+            return scenarios
+    except json.JSONDecodeError:
+        logger.warning("edge_case_analysis_parse_error", class_name=class_name)
+
+    return []

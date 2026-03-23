@@ -2,13 +2,21 @@
 Generate killer tests tool.
 
 Generates tests specifically designed to kill surviving mutants
-based on mutation testing analysis.
+based on mutation testing analysis. Uses LLM with the mutation_killer
+prompt when source code is available, falls back to template-based
+generation otherwise.
 """
 
 import json
 import re
 from pathlib import Path
 from typing import Any
+
+from src.lib.llm import get_llm
+from src.lib.logging import get_logger
+from src.lib.prompt_utils import load_prompt_template, render_template
+
+logger = get_logger(__name__)
 
 
 async def generate_killer_tests(
@@ -63,8 +71,11 @@ async def generate_killer_tests(
         else:
             source_code = None
 
-        # Generate test code
-        test_code = _generate_killer_test_class(class_name, mutants, source_code)
+        # Generate test code — use LLM when source is available, else fall back to template
+        if source_code:
+            test_code = await _generate_killer_tests_llm(class_name, mutants, source_code)
+        else:
+            test_code = _generate_killer_test_class(class_name, mutants, source_code)
 
         test_file_path = _get_killer_test_path(project_dir, class_name)
 
@@ -85,6 +96,46 @@ async def generate_killer_tests(
     }
 
     return json.dumps(results, indent=2)
+
+
+async def _generate_killer_tests_llm(
+    class_name: str, mutants: list[dict[str, Any]], source_code: str
+) -> str:
+    """Use LLM with mutation_killer prompt to generate targeted killer tests."""
+    parts = class_name.rsplit(".", 1)
+    package = parts[0] if len(parts) > 1 else ""
+    simple_name = parts[-1]
+
+    template = load_prompt_template("testing/mutation_killer.md")
+    prompt = render_template(
+        template,
+        surviving_mutants=json.dumps(mutants, indent=2),
+        source_code=source_code,
+        class_name=simple_name,
+        package=package,
+    )
+
+    llm = get_llm()
+    response = await llm.ainvoke(prompt)
+    raw = response.content if hasattr(response, "content") else str(response)
+    code = str(raw) if not isinstance(raw, str) else raw
+
+    # Clean markdown fences
+    if "```java" in code:
+        code = code.split("```java")[1].split("```")[0].strip()
+    elif "```" in code:
+        code = code.split("```")[1].split("```")[0].strip()
+
+    if "@Test" not in code:
+        logger.warning("llm_killer_fallback", class_name=class_name)
+        return _generate_killer_test_class(class_name, mutants, source_code)
+
+    logger.info(
+        "llm_killer_generation_success",
+        class_name=class_name,
+        test_count=code.count("@Test"),
+    )
+    return code
 
 
 def _find_source_file(project_dir: Path, class_name: str) -> Path | None:

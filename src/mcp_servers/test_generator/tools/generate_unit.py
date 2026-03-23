@@ -158,7 +158,7 @@ def _extract_project_context(project_path: str) -> str:
             for dep in root.findall(dep_path, use_ns) if use_ns else root.findall(dep_path):
                 artifact = dep.find("m:artifactId", ns) if use_ns else dep.find("artifactId")
                 version = dep.find("m:version", ns) if use_ns else dep.find("version")
-                if artifact is not None and any(k in artifact.text for k in [
+                if artifact is not None and artifact.text is not None and any(k in artifact.text for k in [
                     "lombok", "junit", "mockito", "spring-boot-starter-test",
                     "spring-boot-starter-data-jpa", "spring-boot-starter-web", "h2",
                 ]):
@@ -407,7 +407,7 @@ def _validate_generated_imports(test_code: str, test_deps: dict[str, Any]) -> li
     return warnings
 
 
-def _extract_dependency_signatures(project_path: str, dependencies: list[dict]) -> str:
+def _extract_dependency_signatures(project_path: str, dependencies: list[dict[str, Any]]) -> str:
     """Find source files for dependency classes and extract their public method signatures."""
     if not dependencies or not project_path:
         return ""

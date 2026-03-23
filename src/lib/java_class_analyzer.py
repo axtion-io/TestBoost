@@ -393,7 +393,7 @@ def _detect_category(source_code: str, entry: dict[str, Any]) -> str:
 # Build class index over a whole project
 # ---------------------------------------------------------------------------
 
-def build_class_index(project_path: str, source_files: list[str]) -> dict[str, dict]:
+def build_class_index(project_path: str, source_files: list[str]) -> dict[str, dict[str, Any]]:
     """Build a class index for all source files.
 
     Args:
@@ -403,7 +403,7 @@ def build_class_index(project_path: str, source_files: list[str]) -> dict[str, d
     Returns:
         Dict mapping class_name → ClassIndexEntry.
     """
-    index: dict[str, dict] = {}
+    index: dict[str, dict[str, Any]] = {}
     project_dir = Path(project_path)
     for relative_path in source_files:
         full_path = project_dir / relative_path

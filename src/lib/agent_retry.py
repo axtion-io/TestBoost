@@ -86,7 +86,7 @@ def _get_called_tools(ai_message: AIMessage) -> list[str]:
     if not hasattr(ai_message, "tool_calls") or not ai_message.tool_calls:
         return []
     tools = [tc.get("name") or tc.get("tool") for tc in ai_message.tool_calls]
-    return [t for t in tools if t is not None]
+    return [str(t) for t in tools if t is not None]
 
 
 async def invoke_agent_with_retry(

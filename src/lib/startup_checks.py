@@ -92,7 +92,7 @@ async def _ping_llm_with_retry(llm: Any, timeout: int = STARTUP_TIMEOUT, max_ret
             exc = e
             while exc is not None:
                 cause_chain.append(f"{type(exc).__name__}: {exc}")
-                exc = exc.__cause__
+                exc = exc.__cause__  # type: ignore[assignment]
             if "429" in error_msg or "rate limit" in error_msg.lower():
                 retry_after = "unknown"
                 match = re.search(r"retry after (\d+)", error_msg, re.IGNORECASE)

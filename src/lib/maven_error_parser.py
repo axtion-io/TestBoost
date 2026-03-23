@@ -7,6 +7,7 @@ structured, actionable feedback for LLM-based error correction.
 import re
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 import structlog
 
@@ -265,9 +266,10 @@ class MavenErrorParser:
             ),
         }
 
-        key = (error.actual_type, error.expected_type)
-        if key in suggestions:
-            return suggestions[key]
+        if error.actual_type is not None and error.expected_type is not None:
+            key = (error.actual_type, error.expected_type)
+            if key in suggestions:
+                return suggestions[key]
 
         # Generic suggestion
         return (
@@ -287,7 +289,7 @@ class MavenErrorParser:
         Returns:
             Human-readable suggestion for fixing the error
         """
-        symbol = error.symbol.lower()
+        symbol = (error.symbol or "").lower()
 
         if "method builder()" in symbol:
             return (
@@ -330,7 +332,7 @@ class MavenErrorParser:
             return "No compilation errors found. All tests compile successfully."
 
         # Build dynamic error details section
-        errors_by_file: dict[str, list] = {}
+        errors_by_file: dict[str, list[CompilationError]] = {}
         for error in errors:
             file_key = str(error.file_path.name)
             errors_by_file.setdefault(file_key, []).append(error)
@@ -365,7 +367,7 @@ class MavenErrorParser:
         template = load_prompt_template("maven/compilation_errors_format.md")
         return render_template(template, total_errors=str(len(errors)), error_details=details)
 
-    def get_summary(self, errors: list[CompilationError]) -> dict:
+    def get_summary(self, errors: list[CompilationError]) -> dict[str, Any]:
         """Get a summary of errors for logging/metrics.
 
         Args:
@@ -379,7 +381,7 @@ class MavenErrorParser:
             >>> summary["total_errors"]
             26
         """
-        summary = {
+        summary: dict[str, Any] = {
             "total_errors": len(errors),
             "errors_by_type": {},
             "errors_by_file": {},

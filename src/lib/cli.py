@@ -511,7 +511,7 @@ async def _cmd_generate_async(args: argparse.Namespace) -> int:
         except Exception as e:
             logger.error(f"LLM connection failed: {e}")
             print(f"\nERROR: Cannot connect to LLM provider. {e}")
-            print("Set the appropriate API key (ANTHROPIC_API_KEY, GOOGLE_API_KEY, or OPENAI_API_KEY).")
+            print("Check your LLM provider credentials in .env (see .env.example).")
             return 1
 
         generated = []

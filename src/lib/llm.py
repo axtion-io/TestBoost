@@ -143,7 +143,7 @@ def _add_metrics_callback(provider: str, model: str, kwargs: dict[str, Any]) -> 
     """Create metrics callback and add to callbacks list."""
     callbacks = kwargs.pop("callbacks", [])
     callbacks.append(LLMMetricsCallback(provider=provider, model=model))
-    return callbacks
+    return callbacks  # type: ignore[no-any-return]
 
 
 def _create_anthropic_llm(
@@ -190,7 +190,7 @@ def _create_google_llm(
     callbacks = _add_metrics_callback("google-genai", model, kwargs)
 
     return ChatGoogleGenerativeAI(
-        google_api_key=api_key,
+        api_key=api_key,
         model=model,
         temperature=temperature,
         max_output_tokens=max_tokens,
@@ -208,21 +208,27 @@ def _create_openai_llm(
     timeout: int,
     **kwargs: Any,
 ) -> BaseChatModel:
-    """Create OpenAI GPT LLM instance."""
+    """Create OpenAI or OpenAI-compatible (vLLM, Ollama, etc.) LLM instance."""
     from langchain_openai import ChatOpenAI
 
-    logger.debug("creating_openai_llm", model=model)
+    settings = get_settings()
+    base_url = kwargs.pop("base_url", None) or settings.openai_api_base
+
+    logger.debug("creating_openai_llm", model=model, base_url=base_url)
     callbacks = _add_metrics_callback("openai", model, kwargs)
 
-    return ChatOpenAI(  # type: ignore[call-arg]
-        api_key=api_key,
-        model=model,
-        temperature=temperature,
-        max_tokens=max_tokens,
-        timeout=float(timeout),
-        callbacks=callbacks,
-        **kwargs,
-    )
+    llm_kwargs: dict[str, Any] = {
+        "api_key": api_key,
+        "model": model,
+        "temperature": temperature,
+        "max_tokens": max_tokens,
+        "timeout": float(timeout),
+        "callbacks": callbacks,
+    }
+    if base_url:
+        llm_kwargs["base_url"] = base_url
+
+    return ChatOpenAI(**llm_kwargs, **kwargs)
 
 
 __all__ = [

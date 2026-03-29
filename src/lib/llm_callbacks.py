@@ -1,33 +1,21 @@
-"""LangChain callbacks for LLM metrics tracking."""
+"""LangChain callbacks for LLM call logging."""
 
 import time
+import traceback
 from typing import Any
 
 from langchain_core.callbacks import BaseCallbackHandler
 from langchain_core.outputs import LLMResult
 
-from src.api.routers.metrics import record_llm_call, record_llm_duration, record_llm_rate_limit
 from src.lib.logging import get_logger
 
 logger = get_logger(__name__)
 
 
 class LLMMetricsCallback(BaseCallbackHandler):
-    """Callback handler to track LLM metrics in Prometheus.
-
-    Captures:
-    - LLM call count (success/failure)
-    - LLM request duration
-    - Rate limit errors
-    """
+    """Callback handler to log LLM call metrics."""
 
     def __init__(self, provider: str, model: str):
-        """Initialize callback with provider and model info.
-
-        Args:
-            provider: LLM provider name (anthropic, google-genai, openai)
-            model: Model name
-        """
         self.provider = provider
         self.model = model
         self.start_time: float | None = None
@@ -35,7 +23,6 @@ class LLMMetricsCallback(BaseCallbackHandler):
     def on_llm_start(
         self, serialized: dict[str, Any], prompts: list[str], **kwargs: Any
     ) -> None:
-        """Called when LLM starts running."""
         self.start_time = time.time()
         logger.debug(
             "llm_call_start",
@@ -45,43 +32,52 @@ class LLMMetricsCallback(BaseCallbackHandler):
         )
 
     def on_llm_end(self, response: LLMResult, **kwargs: Any) -> None:
-        """Called when LLM ends running successfully."""
-        if self.start_time is not None:
-            duration = time.time() - self.start_time
-            record_llm_duration(self.provider, duration)
+        duration = time.time() - self.start_time if self.start_time else None
 
-        record_llm_call(self.provider, self.model, success=True)
+        # Extract token usage from LLM output when available
+        token_usage: dict[str, Any] = {}
+        if response.llm_output:
+            token_usage = response.llm_output.get("token_usage", {}) or {}
 
         logger.debug(
             "llm_call_success",
             provider=self.provider,
             model=self.model,
-            duration_seconds=duration if self.start_time else None,
+            duration_seconds=round(duration, 2) if duration else None,
+            prompt_tokens=token_usage.get("prompt_tokens"),
+            completion_tokens=token_usage.get("completion_tokens"),
+            total_tokens=token_usage.get("total_tokens"),
         )
 
     def on_llm_error(self, error: BaseException, **kwargs: Any) -> None:
-        """Called when LLM errors out."""
-        if self.start_time is not None:
-            duration = time.time() - self.start_time
-            record_llm_duration(self.provider, duration)
-
-        # Check if it's a rate limit error
+        duration = time.time() - self.start_time if self.start_time else None
         error_msg = str(error).lower()
+        cause = error.__cause__
+        cause_chain = []
+        e = error.__cause__
+        while e is not None:
+            cause_chain.append(f"{type(e).__name__}: {e}")
+            e = e.__cause__
         if "rate" in error_msg or "quota" in error_msg or "429" in error_msg:
-            record_llm_rate_limit(self.provider)
             logger.warning(
                 "llm_rate_limit",
                 provider=self.provider,
                 model=self.model,
-                error=str(error)[:200],
+                error=str(error),
+                cause_chain=cause_chain,
             )
         else:
-            record_llm_call(self.provider, self.model, success=False)
             logger.error(
                 "llm_call_error",
                 provider=self.provider,
                 model=self.model,
-                error=str(error)[:200],
+                duration_seconds=duration,
+                error=str(error),
+                error_type=type(error).__name__,
+                cause=str(cause) if cause else None,
+                cause_type=type(cause).__name__ if cause else None,
+                cause_chain=cause_chain,
+                traceback="".join(traceback.format_exception(error)),
             )
 
 

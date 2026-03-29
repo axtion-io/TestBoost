@@ -1,0 +1,5 @@
+S'il te plait, afin de préparer un commit propre, retire les logs, les fichiers inutiles et tous les debugs que tu peux as pu ajouter au cours de ce développement. Si on a beaucoup discuté et implémenté une solution vraiment étonnante, ajoute un chapitre dans le bon document dans /docs pour y expliquer la solution. N'ajoute cette doc que si c'est vraiment nécessaire pour la compréhension simple du projet par la suite.
+Et surtout penses à mettre à jour l'avancement du projet.
+ Dans le README.md, tout ce qui à trait aux différents changements à telle ou telle date n'a auncun interet, ce qui est utile c'est la documentation consolidé pas les changelogs. Donc des que tu vois un changelog, met les nouvelles donctionnalités dans la documentation existante (au bon endroit) et enlève le changelog
+Une fois que tu as fait tout ça tu peux écouter mes précisions s'il y en :
+"$ARGUMENTS."

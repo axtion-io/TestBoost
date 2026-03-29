@@ -7,8 +7,11 @@ structured, actionable feedback for LLM-based error correction.
 import re
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 import structlog
+
+from src.lib.prompt_utils import load_prompt_template, render_template
 
 logger = structlog.get_logger(__name__)
 
@@ -263,9 +266,10 @@ class MavenErrorParser:
             ),
         }
 
-        key = (error.actual_type, error.expected_type)
-        if key in suggestions:
-            return suggestions[key]
+        if error.actual_type is not None and error.expected_type is not None:
+            key = (error.actual_type, error.expected_type)
+            if key in suggestions:
+                return suggestions[key]
 
         # Generic suggestion
         return (
@@ -285,7 +289,7 @@ class MavenErrorParser:
         Returns:
             Human-readable suggestion for fixing the error
         """
-        symbol = error.symbol.lower()
+        symbol = (error.symbol or "").lower()
 
         if "method builder()" in symbol:
             return (
@@ -327,61 +331,43 @@ class MavenErrorParser:
         if not errors:
             return "No compilation errors found. All tests compile successfully."
 
-        prompt = "# Compilation Errors Detected\n\n"
-        prompt += f"**Total errors**: {len(errors)}\n\n"
-        prompt += "The following compilation errors must be fixed:\n\n"
-
-        # Group by file for better organization
-        errors_by_file = {}
+        # Build dynamic error details section
+        errors_by_file: dict[str, list[CompilationError]] = {}
         for error in errors:
             file_key = str(error.file_path.name)
-            if file_key not in errors_by_file:
-                errors_by_file[file_key] = []
-            errors_by_file[file_key].append(error)
+            errors_by_file.setdefault(file_key, []).append(error)
 
+        details = ""
         for file_name, file_errors in sorted(errors_by_file.items()):
-            prompt += f"## File: {file_name}\n\n"
-
+            details += f"## File: {file_name}\n\n"
             for i, error in enumerate(file_errors, 1):
-                prompt += f"### Error #{i} - Line {error.line}:{error.column}\n\n"
-
+                details += f"### Error #{i} - Line {error.line}:{error.column}\n\n"
                 if error.error_type == "incompatible_types":
-                    prompt += "**Issue**: Type mismatch\n\n"
-                    prompt += f"- **You used**: `{error.actual_type}`\n"
-                    prompt += f"- **Expected**: `{error.expected_type}`\n\n"
-                    prompt += f"**How to fix**: {error.suggestion}\n\n"
-
+                    details += "**Issue**: Type mismatch\n\n"
+                    details += f"- **You used**: `{error.actual_type}`\n"
+                    details += f"- **Expected**: `{error.expected_type}`\n\n"
+                    details += f"**How to fix**: {error.suggestion}\n\n"
                 elif error.error_type == "cannot_find_symbol":
-                    prompt += "**Issue**: Symbol not found\n\n"
-                    prompt += f"- **Symbol**: `{error.symbol}`\n\n"
-                    prompt += f"**How to fix**: {error.suggestion}\n\n"
-
+                    details += "**Issue**: Symbol not found\n\n"
+                    details += f"- **Symbol**: `{error.symbol}`\n\n"
+                    details += f"**How to fix**: {error.suggestion}\n\n"
                 elif error.error_type == "package_does_not_exist":
-                    prompt += "**Issue**: Package not found\n\n"
-                    prompt += f"- **Package**: `{error.symbol}`\n\n"
-                    prompt += f"**How to fix**: {error.suggestion}\n\n"
-
+                    details += "**Issue**: Package not found\n\n"
+                    details += f"- **Package**: `{error.symbol}`\n\n"
+                    details += f"**How to fix**: {error.suggestion}\n\n"
                 elif error.error_type == "private_access":
-                    prompt += "**Issue**: Private field access\n\n"
-                    prompt += f"- **Field**: `{error.symbol}`\n\n"
-                    prompt += f"**How to fix**: {error.suggestion}\n\n"
-
+                    details += "**Issue**: Private field access\n\n"
+                    details += f"- **Field**: `{error.symbol}`\n\n"
+                    details += f"**How to fix**: {error.suggestion}\n\n"
                 else:
-                    prompt += f"**Issue**: {error.message}\n\n"
-                    prompt += f"**How to fix**: {error.suggestion}\n\n"
+                    details += f"**Issue**: {error.message}\n\n"
+                    details += f"**How to fix**: {error.suggestion}\n\n"
+                details += "---\n\n"
 
-                prompt += "---\n\n"
+        template = load_prompt_template("maven/compilation_errors_format.md")
+        return render_template(template, total_errors=str(len(errors)), error_details=details)
 
-        prompt += "\n## CRITICAL Instructions\n\n"
-        prompt += "1. Fix **ALL** errors listed above\n"
-        prompt += "2. Use the **EXACT** types specified (not approximations)\n"
-        prompt += "3. Apply the suggested fixes precisely\n"
-        prompt += "4. Return the **COMPLETE** corrected file(s)\n"
-        prompt += "5. Do NOT introduce new errors while fixing these\n\n"
-
-        return prompt
-
-    def get_summary(self, errors: list[CompilationError]) -> dict:
+    def get_summary(self, errors: list[CompilationError]) -> dict[str, Any]:
         """Get a summary of errors for logging/metrics.
 
         Args:
@@ -395,7 +381,7 @@ class MavenErrorParser:
             >>> summary["total_errors"]
             26
         """
-        summary = {
+        summary: dict[str, Any] = {
             "total_errors": len(errors),
             "errors_by_type": {},
             "errors_by_file": {},

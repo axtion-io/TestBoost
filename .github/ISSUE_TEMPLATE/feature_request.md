@@ -6,29 +6,28 @@ labels: enhancement
 assignees: ''
 ---
 
-## Description de la fonctionnalité
-<!-- Décrivez clairement la fonctionnalité que vous souhaitez -->
+## Description
 
-## Problème à résoudre
-<!-- Décrivez le problème ou le besoin que cette fonctionnalité adresserait -->
-<!-- Ex: "Je suis souvent frustré quand..." -->
+<!-- Describe the feature you'd like -->
 
-## Cas d'usage
-<!-- Décrivez comment cette fonctionnalité serait utilisée -->
+## Problem
+
+<!-- What problem does this feature solve? -->
+
+## Use Cases
+
 1.
 2.
 3.
 
-## Solution proposée
-<!-- Décrivez la solution que vous aimeriez voir implémentée -->
+## Proposed Solution
 
-## Alternatives considérées
-<!-- Décrivez les alternatives ou workarounds que vous avez envisagés -->
+<!-- How should the feature work? -->
 
-## Contexte additionnel
-<!-- Ajoutez tout autre contexte, maquettes ou références utiles -->
+## Alternatives Considered
 
-## Critères d'acceptation
-<!-- Optionnel: listez les critères qui définiraient le succès de cette fonctionnalité -->
-- [ ]
-- [ ]
+<!-- Any workarounds or alternative approaches you've considered -->
+
+## Additional Context
+
+<!-- Mockups, references, or other useful information -->

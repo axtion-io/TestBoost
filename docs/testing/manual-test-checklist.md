@@ -30,9 +30,8 @@ Use this checklist before releases and for QA validation.
 | Test ID | Test Case | Steps | Expected Result | Status |
 |---------|-----------|-------|-----------------|--------|
 | CLI-T01 | Analyze test coverage | `python -m src.cli.main tests analyze <project-path>` | Shows coverage metrics and untested classes | ☐ |
-| CLI-T02 | Generate tests (LLM mode) | `python -m src.cli.main tests generate <project-path>` | Generates JUnit tests using LLM | ☐ |
-| CLI-T03 | Generate tests (template mode) | `python -m src.cli.main tests generate <project-path> --no-llm` | Generates template-based tests | ☐ |
-| CLI-T04 | Verbose output | `python -m src.cli.main tests generate <project-path> --verbose` | Shows detailed generation progress | ☐ |
+| CLI-T02 | Generate tests | `python -m src.cli.main tests generate <project-path>` | Generates JUnit tests using LLM | ☐ |
+| CLI-T03 | Verbose output | `python -m src.cli.main tests generate <project-path> --verbose` | Shows detailed generation progress | ☐ |
 | CLI-T05 | Specific class targeting | `python -m src.cli.main tests generate <project-path> --class com.example.Service` | Generates tests only for specified class | ☐ |
 
 ### 1.3 Deploy Commands

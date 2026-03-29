@@ -3,20 +3,18 @@ Generate adaptive unit tests tool.
 
 Generates unit tests adapted to project conventions and class type,
 using LLM to create intelligent test cases.
-
-Two modes:
-- LLM mode (default): Uses LLM to generate intelligent, context-aware tests
-- Template mode: Uses templates for CI environments without LLM access
 """
 
 import json
 import re
+import xml.etree.ElementTree as ET
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
-from src.lib.config import get_settings
 from src.lib.llm import get_llm
 from src.lib.logging import get_logger
+from src.lib.prompt_utils import load_prompt_template, render_template
 
 logger = get_logger(__name__)
 
@@ -28,7 +26,8 @@ async def generate_adaptive_tests(
     conventions: dict[str, Any] | None = None,
     coverage_target: float = 80,
     test_requirements: list[dict[str, Any]] | None = None,
-    use_llm: bool = True,
+    class_index: dict[str, dict[str, Any]] | None = None,
+    test_examples: list[dict[str, str]] | None = None,
 ) -> str:
     """
     Generate unit tests adapted to project conventions.
@@ -40,8 +39,6 @@ async def generate_adaptive_tests(
         conventions: Test conventions to follow
         coverage_target: Target code coverage percentage
         test_requirements: Optional list of specific test requirements from impact analysis
-        use_llm: If True (default), use LLM for intelligent test generation.
-                 If False, use template-based generation (for CI without LLM).
 
     Returns:
         JSON string with generated test code and metadata
@@ -86,15 +83,13 @@ async def generate_adaptive_tests(
         "is_record": class_info.get("is_record", False),
         "source_code": source_code,
         "project_path": project_path,
+        "class_index": class_index,
+        "test_examples": test_examples,
     }
 
-    # Generate test code - LLM mode or template mode
-    if use_llm:
-        logger.info("generating_tests_with_llm", class_name=class_info["class_name"])
-        test_code = await _generate_test_code_with_llm(context, source_code)
-    else:
-        logger.info("generating_tests_with_templates", class_name=class_info["class_name"])
-        test_code = _generate_test_code(context)
+    # Generate test code using LLM
+    logger.info("generating_tests_with_llm", class_name=class_info["class_name"])
+    test_code = await _generate_test_code_with_llm(context, source_code)
 
     results = {
         "success": True,
@@ -111,8 +106,9 @@ async def generate_adaptive_tests(
     return json.dumps(results, indent=2)
 
 
+@lru_cache(maxsize=16)
 def _extract_project_context(project_path: str) -> str:
-    """Extract key project info from pom.xml for LLM context.
+    """Extract key project info from pom.xml for LLM context (cached per project).
 
     Args:
         project_path: Root directory of the Java project
@@ -120,7 +116,6 @@ def _extract_project_context(project_path: str) -> str:
     Returns:
         Formatted string with project context, or empty string if unavailable
     """
-    import xml.etree.ElementTree as ET
 
     pom_file = Path(project_path) / "pom.xml"
     if not pom_file.exists():
@@ -163,7 +158,7 @@ def _extract_project_context(project_path: str) -> str:
             for dep in root.findall(dep_path, use_ns) if use_ns else root.findall(dep_path):
                 artifact = dep.find("m:artifactId", ns) if use_ns else dep.find("artifactId")
                 version = dep.find("m:version", ns) if use_ns else dep.find("version")
-                if artifact is not None and any(k in artifact.text for k in [
+                if artifact is not None and artifact.text is not None and any(k in artifact.text for k in [
                     "lombok", "junit", "mockito", "spring-boot-starter-test",
                     "spring-boot-starter-data-jpa", "spring-boot-starter-web", "h2",
                 ]):
@@ -184,6 +179,389 @@ def _extract_project_context(project_path: str) -> str:
         return ""
 
 
+@lru_cache(maxsize=16)
+def _detect_test_dependencies(project_path: str) -> dict[str, Any]:
+    """Detect available test framework and libraries from pom.xml.
+
+    Returns dict with framework ('junit4' or 'junit5'), available libraries,
+    and flags for mockito, assertj, hamcrest.
+    """
+    result: dict[str, Any] = {
+        "framework": "junit5",
+        "has_mockito": False,
+        "has_assertj": False,
+        "has_hamcrest": False,
+        "has_spring_test": False,
+        "available_deps": [],
+    }
+
+    pom_file = Path(project_path) / "pom.xml"
+    if not pom_file.exists():
+        return result
+
+    try:
+        tree = ET.parse(pom_file)
+        root = tree.getroot()
+        ns = {"m": "http://maven.apache.org/POM/4.0.0"}
+
+        has_junit4 = False
+        has_junit5 = False
+
+        for dep_path, use_ns in [(".//m:dependency", ns), (".//dependency", {})]:
+            deps = root.findall(dep_path, use_ns) if use_ns else root.findall(dep_path)
+            for dep in deps:
+                artifact = dep.find("m:artifactId", ns) if use_ns else dep.find("artifactId")
+                if artifact is None or not artifact.text:
+                    continue
+                aid = artifact.text
+
+                if aid in ("junit", "junit-dep"):
+                    has_junit4 = True
+                    result["available_deps"].append(aid)
+                elif aid in ("junit-jupiter", "junit-jupiter-api", "junit-jupiter-engine"):
+                    has_junit5 = True
+                    result["available_deps"].append(aid)
+                elif aid == "spring-boot-starter-test":
+                    # Spring Boot 2.2+ bundles JUnit 5; explicit junit dep overrides
+                    has_junit5 = True
+                    result["has_spring_test"] = True
+                    result["available_deps"].append(aid)
+                elif "mockito" in aid:
+                    result["has_mockito"] = True
+                    result["available_deps"].append(aid)
+                elif aid == "assertj-core":
+                    result["has_assertj"] = True
+                    result["available_deps"].append(aid)
+                elif "hamcrest" in aid:
+                    result["has_hamcrest"] = True
+                    result["available_deps"].append(aid)
+
+            if result["available_deps"]:
+                break
+
+        # JUnit 5 wins when both are present
+        if has_junit5:
+            result["framework"] = "junit5"
+        elif has_junit4:
+            result["framework"] = "junit4"
+
+        return result
+
+    except Exception as e:
+        logger.debug("test_dependency_detection_error", error=str(e))
+        return result
+
+
+def _build_framework_instructions(test_deps: dict[str, Any]) -> str:
+    """Build framework-specific instructions for the LLM prompt."""
+    fw = test_deps["framework"]
+    has_mockito = test_deps["has_mockito"]
+    has_assertj = test_deps["has_assertj"]
+
+    parts: list[str] = []
+
+    if fw == "junit4":
+        parts.append("## Test Framework: JUnit 4")
+        parts.append("CRITICAL: This project uses **JUnit 4**, NOT JUnit 5.")
+        parts.append("- Import `org.junit.Test` (NOT `org.junit.jupiter.api.Test`)")
+        parts.append("- Use `@Before` / `@After` (NOT `@BeforeEach` / `@AfterEach`)")
+        parts.append("- Do NOT use `@DisplayName` (JUnit 5 only)")
+        parts.append("- Do NOT use `@ExtendWith` (JUnit 5 only)")
+        parts.append("- Do NOT use `@Nested` (JUnit 5 only)")
+    else:
+        parts.append("## Test Framework: JUnit 5")
+        parts.append("- Import `org.junit.jupiter.api.Test`")
+        parts.append("- Use `@BeforeEach` / `@AfterEach`")
+        parts.append("- Use `@DisplayName` for readable test descriptions")
+
+    # Mockito (shared rules, framework-specific runner)
+    if has_mockito:
+        runner = (
+            "- Use `@RunWith(MockitoJUnitRunner.class)` on the test class"
+            if fw == "junit4"
+            else "- Use `@ExtendWith(MockitoExtension.class)` on the test class"
+        )
+        parts.append(runner)
+        parts.append("- Use `@Mock` and `@InjectMocks` annotations")
+        parts.append("")
+        parts.append("### Mockito Rules (compilation fails if violated):")
+        parts.append(
+            "- `void` methods: use `doNothing().when(mock).method()` "
+            "-- NEVER `when(mock.method()).thenReturn(null)`"
+        )
+        parts.append(
+            "- `void` methods that should throw: "
+            "use `doThrow(new XxxException()).when(mock).method()`"
+        )
+        parts.append(
+            "- Mock arg matchers: use `any(ExactClass.class)` "
+            "-- NOT `anyString()` for non-String params"
+        )
+    else:
+        parts.append("- Mockito is NOT available -- do NOT import or use Mockito")
+        if fw == "junit4":
+            parts.append("- Create test instances manually, use real or stub implementations")
+        else:
+            parts.append("- Create test instances manually")
+
+    # Assertion library
+    if has_assertj:
+        parts.append("- Use AssertJ: `assertThat(x).isEqualTo(y)`")
+    elif fw == "junit4":
+        parts.append("- Use JUnit 4 assertions: `Assert.assertEquals()`, `Assert.assertTrue()`")
+        parts.append("- Import from `org.junit.Assert`")
+    else:
+        parts.append("- Use JUnit 5 assertions: `Assertions.assertEquals()`, etc.")
+
+    deps = test_deps.get("available_deps", [])
+    if deps:
+        parts.append(f"\n**Available test dependencies**: {', '.join(deps)}")
+        parts.append(
+            "CRITICAL: Only use libraries listed above. Do NOT import unavailable libraries."
+        )
+
+    return "\n".join(parts) + "\n"
+
+
+@lru_cache(maxsize=32)
+def _find_existing_test_example(
+    project_path: str, package: str, skip_class: str = "",
+) -> str:
+    """Find an existing test file in the project as a style reference.
+
+    Returns formatted prompt section, or empty string if none found.
+    """
+    project_dir = Path(project_path)
+    test_dir = project_dir / "src" / "test" / "java"
+
+    if not test_dir.exists():
+        return ""
+
+    package_path = package.replace(".", "/")
+    skip_filename = f"{skip_class}Test.java" if skip_class else ""
+
+    test_files: list[Path] = []
+
+    # Look in same package first
+    same_pkg = test_dir / package_path
+    if same_pkg.exists():
+        test_files = sorted(same_pkg.glob("*Test.java"))
+
+    # Fallback: parent package
+    if not test_files:
+        parent_parts = package_path.split("/")[:-1]
+        if parent_parts:
+            parent_pkg = test_dir / "/".join(parent_parts)
+            if parent_pkg.exists():
+                test_files = sorted(parent_pkg.glob("*Test.java"))[:3]
+
+    # Fallback: any test file in the project
+    if not test_files:
+        test_files = sorted(test_dir.rglob("*Test.java"))[:5]
+
+    if not test_files:
+        return ""
+
+    for test_file in test_files:
+        if skip_filename and test_file.name == skip_filename:
+            continue
+        try:
+            content = test_file.read_text(encoding="utf-8", errors="replace")
+            lines = content.split("\n")[:80]
+            truncated = "\n".join(lines)
+            if len(content.split("\n")) > 80:
+                truncated += "\n// ... (truncated)"
+            return (
+                "\n## Existing Test Example (follow this style and imports):\n"
+                f"```java\n{truncated}\n```\n"
+            )
+        except Exception:
+            continue
+
+    return ""
+
+
+def _validate_generated_imports(test_code: str, test_deps: dict[str, Any]) -> list[str]:
+    """Check that generated test imports match available dependencies."""
+    warnings: list[str] = []
+    fw = test_deps["framework"]
+
+    if fw == "junit4":
+        if "org.junit.jupiter" in test_code:
+            warnings.append("Uses JUnit 5 imports but project has JUnit 4")
+        if "@ExtendWith" in test_code:
+            warnings.append("Uses @ExtendWith (JUnit 5) but project has JUnit 4")
+        if "@BeforeEach" in test_code:
+            warnings.append("Uses @BeforeEach (JUnit 5) but project has JUnit 4")
+        if "@DisplayName" in test_code:
+            warnings.append("Uses @DisplayName (JUnit 5) but project has JUnit 4")
+
+    if not test_deps["has_mockito"]:
+        if "org.mockito" in test_code:
+            warnings.append("Uses Mockito but it is not in pom.xml")
+
+    if not test_deps["has_assertj"]:
+        if "org.assertj" in test_code:
+            warnings.append("Uses AssertJ but it is not in pom.xml")
+
+    return warnings
+
+
+def _extract_dependency_signatures(project_path: str, dependencies: list[dict[str, Any]]) -> str:
+    """Find source files for dependency classes and extract their public method signatures."""
+    if not dependencies or not project_path:
+        return ""
+    project_dir = Path(project_path)
+    results = []
+    for dep in dependencies:
+        dep_type = dep.get("type", "").split("<")[0].strip()
+        if not dep_type or _is_primitive_type(dep_type):
+            continue
+        matches = list(project_dir.rglob(f"{dep_type}.java"))
+        if not matches:
+            continue
+        try:
+            source = matches[0].read_text(encoding="utf-8", errors="replace")
+            sigs = _extract_public_signatures(source)
+            if sigs:
+                results.append(f"**{dep_type}** (field: `{dep.get('name', dep_type)}`):\n{sigs}")
+        except Exception:
+            pass
+    return "\n".join(results)
+
+
+def _extract_public_signatures(source_code: str) -> str:
+    """Extract public method signatures with full parameter types from Java source."""
+    pattern = re.compile(
+        r"public\s+(?:static\s+)?(?:final\s+)?(?:synchronized\s+)?"
+        r"(\w[\w<>\[\], ]*?)\s+(\w+)\s*\(([^)]*)\)"
+        r"(?:\s+throws\s+([\w, ]+))?",
+        re.MULTILINE,
+    )
+    sigs = []
+    for m in pattern.finditer(source_code):
+        ret = m.group(1).strip()
+        name = m.group(2)
+        if name in {"if", "while", "for", "switch", "class", "new", "return"}:
+            continue
+        params = m.group(3).strip()
+        throws = f" throws {m.group(4).strip()}" if m.group(4) else ""
+        sigs.append(f"  - `{ret} {name}({params}){throws}`")
+    return "\n".join(sigs[:20])
+
+
+def _resolve_dependency_signatures_from_index(
+    dependencies: list[dict[str, Any]], class_index: dict[str, dict[str, Any]]
+) -> str:
+    """Resolve dependency method signatures from the pre-built class index.
+
+    Replaces _extract_dependency_signatures() when a class_index is available.
+    Provides richer context: field types (fixes BigDecimal vs Double problems),
+    inheritance chain, and all public method signatures — without filesystem I/O.
+    """
+    results = []
+    for dep in dependencies:
+        dep_type = dep.get("type", "").split("<")[0].strip()
+        if not dep_type or _is_primitive_type(dep_type):
+            continue
+        entry = class_index.get(dep_type)
+        if not entry:
+            continue
+
+        lines = [f"**{dep_type}** (field: `{dep.get('name', dep_type)}`)"]
+
+        if entry.get("extends"):
+            lines.append(f"  extends: {entry['extends']}")
+        if entry.get("implements"):
+            lines.append(f"  implements: {', '.join(entry['implements'])}")
+
+        # Field types — critical for correct mock values (BigDecimal vs Double, etc.)
+        fields = entry.get("fields", [])
+        if fields:
+            lines.append("  Fields:")
+            for f in fields[:10]:
+                ann_str = f" [{', '.join(f.get('annotations', []))}]" if f.get("annotations") else ""
+                lines.append(f"    - `{f['type']} {f['name']}`{ann_str}")
+
+        sigs = entry.get("public_signatures", "")
+        if sigs:
+            lines.append("  Methods:")
+            lines.append(sigs)
+
+        results.append("\n".join(lines))
+
+    return "\n\n".join(results)
+
+
+def _build_test_examples_section(test_examples: list[dict[str, str]]) -> str:
+    """Build the test style examples section from pre-extracted examples.
+
+    Replaces _find_existing_test_example() (1 file, 80 lines) with
+    up to 3 complete examples (150 lines each).
+    """
+    if not test_examples:
+        return ""
+    parts = ["\n## Existing Test Examples (follow this style and imports exactly):\n"]
+    for example in test_examples[:3]:
+        path = example.get("path", "unknown")
+        content = example.get("content", "")
+        parts.append(f"### Example from `{path}`:\n```java\n{content}\n```\n")
+    return "\n".join(parts)
+
+
+def _extract_token_usage(response: object) -> dict[str, int | None]:
+    """Extract token usage from a LangChain response (AIMessage)."""
+    usage: dict[str, int | None] = {
+        "prompt_tokens": None, "completion_tokens": None, "total_tokens": None,
+    }
+    # Try response_metadata (Anthropic, OpenAI)
+    meta = getattr(response, "response_metadata", None) or {}
+    tu = meta.get("token_usage") or meta.get("usage") or {}
+    if tu:
+        usage["prompt_tokens"] = tu.get("prompt_tokens") or tu.get("input_tokens")
+        usage["completion_tokens"] = tu.get("completion_tokens") or tu.get("output_tokens")
+        usage["total_tokens"] = tu.get("total_tokens")
+    # Try usage_metadata (Google GenAI / newer LangChain)
+    um = getattr(response, "usage_metadata", None)
+    if um and not usage["total_tokens"]:
+        usage["prompt_tokens"] = getattr(um, "input_tokens", None)
+        usage["completion_tokens"] = getattr(um, "output_tokens", None)
+        usage["total_tokens"] = getattr(um, "total_tokens", None)
+    return usage
+
+
+async def fix_compilation_errors(test_code: str, compile_errors: str, class_name: str) -> str:
+    """Fix compilation errors in generated test code using LLM."""
+    llm = get_llm()
+    template = load_prompt_template("testing/compilation_fix.md")
+    prompt = render_template(template, compile_errors=compile_errors, test_code=test_code)
+
+    logger.debug(
+        "llm_fix_prompt",
+        class_name=class_name,
+        prompt_length=len(prompt),
+        error_lines=compile_errors.count("\n") + 1,
+    )
+
+    response = await llm.ainvoke(prompt)
+    raw = response.content if hasattr(response, "content") else str(response)
+    code = str(raw) if not isinstance(raw, str) else raw
+
+    usage = _extract_token_usage(response)
+    logger.debug(
+        "llm_fix_response",
+        class_name=class_name,
+        response_length=len(raw),
+        **usage,
+    )
+
+    if "```java" in code:
+        code = code.split("```java")[1].split("```")[0].strip()
+    elif "```" in code:
+        code = code.split("```")[1].split("```")[0].strip()
+    return code
+
+
 async def _generate_test_code_with_llm(context: dict[str, Any], source_code: str) -> str:
     """
     Generate test code using LLM for intelligent, context-aware tests.
@@ -195,7 +573,6 @@ async def _generate_test_code_with_llm(context: dict[str, Any], source_code: str
     Returns:
         Generated test code as string
     """
-    get_settings()
     llm = get_llm()
 
     class_name = context["class_name"]
@@ -204,57 +581,175 @@ async def _generate_test_code_with_llm(context: dict[str, Any], source_code: str
     methods = context["methods"]
     dependencies = context["dependencies"]
     test_requirements = context.get("test_requirements", [])
+    conventions = context.get("conventions", {})
     project_path = context.get("project_path", "")
+    class_index: dict[str, dict[str, Any]] | None = context.get("class_index")
+    test_examples: list[dict[str, str]] | None = context.get("test_examples")
 
     # Extract project context from pom.xml
     project_context = _extract_project_context(project_path) if project_path else ""
 
-    # Build the prompt for test generation
-    prompt = f"""You are an expert Java test engineer. Generate comprehensive JUnit 5 unit tests for the following Java class.
+    # Detect test framework and available dependencies (P1/P2)
+    test_deps = _detect_test_dependencies(project_path) if project_path else {
+        "framework": "junit5", "has_mockito": True, "has_assertj": True,
+        "has_hamcrest": False, "has_spring_test": False, "available_deps": [],
+    }
+    framework_instructions = _build_framework_instructions(test_deps)
 
-{project_context}
-## Source Code to Test:
-```java
-{source_code}
-```
+    # Test style examples: use pre-extracted multi-examples when available,
+    # fall back to lazy single-file lookup.
+    existing_test_example = (
+        _build_test_examples_section(test_examples)
+        if test_examples
+        else (
+            _find_existing_test_example(project_path, package, class_name)
+            if project_path else ""
+        )
+    )
 
-## Class Analysis:
-- Class Name: {class_name}
-- Package: {package}
-- Type: {class_type}
-- Dependencies to mock: {json.dumps(dependencies, indent=2)}
-- Public methods: {json.dumps([m["name"] for m in methods], indent=2)}
+    # Dependency signatures: use pre-built class index when available,
+    # fall back to lazy filesystem lookup.
+    if class_index:
+        dep_signatures = _resolve_dependency_signatures_from_index(dependencies, class_index)
+    else:
+        dep_signatures = _extract_dependency_signatures(project_path, dependencies)
+    dep_section = ""
+    if dep_signatures:
+        dep_section = (
+            "\n## Dependency Method Signatures "
+            "(use EXACT parameter types in any() matchers and doThrow/doNothing calls):\n"
+            + dep_signatures + "\n"
+        )
 
-## Test Requirements:
-{json.dumps(test_requirements, indent=2) if test_requirements else "Generate standard coverage tests for all public methods."}
+    # Inheritance context: if the class extends a parent in the index, provide parent details.
+    inheritance_context = ""
+    if class_index:
+        class_entry = class_index.get(class_name, {})
+        parent_name = class_entry.get("extends")
+        if parent_name:
+            parent_entry = class_index.get(parent_name, {})
+            if parent_entry:
+                parent_sigs = parent_entry.get("public_signatures", "")
+                parent_fields = parent_entry.get("fields", [])
+                field_lines = "\n".join(
+                    f"  - `{f['type']} {f['name']}`" for f in parent_fields[:10]
+                )
+                inheritance_context = (
+                    f"\n## Parent Class `{parent_name}` (inherited by `{class_name}`):\n"
+                    + (f"Fields:\n{field_lines}\n" if field_lines else "")
+                    + (f"Methods:\n{parent_sigs}\n" if parent_sigs else "")
+                )
 
-## Instructions:
-1. Generate a complete, compilable JUnit 5 test class
-2. Use Mockito for mocking dependencies (constructor injection pattern)
-3. Include @BeforeEach setup method
-4. For each public method, generate:
-   - Happy path test (valid inputs, expected output)
-   - Edge case tests (null handling, boundary values)
-   - Error scenario tests where applicable
-5. Use @DisplayName for readable test descriptions
-6. Use meaningful test data, not generic placeholders
-7. For reactive types (Mono/Flux), use StepVerifier
-8. Follow AAA pattern: Arrange, Act, Assert
-9. Include proper imports at the top
-
-## Output Format:
-Return ONLY the complete Java test class code, starting with `package` statement.
-Do not include any explanation or markdown - just the raw Java code.
+    # Build conventions section for the prompt
+    conventions_section = ""
+    if conventions:
+        naming = conventions.get("naming", {})
+        assertions = conventions.get("assertions", {})
+        mocking = conventions.get("mocking", {})
+        setup = conventions.get("setup_patterns", {})
+        conventions_section = f"""
+## Project Test Conventions (MUST follow):
+- **Naming pattern**: {naming.get('dominant_pattern', 'descriptive')}
+- **Case style**: {'snake_case' if naming.get('uses_snake_case') else 'camelCase'}
+- **Assertion style**: {assertions.get('dominant_style', 'assertj')} (use this, not others)
+- **Uses Mockito**: {'yes - use @Mock and @InjectMocks' if mocking.get('uses_mockito', True) else 'no'}
+- **Uses @MockBean**: {'yes - for Spring integration' if mocking.get('uses_spring_mock_bean') else 'no - use @Mock'}
+- **Uses @Nested classes**: {'yes' if setup.get('uses_nested') else 'no'}
+- **Uses @ParameterizedTest**: {'yes - prefer parameterized tests for similar scenarios' if setup.get('uses_parameterized') else 'no'}
 """
+
+    # Build class-type-specific instructions (framework-aware)
+    fw = test_deps["framework"]
+    mockito_runner = (
+        "@RunWith(MockitoJUnitRunner.class)" if fw == "junit4"
+        else "@ExtendWith(MockitoExtension.class)"
+    )
+    spring_runner = (
+        "@RunWith(SpringRunner.class)\n- Use " if fw == "junit4"
+        else ""
+    )
+
+    class_type_instructions = ""
+    if class_type == "controller":
+        class_type_instructions = f"""
+## Controller-Specific Instructions:
+- Use {spring_runner}@WebMvcTest({{class_name}}.class) for test class annotation
+- Use @MockBean for service dependencies (NOT @Mock)
+- Use MockMvc for HTTP request testing
+- Test HTTP status codes, response body, and content type
+- Skip null parameter tests (Spring @Valid handles validation)
+"""
+    elif class_type == "service":
+        class_type_instructions = f"""
+## Service-Specific Instructions:
+- Use {mockito_runner}
+- Use @Mock for repository and other dependencies
+- Use @InjectMocks for the service under test
+- Verify mock interactions with verify()
+- Test business logic, validation, and exception scenarios
+"""
+    elif class_type == "repository":
+        class_type_instructions = f"""
+## Repository-Specific Instructions:
+- Use {spring_runner}@DataJpaTest for repository testing
+- Use TestEntityManager for test data setup
+- Test custom query methods
+- Verify data persistence and retrieval
+"""
+
+    # Build prompt from template
+    methods_json = json.dumps(
+        [{"name": m["name"], "params": m.get("parameters", []), "return_type": m.get("return_type", "void")}
+         for m in methods],
+        indent=2,
+    )
+    test_requirements_section = (
+        json.dumps(test_requirements, indent=2) if test_requirements
+        else "Generate standard coverage tests for all public methods."
+    )
+
+    template = load_prompt_template("testing/unit_test_generation.md")
+    prompt = render_template(
+        template,
+        project_context=project_context,
+        framework_instructions=framework_instructions,
+        conventions_section=conventions_section,
+        class_type_instructions=class_type_instructions,
+        dep_section=dep_section,
+        inheritance_context=inheritance_context,
+        existing_test_example=existing_test_example,
+        source_code=source_code,
+        class_name=class_name,
+        package=package,
+        class_type=class_type,
+        dependencies_json=json.dumps(dependencies, indent=2),
+        methods_json=methods_json,
+        test_requirements_section=test_requirements_section,
+    )
 
     try:
         # Call LLM to generate tests
+        logger.debug(
+            "llm_generate_prompt",
+            class_name=class_name,
+            prompt_length=len(prompt),
+            class_type=class_type,
+        )
+
         response = await llm.ainvoke(prompt)
 
         # Extract the test code from response
         raw_content = response.content if hasattr(response, 'content') else str(response)
         # Ensure test_code is a string (LangChain content can be str or list)
         test_code: str = str(raw_content) if not isinstance(raw_content, str) else raw_content
+
+        usage = _extract_token_usage(response)
+        logger.debug(
+            "llm_generate_response",
+            class_name=class_name,
+            response_length=len(test_code),
+            **usage,
+        )
 
         # Clean up any markdown code blocks if present
         if "```java" in test_code:
@@ -269,9 +764,19 @@ Do not include any explanation or markdown - just the raw Java code.
                 class_name=class_name,
                 response_preview=test_code[:200],
             )
-            # Fall back to template generation
-            logger.info("falling_back_to_templates", reason="LLM output validation failed")
-            return _generate_test_code(context)
+            raise ValueError(
+                f"LLM generated invalid test code for {class_name}: "
+                "output does not contain @Test annotation or class declaration"
+            )
+
+        # Validate imports match available dependencies (P5)
+        import_warnings = _validate_generated_imports(test_code, test_deps)
+        if import_warnings:
+            logger.warning(
+                "generated_test_import_mismatch",
+                class_name=class_name,
+                warnings=import_warnings,
+            )
 
         logger.info(
             "llm_test_generation_success",
@@ -286,9 +791,9 @@ Do not include any explanation or markdown - just the raw Java code.
             class_name=class_name,
             error=str(e),
         )
-        # Fall back to template generation
-        logger.info("falling_back_to_templates", reason=str(e))
-        return _generate_test_code(context)
+        # CRITICAL: Do NOT silently fall back to templates.
+        # If the LLM is unreachable, the error must propagate immediately.
+        raise
 
 
 def _analyze_class(source_code: str) -> dict[str, Any]:
@@ -573,597 +1078,6 @@ def _get_test_file_path(project_dir: Path, source_path: Path) -> Path:
     return Path(*parts)
 
 
-def _generate_test_code(context: dict[str, Any]) -> str:
-    """Generate test code based on context and test requirements."""
-    class_name = context["class_name"]
-    package = context["package"]
-    class_type = context["class_type"]
-    methods = context["methods"]
-    dependencies = context["dependencies"]
-    conventions = context.get("conventions", {})
-    test_requirements = context.get("test_requirements", [])
-    source_imports = context.get("imports", [])
-    is_record = context.get("is_record", False)
-
-    # Determine test style from conventions
-    uses_mockito = conventions.get("mocking", {}).get("uses_mockito", True)
-    uses_assertj = conventions.get("assertions", {}).get("dominant_style") == "assertj"
-
-    # FIX: Track test method names for uniqueness
-    used_test_names: set[str] = set()
-
-    # Check if class uses reactive types (Mono/Flux)
-    uses_reactive = _uses_reactive_types(methods)
-
-    # Build imports
-    imports = [
-        f"package {package};",
-        "",
-        "import org.junit.jupiter.api.Test;",
-        "import org.junit.jupiter.api.BeforeEach;",
-        "import org.junit.jupiter.api.DisplayName;",
-    ]
-
-    if uses_mockito and dependencies:
-        imports.extend(
-            [
-                "import org.mockito.Mock;",
-                "import org.mockito.Mockito;",
-                "import org.mockito.junit.jupiter.MockitoExtension;",
-                "import org.junit.jupiter.api.extension.ExtendWith;",
-            ]
-        )
-
-    if uses_assertj:
-        imports.append("import static org.assertj.core.api.Assertions.*;")
-    else:
-        imports.append("import static org.junit.jupiter.api.Assertions.*;")
-
-    # FIX: Add reactive type support (StepVerifier for Mono/Flux)
-    if uses_reactive:
-        imports.append("import reactor.test.StepVerifier;")
-
-    # FIX: Add relevant imports from source file
-    # Filter to common useful imports for testing
-    for imp in source_imports:
-        # Skip test-related imports and framework internals
-        if any(skip in imp for skip in ["junit", "mockito", "assertj", "hamcrest"]):
-            continue
-        # Include model/domain imports, utility imports
-        if any(keep in imp for keep in [
-            package.rsplit(".", 1)[0] if "." in package else package,  # Same package prefix
-            "java.util",
-            "java.time",
-            "java.math",
-        ]):
-            import_line = f"import {imp};"
-            if import_line not in imports:
-                imports.append(import_line)
-
-    imports.append("")
-
-    # Build class body
-    test_class_name = f"{class_name}Test"
-
-    class_body = []
-    if uses_mockito and dependencies:
-        class_body.append("@ExtendWith(MockitoExtension.class)")
-    class_body.extend([f'@DisplayName("{class_name} Unit Tests")', f"class {test_class_name} {{", ""])
-
-    # Add mocks for dependencies
-    for dep in dependencies:
-        class_body.append("    @Mock")
-        class_body.append(f"    private {dep['type']} {dep['name']};")
-        class_body.append("")
-
-    # Add class under test
-    class_body.append(f"    private {class_name} {_to_camel_case(class_name)};")
-    class_body.append("")
-
-    # Add setup method
-    class_body.extend(
-        [
-            "    @BeforeEach",
-            "    void setUp() {",
-        ]
-    )
-
-    if dependencies:
-        # FIX: Create instance with constructor injection (modern Spring pattern)
-        dep_names = ", ".join(d["name"] for d in dependencies)
-        class_body.append(f"        {_to_camel_case(class_name)} = new {class_name}({dep_names});")
-    elif is_record:
-        # FIX: Java records need all-args constructor
-        class_body.append(f"        // Note: {class_name} is a record - provide required arguments")
-        class_body.append(f"        {_to_camel_case(class_name)} = new {class_name}(/* TODO: provide record components */);")
-    else:
-        class_body.append(f"        {_to_camel_case(class_name)} = new {class_name}();")
-
-    class_body.extend(["    }", ""])
-
-    # Generate tests from impact analysis requirements FIRST (priority)
-    if test_requirements:
-        class_body.append("    // ========== Tests from Impact Analysis ==========")
-        class_body.append("")
-        for req in test_requirements:
-            req_tests = _generate_requirement_test(req, class_name, uses_assertj, methods, used_test_names, uses_reactive)
-            class_body.extend(req_tests)
-
-    # Generate standard test methods for remaining methods
-    class_body.append("    // ========== Standard Coverage Tests ==========")
-    class_body.append("")
-    for method in methods:
-        test_methods = _generate_method_tests(method, class_name, class_type, uses_assertj, used_test_names, uses_reactive, dependencies)
-        class_body.extend(test_methods)
-
-    class_body.append("}")
-
-    return "\n".join(imports + class_body)
-
-
-def _uses_reactive_types(methods: list[dict[str, Any]]) -> bool:
-    """Check if any method returns reactive types (Mono/Flux)."""
-    for method in methods:
-        return_type = method.get("return_type", "")
-        if "Mono" in return_type or "Flux" in return_type:
-            return True
-    return False
-
-
-def _get_unique_test_name(base_name: str, used_names: set[str]) -> str:
-    """Get a unique test method name, adding suffix if needed."""
-    if base_name not in used_names:
-        used_names.add(base_name)
-        return base_name
-
-    # Add suffix to make unique
-    counter = 2
-    while f"{base_name}{counter}" in used_names:
-        counter += 1
-    unique_name = f"{base_name}{counter}"
-    used_names.add(unique_name)
-    return unique_name
-
-
-def _generate_requirement_test(
-    req: dict[str, Any],
-    class_name: str,
-    uses_assertj: bool,
-    methods: list[dict[str, Any]],
-    used_test_names: set[str] | None = None,
-    uses_reactive: bool = False,
-) -> list[str]:
-    """Generate a test based on an impact analysis requirement."""
-    if used_test_names is None:
-        used_test_names = set()
-
-    tests = []
-    instance_name = _to_camel_case(class_name)
-
-    # Extract requirement info
-    base_test_name = req.get("suggested_test_name", f"test{req.get('id', 'Requirement')}")
-    # FIX: Ensure unique test method names
-    test_name = _get_unique_test_name(base_test_name, used_test_names)
-    description = req.get("description", "Verify requirement")
-    scenario_type = req.get("scenario_type", "nominal")
-    target_method = req.get("target_method")
-
-    # Find matching method if target_method is specified
-    matched_method = None
-    if target_method:
-        for m in methods:
-            if m["name"] == target_method:
-                matched_method = m
-                break
-
-    # Check if this method returns reactive types (for StepVerifier assertions)
-    is_reactive_method = matched_method is not None and (
-        "Mono" in (matched_method.get("return_type") or "") or
-        "Flux" in (matched_method.get("return_type") or "")
-    )
-    reactive_return_type = (matched_method.get("return_type") or "") if is_reactive_method and matched_method else ""
-
-    # Generate test based on scenario type
-    tests.extend([
-        "    @Test",
-        f'    @DisplayName("{description[:80]}")',
-        f"    void {test_name}() {{",
-    ])
-
-    if scenario_type == "edge_case":
-        # Edge case: test validation/rejection
-        # Generate smart invalid values based on description
-        invalid_data = _generate_invalid_data_from_description(description, test_name, matched_method)
-
-        tests.append("        // Arrange - invalid input scenario")
-        for line in invalid_data["arrange_lines"]:
-            tests.append(f"        {line}")
-
-        tests.extend([
-            "",
-            "        // Act & Assert - should reject invalid input",
-        ])
-
-        method_call = invalid_data["method_call"]
-        exception_type = invalid_data.get("exception_type", "IllegalArgumentException")
-
-        if uses_assertj:
-            tests.append(f"        assertThatThrownBy(() -> {instance_name}.{method_call})")
-            tests.append(f"            .isInstanceOf({exception_type}.class);")
-        else:
-            tests.append(f"        assertThrows({exception_type}.class, () -> {instance_name}.{method_call});")
-
-    elif scenario_type == "regression":
-        # Regression: verify bug fix
-        tests.extend([
-            "        // Arrange - scenario that previously caused bug",
-            "        // TODO: Set up the specific condition that was fixed",
-            "",
-            "        // Act",
-        ])
-        if matched_method:
-            params = matched_method.get("parsed_params", [])
-            if params:
-                param_values = [_generate_test_value(p["type"], p["name"]) for p in params]
-                method_call = f"{target_method}({', '.join(param_values)})"
-            else:
-                method_call = f"{target_method}()"
-            tests.append(f"        var result = {instance_name}.{method_call};")
-        else:
-            tests.append("        // TODO: Call the method under test")
-        tests.extend([
-            "",
-            "        // Assert - verify bug is fixed",
-            "        // TODO: Add specific assertion for the bug fix",
-        ])
-
-    elif scenario_type == "invariant":
-        # Invariant: verify business rule always holds
-        tests.extend([
-            "        // Arrange - business rule scenario",
-            "        // TODO: Set up business rule test data",
-            "",
-            "        // Act",
-        ])
-        if matched_method:
-            params = matched_method.get("parsed_params", [])
-            if params:
-                param_values = [_generate_test_value(p["type"], p["name"]) for p in params]
-                method_call = f"{target_method}({', '.join(param_values)})"
-            else:
-                method_call = f"{target_method}()"
-            tests.append(f"        var result = {instance_name}.{method_call};")
-        else:
-            tests.append("        // TODO: Call the method under test")
-        tests.extend([
-            "",
-            "        // Assert - business rule must always hold",
-            "        // TODO: Verify business invariant",
-        ])
-
-    else:  # nominal
-        # Nominal: happy path test
-        tests.append("        // Arrange")
-        if matched_method:
-            params = matched_method.get("parsed_params", [])
-            for p in params:
-                if p["type"] not in ("String", "int", "long", "double", "float", "boolean"):
-                    tests.append(f"        {p['type']} {p['name']} = {_generate_test_value(p['type'], p['name'])};")
-
-            tests.append("")
-            tests.append("        // Act")
-            if params:
-                param_values = [_generate_test_value(p["type"], p["name"]) for p in params]
-                method_call = f"{target_method}({', '.join(param_values)})"
-            else:
-                method_call = f"{target_method}()"
-
-            if matched_method.get("is_void"):
-                tests.append(f"        {instance_name}.{method_call};")
-            elif is_reactive_method:
-                # Use StepVerifier for reactive types (Mono/Flux)
-                tests.append(f"        {reactive_return_type} result = {instance_name}.{method_call};")
-            else:
-                tests.append(f"        var result = {instance_name}.{method_call};")
-
-            tests.append("")
-            tests.append("        // Assert")
-            if not matched_method.get("is_void"):
-                if is_reactive_method:
-                    # Use StepVerifier for reactive assertions
-                    if "Mono" in reactive_return_type:
-                        tests.append("        StepVerifier.create(result)")
-                        tests.append("            .expectNextCount(1)")
-                        tests.append("            .verifyComplete();")
-                    else:  # Flux
-                        tests.append("        StepVerifier.create(result)")
-                        tests.append("            .thenConsumeWhile(item -> true)")
-                        tests.append("            .verifyComplete();")
-                elif uses_assertj:
-                    tests.append("        assertThat(result).isNotNull();")
-                else:
-                    tests.append("        assertNotNull(result);")
-            else:
-                tests.append("        // Verify expected side effects")
-        else:
-            tests.extend([
-                "        // TODO: Set up test data",
-                "",
-                "        // Act",
-                "        // TODO: Call method under test",
-                "",
-                "        // Assert",
-                "        // TODO: Verify expected outcome",
-            ])
-
-    tests.extend(["    }", ""])
-    return tests
-
-
-def _generate_method_tests(
-    method: dict[str, Any],
-    class_name: str,
-    class_type: str,
-    uses_assertj: bool,
-    used_test_names: set[str] | None = None,
-    uses_reactive: bool = False,
-    dependencies: list[dict[str, str]] | None = None,
-) -> list[str]:
-    """Generate test methods for a single method."""
-    if used_test_names is None:
-        used_test_names = set()
-    if dependencies is None:
-        dependencies = []
-
-    method_name = method["name"]
-    return_type = method["return_type"]
-    is_void = method["is_void"]
-    parsed_params = method.get("parsed_params", [])
-    instance_name = _to_camel_case(class_name)
-
-    # FIX: Check if this method returns reactive types
-    is_reactive = "Mono" in return_type or "Flux" in return_type
-
-    tests = []
-
-    # Generate method call with proper parameters
-    if parsed_params:
-        param_values = [_generate_test_value(p["type"], p["name"]) for p in parsed_params]
-        method_call = f"{method_name}({', '.join(param_values)})"
-        # Generate variable declarations for complex types
-        arrange_vars = _generate_arrange_variables(parsed_params)
-    else:
-        method_call = f"{method_name}()"
-        arrange_vars = []
-
-    # Test 1: Basic success case
-    base_test_name = f"should{_to_pascal_case(method_name)}Successfully"
-    test_name = _get_unique_test_name(base_test_name, used_test_names)
-    tests.extend(
-        [
-            "    @Test",
-            f'    @DisplayName("{method_name} should execute successfully")',
-            f"    void {test_name}() {{",
-            "        // Arrange",
-        ]
-    )
-
-    # Add variable declarations
-    for var in arrange_vars:
-        tests.append(f"        {var}")
-
-    # FIX: Add basic mock stubs for common repository patterns
-    mock_stubs = _generate_mock_stubs(method_name, return_type, parsed_params, dependencies)
-    for stub in mock_stubs:
-        tests.append(f"        {stub}")
-
-    if arrange_vars or mock_stubs:
-        tests.append("")
-
-    if is_void:
-        tests.extend(
-            [
-                "        // Act",
-                f"        {instance_name}.{method_call};",
-                "",
-                "        // Assert",
-                "        // Verify expected behavior",
-            ]
-        )
-    elif is_reactive:
-        # FIX: Use StepVerifier for reactive types
-        tests.extend(
-            [
-                "        // Act",
-                f"        {return_type} result = {instance_name}.{method_call};",
-                "",
-                "        // Assert - use StepVerifier for reactive types",
-            ]
-        )
-        if "Mono" in return_type:
-            tests.append("        StepVerifier.create(result)")
-            tests.append("            .expectNextCount(1)")
-            tests.append("            .verifyComplete();")
-        else:  # Flux
-            tests.append("        StepVerifier.create(result)")
-            tests.append("            .thenConsumeWhile(item -> true)")
-            tests.append("            .verifyComplete();")
-    else:
-        tests.extend(
-            [
-                "        // Act",
-                f"        {return_type} result = {instance_name}.{method_call};",
-                "",
-                "        // Assert",
-            ]
-        )
-        if uses_assertj:
-            tests.append("        assertThat(result).isNotNull();")
-        else:
-            tests.append("        assertNotNull(result);")
-
-    tests.extend(["    }", ""])
-
-    # Test 2: Edge case / null handling
-    # SKIP for controllers - Spring @Valid handles null validation at HTTP layer,
-    # not in the method body. The method never receives null for @Valid params.
-    # For service/utility classes, null tests may still be appropriate.
-    if class_type not in ("controller",):
-        nullable_params = [p for p in parsed_params if not _is_primitive_type(p["type"])]
-        if not nullable_params:
-            return tests
-        base_test_name = f"should{_to_pascal_case(method_name)}HandleNullInput"
-        test_name = _get_unique_test_name(base_test_name, used_test_names)
-        tests.extend(
-            [
-                "    @Test",
-                f'    @DisplayName("{method_name} should handle null input")',
-                f"    void {test_name}() {{",
-                "        // Arrange - null parameters",
-            ]
-        )
-
-        # Generate null values for nullable params, keep valid values for primitives
-        null_params = []
-        for p in parsed_params:
-            if _is_primitive_type(p["type"]):
-                null_params.append(_generate_test_value(p["type"], p["name"]))
-            else:
-                null_params.append("null")
-
-        null_method_call = f"{method_name}({', '.join(null_params)})"
-
-        tests.extend(
-            [
-                "",
-                "        // Act & Assert",
-            ]
-        )
-
-        if uses_assertj:
-            tests.append(f"        assertThatThrownBy(() -> {instance_name}.{null_method_call})")
-            tests.append("            .isInstanceOf(NullPointerException.class);")
-        else:
-            tests.append(f"        assertThrows(NullPointerException.class, () -> {instance_name}.{null_method_call});")
-
-        tests.extend(["    }", ""])
-
-    return tests
-
-
-def _generate_arrange_variables(parsed_params: list[dict[str, str]]) -> list[str]:
-    """Generate variable declarations for test arrange section."""
-    vars_list = []
-    for param in parsed_params:
-        param_type = param["type"]
-        param_name = param["name"]
-        # FIX: Use _is_primitive_type for consistent type checking
-        if not _is_primitive_type(param_type):
-            value = _generate_test_value(param_type, param_name)
-            vars_list.append(f"{param_type} {param_name} = {value};")
-    return vars_list
-
-
-def _generate_mock_stubs(
-    method_name: str,
-    return_type: str,
-    parsed_params: list[dict[str, str]],
-    dependencies: list[dict[str, str]] | None = None,
-) -> list[str]:
-    """Generate mock stubs for common repository/service patterns.
-
-    This adds Mockito.when(...).thenReturn(...) stubs for methods that likely
-    call repository/service dependencies.
-    """
-    stubs: list[str] = []
-    method_lower = method_name.lower()
-
-    # Find repository and mapper dependency names
-    repo_name = None
-    mapper_name = None
-    if dependencies:
-        for dep in dependencies:
-            dep_type = dep.get("type", "")
-            if "Repository" in dep_type and not repo_name:
-                repo_name = dep.get("name")
-            elif "Mapper" in dep_type and not mapper_name:
-                mapper_name = dep.get("name")
-
-    # If no repo found, skip mock generation
-    if not repo_name:
-        return stubs
-
-    # Common patterns that need mock setup:
-    # - create/save methods need repository.save() to return the entity
-    # - find/get methods need repository.findById() to return Optional.of(entity)
-    # - update methods need repository.findById() + repository.save()
-
-    # Extract the entity type from return type (e.g., Owner from Optional<Owner>)
-    entity_type = return_type
-    if "Optional<" in return_type:
-        entity_type = return_type.replace("Optional<", "").replace(">", "")
-    elif "List<" in return_type:
-        entity_type = return_type.replace("List<", "").replace(">", "")
-
-    # Check for common method patterns
-    if "create" in method_lower or "save" in method_lower or "add" in method_lower:
-        # For create methods, mock mapper.map() + repository.save()
-        if entity_type and not _is_primitive_type(entity_type):
-            stubs.append(f"{entity_type} mappedEntity = new {entity_type}();")
-            # Add mapper stub if mapper exists
-            if mapper_name:
-                # Find Request parameter
-                request_param = next((p for p in parsed_params if p["type"].endswith("Request") or p["type"].endswith("DTO")), None)
-                if request_param:
-                    stubs.append(f"Mockito.when({mapper_name}.map(Mockito.any({entity_type}.class), Mockito.eq({request_param['name']}))).thenReturn(mappedEntity);")
-            stubs.append(f"Mockito.when({repo_name}.save(mappedEntity)).thenReturn(mappedEntity);")
-
-    elif "update" in method_lower or "modify" in method_lower:
-        # For update methods, mock findById + save
-        # For void methods, we need to infer the entity type from the repo name
-        actual_entity = entity_type
-        if entity_type == "void" or not entity_type or _is_primitive_type(entity_type):
-            # Try to infer entity from repo type (e.g., OwnerRepository -> Owner)
-            repo_type = next((d.get("type", "") for d in (dependencies or []) if d.get("name") == repo_name), "")
-            if "Repository" in repo_type:
-                actual_entity = repo_type.replace("Repository", "")
-
-        if actual_entity and actual_entity != "void" and not _is_primitive_type(actual_entity):
-            stubs.append(f"{actual_entity} existingEntity = new {actual_entity}();")
-            # Check if there's an ID parameter
-            id_param = next((p for p in parsed_params if "id" in p["name"].lower()), None)
-            if id_param:
-                id_value = _generate_test_value(id_param["type"], id_param["name"])
-                stubs.append(f"Mockito.when({repo_name}.findById({id_value})).thenReturn(Optional.of(existingEntity));")
-
-    elif "find" in method_lower or "get" in method_lower:
-        # For find methods, mock findById or findAll
-        if "Optional" in return_type and entity_type:
-            stubs.append(f"{entity_type} foundEntity = new {entity_type}();")
-            id_param = next((p for p in parsed_params if "id" in p["name"].lower()), None)
-            if id_param:
-                id_value = _generate_test_value(id_param["type"], id_param["name"])
-                stubs.append(f"Mockito.when({repo_name}.findById({id_value})).thenReturn(Optional.of(foundEntity));")
-        elif "List" in return_type:
-            stubs.append(f"Mockito.when({repo_name}.findAll()).thenReturn(List.of());")
-
-    return stubs
-
-
-def _to_camel_case(name: str) -> str:
-    """Convert PascalCase to camelCase."""
-    if not name:
-        return name
-    return name[0].lower() + name[1:]
-
-
-def _to_pascal_case(name: str) -> str:
-    """Convert camelCase to PascalCase."""
-    if not name:
-        return name
-    return name[0].upper() + name[1:]
-
-
 def _parse_parameters(params_str: str) -> list[dict[str, str]]:
     """Parse Java method parameters into structured form."""
     if not params_str or not params_str.strip():
@@ -1202,207 +1116,37 @@ def _parse_parameters(params_str: str) -> list[dict[str, str]]:
     return result
 
 
-def _generate_invalid_data_from_description(
-    description: str,
-    test_name: str,
-    matched_method: dict[str, Any] | None,
-) -> dict[str, Any]:
-    """Generate smart invalid data based on test description and name."""
-    desc_lower = description.lower()
-    name_lower = test_name.lower()
-    combined = desc_lower + " " + name_lower
+async def analyze_edge_cases(source_code: str, class_name: str, class_type: str) -> list[dict[str, Any]]:
+    """Analyze a Java class for edge case test scenarios using the edge_case_analysis prompt.
 
-    arrange_lines = []
-    exception_type = "IllegalArgumentException"
-
-    # Detect what kind of invalid data to generate
-    if "email" in combined and ("invalid" in combined or "format" in combined):
-        # Invalid email format
-        arrange_lines.append('String invalidEmail = "not-a-valid-email";')
-        if matched_method and matched_method.get("parsed_params"):
-            param = matched_method["parsed_params"][0]
-            param_type = param["type"]
-            arrange_lines.append(f'{param_type} request = new {param_type}();')
-            arrange_lines.append('request.setEmail(invalidEmail);')
-            method_call = f"{matched_method['name']}(request)"
-        else:
-            method_call = 'createOwner(request)'
-
-    elif "duplicate" in combined or "already exists" in combined:
-        # Duplicate entry
-        exception_type = "IllegalStateException"
-        if matched_method and matched_method.get("parsed_params"):
-            param = matched_method["parsed_params"][0]
-            param_type = param["type"]
-            arrange_lines.append(f'{param_type} request = new {param_type}();')
-            arrange_lines.append('request.setEmail("existing@example.com");')
-            arrange_lines.append('// Assume this email already exists in repository')
-            method_call = f"{matched_method['name']}(request)"
-        else:
-            method_call = 'createOwner(request)'
-
-    elif "null" in combined or "empty" in combined:
-        # Null or empty input
-        if matched_method:
-            method_call = f"{matched_method['name']}(null)"
-        else:
-            method_call = "method(null)"
-
-    elif "past" in combined or "date" in combined:
-        # Invalid date (in the past)
-        arrange_lines.append('LocalDate pastDate = LocalDate.now().minusDays(1);')
-        if matched_method and matched_method.get("parsed_params"):
-            param = matched_method["parsed_params"][0]
-            param_type = param["type"]
-            arrange_lines.append(f'{param_type} request = new {param_type}();')
-            arrange_lines.append('request.setDate(pastDate);')
-            method_call = f"{matched_method['name']}(request)"
-        else:
-            method_call = 'create(request)'
-
-    elif "maximum" in combined or "limit" in combined or "exceed" in combined:
-        # Exceeds limit
-        exception_type = "IllegalStateException"
-        arrange_lines.append('// Setup: already at maximum allowed')
-        if matched_method and matched_method.get("parsed_params"):
-            params = matched_method["parsed_params"]
-            param_values = [_generate_test_value(p["type"], p["name"]) for p in params]
-            method_call = f"{matched_method['name']}({', '.join(param_values)})"
-        else:
-            method_call = 'create(request)'
-
-    elif "negative" in combined or "invalid" in combined:
-        # Generic invalid value
-        if matched_method and matched_method.get("parsed_params"):
-            params = matched_method["parsed_params"]
-            invalid_values = []
-            for p in params:
-                if p["type"].lower() in ("int", "integer", "long"):
-                    invalid_values.append("-1")
-                elif p["type"].lower() in ("string",):
-                    invalid_values.append('""')
-                else:
-                    invalid_values.append("null")
-            method_call = f"{matched_method['name']}({', '.join(invalid_values)})"
-        else:
-            method_call = "method(-1)"
-
-    else:
-        # Default: use null for object types
-        if matched_method and matched_method.get("parsed_params"):
-            params = matched_method["parsed_params"]
-            null_values = []
-            for p in params:
-                if p["type"].lower() in ("int", "long", "double", "float", "boolean"):
-                    null_values.append(_generate_test_value(p["type"], p["name"]))
-                else:
-                    null_values.append("null")
-            method_call = f"{matched_method['name']}({', '.join(null_values)})"
-        else:
-            method_call = "method(null)"
-
-    return {
-        "arrange_lines": arrange_lines,
-        "method_call": method_call,
-        "exception_type": exception_type,
-    }
-
-
-# Type mappings for test value generation
-_TYPE_VALUES: dict[str, str] = {
-    "string": '"test-value"',
-    "java.lang.string": '"test-value"',
-    "long": "1L",
-    "java.lang.long": "1L",
-    "double": "3.14",
-    "java.lang.double": "3.14",
-    "float": "1.5f",
-    "java.lang.float": "1.5f",
-    "boolean": "true",
-    "java.lang.boolean": "true",
-    "bigdecimal": 'new BigDecimal("100.00")',
-    "localdate": "LocalDate.now()",
-    "localdatetime": "LocalDateTime.now()",
-}
-
-
-def _extract_generic_type(param_type: str) -> str | None:
-    """Extract the inner type from a generic type like Optional<Long> or List<Entity>.
-
-    Returns None if no generic type is found.
+    Returns a list of edge case scenarios as dicts with method, scenario, description,
+    input_hint, expected_behavior, and category fields.
     """
-    # Match patterns like Optional<Long>, List<Owner>, Set<Pet>
-    match = re.search(r'<\s*(\w+(?:\.\w+)*)\s*>', param_type)
-    if match:
-        return match.group(1)
-    return None
+    template = load_prompt_template("testing/edge_case_analysis.md")
+    prompt = render_template(
+        template,
+        source_code=source_code,
+        class_name=class_name,
+        class_type=class_type,
+    )
 
+    llm = get_llm()
+    response = await llm.ainvoke(prompt)
+    raw = response.content if hasattr(response, "content") else str(response)
+    text = str(raw) if not isinstance(raw, str) else raw
 
-def _generate_test_value(param_type: str, param_name: str) -> str:
-    """Generate appropriate test values based on parameter type."""
-    type_lower = param_type.lower()
-    name_lower = param_name.lower()
+    # Extract JSON from response (may be wrapped in markdown fences)
+    if "```json" in text:
+        text = text.split("```json")[1].split("```")[0].strip()
+    elif "```" in text:
+        text = text.split("```")[1].split("```")[0].strip()
 
-    # String values with context-aware defaults
-    if type_lower in ("string", "java.lang.string"):
-        if "email" in name_lower:
-            return '"test@example.com"'
-        if "name" in name_lower:
-            return '"Test Name"'
-        if "id" in name_lower:
-            return '"test-id-123"'
-        return '"test-value"'
+    try:
+        scenarios = json.loads(text)
+        if isinstance(scenarios, list):
+            logger.info("edge_case_analysis_success", class_name=class_name, scenarios=len(scenarios))
+            return scenarios
+    except json.JSONDecodeError:
+        logger.warning("edge_case_analysis_parse_error", class_name=class_name)
 
-    # Integer values with context-aware defaults
-    if type_lower in ("int", "integer", "java.lang.integer"):
-        if "id" in name_lower:
-            return "1"
-        if "count" in name_lower or "size" in name_lower:
-            return "10"
-        return "42"
-
-    # Check static type mappings
-    if type_lower in _TYPE_VALUES:
-        return _TYPE_VALUES[type_lower]
-
-    # Date types with partial matching
-    if "decimal" in type_lower:
-        return 'new BigDecimal("100.00")'
-    if "date" in type_lower:
-        return "LocalDate.now()"
-
-    # Collection types - extract inner type for non-empty collections
-    inner_type = _extract_generic_type(param_type)
-
-    if "list" in type_lower:
-        if inner_type:
-            inner_value = _generate_test_value(inner_type, "item")
-            return f"List.of({inner_value})"
-        return "List.of()"
-
-    if "set" in type_lower:
-        if inner_type:
-            inner_value = _generate_test_value(inner_type, "item")
-            return f"Set.of({inner_value})"
-        return "Set.of()"
-
-    if "map" in type_lower:
-        return "Map.of()"
-
-    # Optional<T> - IMPORTANT: Use Optional.of() for present values, not empty()
-    if "optional" in type_lower:
-        if inner_type:
-            inner_value = _generate_test_value(inner_type, param_name)
-            return f"Optional.of({inner_value})"
-        return "Optional.empty()"
-
-    # Custom objects - check for DTO/Request patterns
-    simple_type = param_type.split("<")[0].strip()
-
-    if simple_type.endswith("Request") or simple_type.endswith("DTO"):
-        return f'new {simple_type}("firstName", "lastName", "address", "city", "1234567890")'
-    if simple_type.endswith("Command") or simple_type.endswith("Event"):
-        return f'new {simple_type}("test-id", "test-data")'
-
-    # Default: try no-args constructor
-    return f"new {simple_type}()"
+    return []

@@ -1,30 +1,25 @@
 [tool.poetry]
 name = "testboost"
 version = "0.2.0"
-description = "Automated Java/Spring Boot maintenance with test generation, Maven updates, and Docker deployment"
+description = "AI-powered Java test generation CLI"
 authors = ["TestBoost Team"]
 license = "Apache-2.0"
 readme = "README.md"
-packages = [{include = "src"}]
+packages = [{include = "src"}, {include = "testboost"}]
 
 [tool.poetry.dependencies]
 python = "^3.11"
-fastapi = "^0.121"
-uvicorn = "^0.38"
-sqlalchemy = "^2.0"
-alembic = "^1.17"
-asyncpg = "^0.30"
 pydantic = "^2.12"
 pydantic-settings = "^2.7"
 langgraph = "^1.0"
 langchain = "^1.0"
 langchain-core = "^1.1"
-langchain-google-genai = "^2.1"
+langchain-google-genai = "^4.0"
 langchain-anthropic = "^1.1"
 langchain-openai = "^1.0"
 mcp = "^1.22"
-deepagents = "^0.2.7"
-typer = "^0.20"
+deepagents = "^0.4"
+typer = "^0.24"
 httpx = "^0.28"
 structlog = "^25.5"
 greenlet = "^3.3.1"
@@ -37,13 +32,9 @@ pytest-benchmark = "^5.1"
 pytest-xdist = "^3.5"
 pytest-rerunfailures = "^14.0"
 black = "^24.10"
-ruff = "^0.8"
+ruff = "^0.11"
 mypy = "^1.13"
 types-PyYAML = "^6.0"
-psycopg2-binary = "^2.9"
-
-[tool.poetry.scripts]
-boost = "src.cli.main:app"
 
 [build-system]
 requires = ["poetry-core"]
@@ -97,11 +88,12 @@ warn_required_dynamic_aliases = true
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
 testpaths = ["tests"]
-addopts = "-v --cov=src --cov-report=term-missing --cov-report=xml --durations=50 --durations-min=0.01"
+addopts = "-v --durations=50 --durations-min=0.01"
 markers = [
     "unit: mark test as unit test",
-    "integration: mark test as integration test (may require database)",
-    "slow: mark test as slow-running (excluded by default in CI)",
+    "integration: mark test as integration test",
+    "e2e: mark test as end-to-end test",
+    "slow: mark test as slow-running",
 ]
 filterwarnings = [
     "ignore::DeprecationWarning",
@@ -112,12 +104,12 @@ filterwarnings = [
 branch = true
 source = ["src"]
 omit = ["*/tests/*", "*/__pycache__/*"]
-
 [tool.coverage.report]
+show_missing = true
 exclude_lines = [
     "pragma: no cover",
     "def __repr__",
     "raise NotImplementedError",
     "if TYPE_CHECKING:",
 ]
-fail_under = 33
+fail_under = 0

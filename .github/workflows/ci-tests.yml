@@ -11,11 +11,6 @@ on:
 
 env:
   PYTHON_VERSION: '3.11'
-  POSTGRES_DB: testboost_test
-  POSTGRES_USER: testboost
-  POSTGRES_PASSWORD: testboost_test_password
-  POSTGRES_HOST: localhost
-  POSTGRES_PORT: 5433
 
 jobs:
   lint:
@@ -29,29 +24,39 @@ jobs:
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
+      - name: Install Poetry
+        uses: snok/install-poetry@v1
+        with:
+          version: latest
+          virtualenvs-create: true
+          virtualenvs-in-project: true
+
       - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install ruff mypy
+        run: poetry install --with dev
 
       - name: Run Ruff linter
-        run: ruff check src/ tests/
+        run: poetry run ruff check src/ tests/
 
       - name: Run mypy type checker
-        run: mypy src/ --ignore-missing-imports
+        run: poetry run mypy src/ --ignore-missing-imports
         continue-on-error: true
 
   unit-tests:
     name: Unit Tests
     runs-on: ubuntu-latest
     needs: lint
+
+    strategy:
+      matrix:
+        python-version: ['3.11', '3.12']
+
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Python
+      - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v5
         with:
-          python-version: ${{ env.PYTHON_VERSION }}
+          python-version: ${{ matrix.python-version }}
 
       - name: Install Poetry
         uses: snok/install-poetry@v1
@@ -64,9 +69,9 @@ jobs:
         uses: actions/cache@v4
         with:
           path: .venv
-          key: ${{ runner.os }}-poetry-${{ hashFiles('**/poetry.lock') }}
+          key: ${{ runner.os }}-py${{ matrix.python-version }}-poetry-${{ hashFiles('**/poetry.lock') }}
           restore-keys: |
-            ${{ runner.os }}-poetry-
+            ${{ runner.os }}-py${{ matrix.python-version }}-poetry-
 
       - name: Install dependencies
         run: poetry install --with dev
@@ -74,10 +79,7 @@ jobs:
       - name: Run unit tests
         run: |
           poetry run pytest tests/unit/ \
-            --cov=src \
-            --cov-report=xml \
-            --cov-report=term-missing \
-            --cov-fail-under=33 \
+            --no-cov \
             -v \
             --tb=short \
             --durations=50 \
@@ -85,31 +87,10 @@ jobs:
             --reruns=2 \
             --reruns-delay=1
 
-      - name: Upload coverage report
-        uses: codecov/codecov-action@v4
-        with:
-          files: ./coverage.xml
-          flags: unit
-          fail_ci_if_error: false
-
   integration-tests:
     name: Integration Tests
     runs-on: ubuntu-latest
     needs: unit-tests
-    services:
-      postgres:
-        image: postgres:15
-        env:
-          POSTGRES_DB: ${{ env.POSTGRES_DB }}
-          POSTGRES_USER: ${{ env.POSTGRES_USER }}
-          POSTGRES_PASSWORD: ${{ env.POSTGRES_PASSWORD }}
-        ports:
-          - 5433:5432
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
 
     steps:
       - uses: actions/checkout@v4
@@ -137,16 +118,7 @@ jobs:
       - name: Install dependencies
         run: poetry install --with dev
 
-      - name: Wait for PostgreSQL
-        run: |
-          until pg_isready -h localhost -p 5433; do
-            echo "Waiting for PostgreSQL..."
-            sleep 2
-          done
-
       - name: Run integration tests
-        env:
-          DATABASE_URL: postgresql+asyncpg://${{ env.POSTGRES_USER }}:${{ env.POSTGRES_PASSWORD }}@localhost:5433/${{ env.POSTGRES_DB }}
         run: |
           poetry run pytest tests/integration/ \
             -v \

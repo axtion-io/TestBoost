@@ -7,12 +7,16 @@ small changes (mutants) and checking if tests can detect them.
 
 import asyncio
 import json
+import shutil
 import subprocess
 import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Any
 
-from src.mcp_servers.maven_maintenance.utils import get_mvn_command
+
+def _get_mvn_command() -> str:
+    """Resolve the Maven executable path."""
+    return shutil.which("mvn") or shutil.which("mvn.cmd") or "mvn"
 
 
 async def run_mutation_testing(
@@ -47,7 +51,7 @@ async def run_mutation_testing(
         return json.dumps({"success": False, "error": "pom.xml not found - PIT requires Maven"})
 
     # Build PIT command
-    mvn = get_mvn_command()
+    mvn = _get_mvn_command()
     cmd = [
         mvn,
         "org.pitest:pitest-maven:mutationCoverage",

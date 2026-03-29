@@ -27,14 +27,6 @@ class TestSettings:
         assert settings.app_name == "TestBoost"
         assert settings.log_level in ["DEBUG", "INFO", "WARNING", "ERROR"]
 
-    def test_settings_database_url_default(self):
-        """Settings should have default database URL."""
-        from src.lib.config import get_settings
-
-        settings = get_settings()
-        assert settings.database_url is not None
-        assert "postgresql" in settings.database_url
-
     def test_settings_llm_provider_default(self):
         """Settings should have default LLM provider."""
         from src.lib.config import get_settings
@@ -56,13 +48,6 @@ class TestSettings:
 
         settings = get_settings()
         assert settings.max_retries > 0
-
-    def test_settings_retention_config(self):
-        """Settings should have data retention configuration."""
-        from src.lib.config import get_settings
-
-        settings = get_settings()
-        assert settings.session_retention_days > 0
 
     def test_settings_can_be_overridden_by_env(self):
         """Settings should respect environment variables."""

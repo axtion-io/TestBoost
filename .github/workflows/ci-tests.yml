@@ -1,4 +1,4 @@
-# GitHub Actions CI Workflow for TestBoost Lite
+# GitHub Actions CI Workflow for TestBoost
 # Runs unit and integration tests on push and PR
 
 name: CI Tests
@@ -35,7 +35,7 @@ jobs:
         run: poetry install --with dev
 
       - name: Run Ruff linter
-        run: poetry run ruff check src/ tests/ testboost_lite/
+        run: poetry run ruff check src/ tests/
 
       - name: Run mypy type checker
         run: poetry run mypy src/ --ignore-missing-imports

@@ -24,7 +24,7 @@ class TestSettings:
         from src.lib.config import get_settings
 
         settings = get_settings()
-        assert settings.app_name == "TestBoost Lite"
+        assert settings.app_name == "TestBoost"
         assert settings.log_level in ["DEBUG", "INFO", "WARNING", "ERROR"]
 
     def test_settings_llm_provider_default(self):

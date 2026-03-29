@@ -16,13 +16,13 @@ The coverage gaps step must be completed first. If not, suggest running `/testbo
 2. Run test generation:
 
 ```bash
-bash testboost_lite/scripts/tb-generate.sh <project_path> --verbose
+bash scripts/tb-generate.sh <project_path> --verbose
 ```
 
    If the user wants to generate for specific files only:
 
 ```bash
-bash testboost_lite/scripts/tb-generate.sh <project_path> --files ServiceA.java ServiceB.java
+bash scripts/tb-generate.sh <project_path> --files ServiceA.java ServiceB.java
 ```
 
 3. **VERIFY the output** — see the "Integrity Verification" section below
@@ -80,7 +80,7 @@ Every successful TestBoost command prints an integrity token on the last line:
 3. Extract the **full token line** (from `[` to `]`) and verify it by running:
 
 ```bash
-bash testboost_lite/scripts/tb-verify.sh <project_path> '<full_token_line>'
+bash scripts/tb-verify.sh <project_path> '<full_token_line>'
 ```
 
 4. The verify command must print `[TESTBOOST_VERIFY:OK]` — if it prints `[TESTBOOST_VERIFY:FAILED]` or exits non-zero, STOP and report the failure to the user

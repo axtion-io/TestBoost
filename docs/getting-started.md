@@ -87,12 +87,12 @@ You can run the CLI directly:
 cd TestBoost
 source .venv/bin/activate
 
-python -m testboost_lite init /path/to/java/project
-python -m testboost_lite analyze /path/to/java/project
-python -m testboost_lite gaps /path/to/java/project
-python -m testboost_lite generate /path/to/java/project
-python -m testboost_lite validate /path/to/java/project
-python -m testboost_lite status /path/to/java/project
+python -m testboost init /path/to/java/project
+python -m testboost analyze /path/to/java/project
+python -m testboost gaps /path/to/java/project
+python -m testboost generate /path/to/java/project
+python -m testboost validate /path/to/java/project
+python -m testboost status /path/to/java/project
 ```
 
 ## Installing TestBoost in Your Java Project
@@ -102,7 +102,7 @@ If you prefer to work from your Java project directory instead of the TestBoost 
 ```bash
 cd TestBoost
 source .venv/bin/activate
-python -m testboost_lite install /path/to/your/java/project
+python -m testboost install /path/to/your/java/project
 ```
 
 This installs:

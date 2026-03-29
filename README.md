@@ -71,11 +71,11 @@ Once inside the LLM CLI:
 Or use the CLI directly (no LLM CLI needed):
 
 ```bash
-python -m testboost_lite init /path/to/java/project
-python -m testboost_lite analyze /path/to/java/project
-python -m testboost_lite gaps /path/to/java/project
-python -m testboost_lite generate /path/to/java/project
-python -m testboost_lite validate /path/to/java/project
+python -m testboost init /path/to/java/project
+python -m testboost analyze /path/to/java/project
+python -m testboost gaps /path/to/java/project
+python -m testboost generate /path/to/java/project
+python -m testboost validate /path/to/java/project
 ```
 
 ## How It Works

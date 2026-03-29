@@ -1,11 +1,11 @@
 [tool.poetry]
 name = "testboost"
 version = "0.2.0"
-description = "AI-powered Java test generation CLI (TestBoost Lite)"
+description = "AI-powered Java test generation CLI"
 authors = ["TestBoost Team"]
 license = "Apache-2.0"
 readme = "README.md"
-packages = [{include = "src"}, {include = "testboost_lite"}]
+packages = [{include = "src"}, {include = "testboost"}]
 
 [tool.poetry.dependencies]
 python = "^3.11"
@@ -102,7 +102,7 @@ filterwarnings = [
 
 [tool.coverage.run]
 branch = true
-source = ["src", "testboost_lite"]
+source = ["src"]
 omit = ["*/tests/*", "*/__pycache__/*"]
 [tool.coverage.report]
 show_missing = true

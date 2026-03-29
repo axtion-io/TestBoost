@@ -2,7 +2,7 @@
 """Java project discovery utilities.
 
 Functions to find and classify Java source files in a Maven project.
-Used by testboost_lite via testboost_bridge.
+Used by testboost via testboost_bridge.
 """
 
 from pathlib import Path

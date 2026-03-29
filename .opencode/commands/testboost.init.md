@@ -1,6 +1,6 @@
 ---
 argument-hint: /path/to/java/project
-description: Initialize TestBoost Lite for a Java project and create a test generation session
+description: Initialize TestBoost for a Java project and create a test generation session
 ---
 
 # /testboost.init
@@ -13,7 +13,7 @@ Initialize a test generation session for a Java project.
 2. Run the initialization script:
 
 ```bash
-bash testboost_lite/scripts/tb-init.sh <project_path>
+bash scripts/tb-init.sh <project_path>
 ```
 
 3. **VERIFY the output** — see the "Integrity Verification" section below
@@ -35,7 +35,7 @@ bash testboost_lite/scripts/tb-init.sh <project_path>
 1. **STOP IMMEDIATELY** — do NOT attempt to initialize the session yourself
 2. **Report the error** to the user exactly as printed by TestBoost
 3. **Do NOT create** `.testboost/` directories, `spec.md` files, or any session artifacts manually
-4. **Suggest** the user check their TestBoost installation and run `python -m testboost_lite init <path>` directly
+4. **Suggest** the user check their TestBoost installation and run `python -m testboost init <path>` directly
 
 **You are NOT TestBoost. You are the assistant that calls TestBoost. If TestBoost fails, you fail.**
 
@@ -53,7 +53,7 @@ Every successful TestBoost command prints an integrity token on the last line:
 3. Extract the **full token line** (from `[` to `]`) and verify it by running:
 
 ```bash
-bash testboost_lite/scripts/tb-verify.sh <project_path> '<full_token_line>'
+bash scripts/tb-verify.sh <project_path> '<full_token_line>'
 ```
 
 4. The verify command must print `[TESTBOOST_VERIFY:OK]` — if it prints `[TESTBOOST_VERIFY:FAILED]` or exits non-zero, STOP and report the failure to the user

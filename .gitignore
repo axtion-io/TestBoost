@@ -12,7 +12,7 @@ eggs/
 .eggs/
 lib/
 !src/lib/
-!testboost_lite/lib/
+!testboost/lib/
 !tests/unit/src/lib/
 lib64/
 parts/
@@ -96,8 +96,7 @@ test-projects/
 
 # Internal development documentation
 specs/
-# CLAUDE.md - uncommitted on main, but committed on testboost-lite branches
-# CLAUDE.md
+CLAUDE.md
 CONTEXT.md
 OPEN_SOURCE_AUDIT_REPORT.md
 PR-*.md

@@ -1,4 +1,4 @@
-"""Startup validation checks for TestBoost Lite."""
+"""Startup validation checks for TestBoost."""
 
 import asyncio
 import re
@@ -121,7 +121,7 @@ async def check_llm_connection(model: str | None = None) -> None:
     """
     Check LLM provider connectivity at startup.
 
-    Called by testboost_lite/lib/cli.py before LLM-dependent commands.
+    Called by testboost/lib/cli.py before LLM-dependent commands.
 
     Raises:
         LLMProviderError: If API key not configured

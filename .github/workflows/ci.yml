@@ -78,7 +78,7 @@ jobs:
 
     - name: Run Ruff linter
       run: |
-        poetry run ruff check src/ tests/ testboost_lite/
+        poetry run ruff check src/ tests/
       continue-on-error: true
 
     - name: Run type checking with mypy

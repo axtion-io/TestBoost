@@ -15,7 +15,7 @@ Verify an HMAC integrity token emitted by a TestBoost CLI step.
 2. Run the verify command:
 
 ```bash
-bash testboost_lite/scripts/tb-verify.sh <project_path> "<token_line>"
+bash scripts/tb-verify.sh <project_path> "<token_line>"
 ```
 
 3. Report the result:
@@ -24,4 +24,4 @@ bash testboost_lite/scripts/tb-verify.sh <project_path> "<token_line>"
 
 ## CRITICAL: Failure Protocol
 
-**If the bash command above fails**, report the error to the user and suggest running `python -m testboost_lite verify <path> "<token>"` directly. Do NOT fabricate verification results.
+**If the bash command above fails**, report the error to the user and suggest running `python -m testboost verify <path> "<token>"` directly. Do NOT fabricate verification results.

@@ -137,7 +137,7 @@ All PRs must pass linting and type checking.
 pytest tests/
 
 # With coverage
-pytest --cov=src --cov=testboost_lite --cov-report=html
+pytest --cov=src --cov=testboost --cov-report=html
 
 # Specific test file
 pytest tests/unit/test_cli.py
@@ -150,7 +150,7 @@ pytest -k "test_session"
 
 - **New features**: 80% minimum coverage for new code
 - **Bug fixes**: Must include a regression test covering the bug path
-- **TestBoost Lite CLI**: Tests in `testboost_lite/tests/`
+- **TestBoost CLI**: Tests in `testboost/tests/`
 - **Core functions**: Tests in `tests/`
 
 ### Test Naming
@@ -170,7 +170,7 @@ def test_analyze_fails_when_no_session():
 When testing CLI commands, mock functions at the bridge level:
 
 ```python
-@patch("testboost_lite.lib.testboost_bridge.analyze_project_context")
+@patch("testboost.lib.testboost_bridge.analyze_project_context")
 async def test_analyze_success(mock_analyze):
     mock_analyze.return_value = '{"success": true, ...}'
     ...

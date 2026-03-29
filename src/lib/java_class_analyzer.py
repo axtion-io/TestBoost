@@ -1,4 +1,4 @@
-"""Project-level Java class analyzer for TestBoost Lite.
+"""Project-level Java class analyzer for TestBoost.
 
 Builds a class index over all source files during the analyze phase,
 so the generate phase can access pre-analyzed class structures without

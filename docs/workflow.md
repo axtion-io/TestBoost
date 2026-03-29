@@ -12,7 +12,7 @@ graph LR
 
 ## 1. Init
 
-**Command:** `python -m testboost_lite init <project_path>`
+**Command:** `python -m testboost init <project_path>`
 
 Creates the `.testboost/` directory structure in your Java project and starts a new session.
 
@@ -28,7 +28,7 @@ Creates the `.testboost/` directory structure in your Java project and starts a 
 
 ## 2. Analyze
 
-**Command:** `python -m testboost_lite analyze <project_path>`
+**Command:** `python -m testboost analyze <project_path>`
 
 Scans the Java project to understand its structure, frameworks, and testing conventions.
 
@@ -63,7 +63,7 @@ The project-level analysis report includes:
 
 ## 3. Gaps
 
-**Command:** `python -m testboost_lite gaps <project_path>`
+**Command:** `python -m testboost gaps <project_path>`
 
 Identifies which source files are missing test coverage.
 
@@ -83,7 +83,7 @@ The gaps report includes:
 
 ## 4. Generate
 
-**Command:** `python -m testboost_lite generate <project_path>`
+**Command:** `python -m testboost generate <project_path>`
 
 Generates unit tests for files identified as lacking coverage.
 
@@ -123,7 +123,7 @@ See [Prompts](./prompts.md) for details on the LLM prompts.
 
 ## 5. Validate
 
-**Command:** `python -m testboost_lite validate <project_path>`
+**Command:** `python -m testboost validate <project_path>`
 
 Compiles and runs the generated tests using Maven.
 
@@ -142,19 +142,19 @@ When tests fail, the LLM CLI sees the errors and can help you fix them interacti
 
 ## 6. Status (Auxiliary)
 
-**Command:** `python -m testboost_lite status <project_path>`
+**Command:** `python -m testboost status <project_path>`
 
 Displays the current session progress. Shows which steps are completed, in progress, or pending.
 
 ## Install (Setup)
 
-**Command:** `python -m testboost_lite install <project_path>`
+**Command:** `python -m testboost install <project_path>`
 
 Installs TestBoost slash commands and wrapper scripts into a target Java project so that you can run TestBoost from your Java project directory. See [Getting Started](./getting-started.md#installing-testboost-in-your-java-project) for details.
 
 ## Verify (Auxiliary)
 
-**Command:** `python -m testboost_lite verify <project_path> <token>`
+**Command:** `python -m testboost verify <project_path> <token>`
 
 Verifies an HMAC integrity token emitted at the end of a CLI step.
 

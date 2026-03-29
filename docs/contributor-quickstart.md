@@ -53,11 +53,11 @@ Most unit tests mock the LLM calls, so this is only needed for integration testi
 # All tests
 pytest tests/
 
-# TestBoost Lite CLI tests
-pytest testboost_lite/tests/
+# TestBoost CLI tests
+pytest testboost/tests/
 
 # With coverage report
-pytest --cov=src --cov=testboost_lite --cov-report=html
+pytest --cov=src --cov=testboost --cov-report=html
 # Open htmlcov/index.html in your browser
 
 # Specific test file
@@ -90,7 +90,7 @@ pytest && ruff check . && mypy src/
 
 ```
 TestBoost/
-+-- testboost_lite/             # CLI and session management
++-- testboost/             # CLI and session management
 |   +-- lib/
 |   |   +-- cli.py              # Main CLI (7 commands incl. install)
 |   |   +-- session_tracker.py  # Markdown-based session tracking
@@ -152,10 +152,10 @@ git push origin feature/short-description
 
 ### Bridge Pattern for Mocking
 
-All imports from `src/` go through `testboost_lite/lib/testboost_bridge.py`. In tests, mock at the bridge level:
+All imports from `src/` go through `src/lib/testboost_bridge.py`. In tests, mock at the bridge level:
 
 ```python
-@patch("testboost_lite.lib.testboost_bridge.analyze_project_context")
+@patch("testboost.lib.testboost_bridge.analyze_project_context")
 async def test_analyze(mock_fn):
     mock_fn.return_value = '{"success": true}'
     # ...
@@ -173,9 +173,9 @@ The `MdLogger` writes concise output to stdout (for LLM consumption) and detaile
 
 ### Adding a New CLI Command
 
-1. Add the command function in `testboost_lite/lib/cli.py`
+1. Add the command function in `src/lib/cli.py`
 2. Register the subparser in the `main()` function
-3. Add a shell script wrapper in `testboost_lite/scripts/`
+3. Add a shell script wrapper in `scripts/`
 4. Create slash command files in `.claude/commands/` and `.opencode/commands/`
 5. Add tests
 
@@ -186,7 +186,7 @@ Edit the prompt templates in `config/prompts/testing/`. Changes take effect on t
 ### Adding a New Core Function
 
 1. Implement in `src/mcp_servers/test_generator/tools/`
-2. Add a bridge function in `testboost_lite/lib/testboost_bridge.py`
+2. Add a bridge function in `src/lib/testboost_bridge.py`
 3. Call it from the relevant CLI command
 4. Add tests with mocked bridge calls
 

@@ -26,7 +26,7 @@ class Settings(BaseSettings):
     )
 
     # Application settings
-    app_name: str = Field(default="TestBoost Lite", description="Application name")
+    app_name: str = Field(default="TestBoost", description="Application name")
     debug: bool = Field(default=False, description="Debug mode")
     log_level: str = Field(default="INFO", description="Logging level")
 

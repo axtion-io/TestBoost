@@ -12,11 +12,11 @@ TestBoost is a Python toolkit that generates tests for Java projects using LLMs.
 |  +---------------------+----------------------+  |
 |                         | calls                   |
 |  +---------------------v----------------------+  |
-|  | Shell Scripts (testboost_lite/scripts/)     |  |
+|  | Shell Scripts (scripts/)     |  |
 |  +---------------------+----------------------+  |
 |                         | calls                   |
 |  +---------------------v----------------------+  |
-|  | Python CLI (testboost_lite/lib/cli.py)      |  |
+|  | Python CLI (src/lib/cli.py)      |  |
 |  +---------------------+----------------------+  |
 |                         | uses                    |
 |  +---------------------v----------------------+  |
@@ -54,20 +54,20 @@ Each command file contains:
 
 ### 2. Shell Scripts
 
-Thin wrappers in `testboost_lite/scripts/` that call the Python CLI:
+Thin wrappers in `scripts/` that call the Python CLI:
 
 ```bash
 #!/bin/bash
 TESTBOOST_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../.."
 cd "$TESTBOOST_ROOT"
-python -m testboost_lite <command> "$@"
+python -m testboost <command> "$@"
 ```
 
 These ensure the correct working directory and Python module path.
 
 ### 3. Python CLI
 
-The main entry point: `testboost_lite/lib/cli.py`. Uses `argparse` to dispatch to eight commands: `init`, `analyze`, `gaps`, `generate`, `validate`, `status`, `install`, `verify`.
+The main entry point: `src/lib/cli.py`. Uses `argparse` to dispatch to eight commands: `init`, `analyze`, `gaps`, `generate`, `validate`, `status`, `install`, `verify`.
 
 Each command:
 1. Reads the current session state from `.testboost/`
@@ -77,19 +77,19 @@ Each command:
 
 ### 4. Session Tracker
 
-`testboost_lite/lib/session_tracker.py` manages the `.testboost/` directory structure. It replaces the database with markdown files using YAML frontmatter for metadata.
+`src/lib/session_tracker.py` manages the `.testboost/` directory structure. It replaces the database with markdown files using YAML frontmatter for metadata.
 
 See [Session Format](./session-format.md) for details.
 
 ### 5. Markdown Logger
 
-`testboost_lite/lib/md_logger.py` provides dual-output logging:
+`src/lib/md_logger.py` provides dual-output logging:
 - **stdout**: Concise `[+]` prefixed messages for the LLM CLI
 - **log files**: Detailed markdown tables in `.testboost/sessions/<id>/logs/`
 
 ### 6. Integrity Token
 
-`testboost_lite/lib/integrity.py` implements an HMAC-SHA256 token system that proves CLI output is genuine and was not fabricated by the LLM.
+`src/lib/integrity.py` implements an HMAC-SHA256 token system that proves CLI output is genuine and was not fabricated by the LLM.
 
 **Why it exists:** When the LLM CLI runs a slash command, it calls a shell script and reads stdout. Without verification, the LLM could hallucinate a successful output instead of actually running the command. The integrity token prevents this.
 
@@ -107,7 +107,7 @@ See [Session Format](./session-format.md) for details.
 
 ### 7. Installer and Verify
 
-`testboost_lite/lib/installer.py` provides the `install` command that deploys TestBoost slash commands and wrapper scripts into a target Java project. This allows users to run TestBoost from their Java project directory rather than from the TestBoost repo root.
+`src/lib/installer.py` provides the `install` command that deploys TestBoost slash commands and wrapper scripts into a target Java project. This allows users to run TestBoost from their Java project directory rather than from the TestBoost repo root.
 
 **What gets installed:**
 
@@ -123,18 +123,18 @@ See [Session Format](./session-format.md) for details.
 
 **How it works:**
 
-1. Reads command templates from `testboost_lite/templates/commands/`.
-2. Rewrites script paths from relative (`testboost_lite/scripts/tb-*.sh`) to installed (`<project>/.testboost/scripts/tb-*.sh`).
+1. Reads command templates from `templates/commands/`.
+2. Rewrites script paths from relative (`scripts/tb-*.sh`) to installed (`<project>/.testboost/scripts/tb-*.sh`).
 3. Generates wrapper shell scripts that activate the TestBoost virtualenv and call the CLI with absolute paths.
 4. Creates the integrity secret via `get_or_create_secret()`.
 
-**Usage:** `python -m testboost_lite install /path/to/java/project`
+**Usage:** `python -m testboost install /path/to/java/project`
 
-The `verify` command (`testboost_lite/lib/integrity.py`) re-computes the HMAC of a token printed to stdout and exits 0 if authentic. See the Integrity Token section above for details.
+The `verify` command (`src/lib/integrity.py`) re-computes the HMAC of a token printed to stdout and exits 0 if authentic. See the Integrity Token section above for details.
 
 ### 8. TestBoost Bridge
 
-`testboost_lite/lib/testboost_bridge.py` is the boundary between the CLI layer and the core functions. It re-exports functions from `src/` so they can be easily mocked in tests.
+`src/lib/testboost_bridge.py` is the boundary between the CLI layer and the core functions. It re-exports functions from `src/` so they can be easily mocked in tests.
 
 | Bridge Function | Source Module |
 |----------------|---------------|
@@ -176,7 +176,7 @@ Supporting modules used across the core:
 TestBoost/
 +-- .claude/commands/           # Claude Code slash commands
 +-- .opencode/commands/         # OpenCode slash commands
-+-- testboost_lite/
++-- testboost/
 |   +-- lib/
 |   |   +-- cli.py              # CLI entry point (7 commands incl. install)
 |   |   +-- session_tracker.py  # Markdown-based session management

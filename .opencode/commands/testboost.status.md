@@ -13,7 +13,7 @@ Display the current session status, progress through workflow steps, and recent 
 2. Run the status command:
 
 ```bash
-bash testboost_lite/scripts/tb-status.sh <project_path>
+bash scripts/tb-status.sh <project_path>
 ```
 
 3. Present the output to the user with any recommendations:
@@ -35,4 +35,4 @@ bash testboost_lite/scripts/tb-status.sh <project_path>
 
 ## CRITICAL: Failure Protocol
 
-**If the bash command above fails**, report the error to the user and suggest running `python -m testboost_lite status <path>` directly. Do NOT fabricate status output.
+**If the bash command above fails**, report the error to the user and suggest running `python -m testboost status <path>` directly. Do NOT fabricate status output.

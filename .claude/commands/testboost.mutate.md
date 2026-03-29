@@ -33,13 +33,13 @@ The Java project must have the PIT Maven plugin configured in its `pom.xml`. If 
 2. Run mutation testing:
 
 ```bash
-bash testboost_lite/scripts/tb-mutate.sh <project_path> --verbose
+bash scripts/tb-mutate.sh <project_path> --verbose
 ```
 
    To target specific classes or tests:
 
 ```bash
-bash testboost_lite/scripts/tb-mutate.sh <project_path> --target-classes "com.example.service.*" --min-score 80
+bash scripts/tb-mutate.sh <project_path> --target-classes "com.example.service.*" --min-score 80
 ```
 
 3. **VERIFY the output** — see the "Integrity Verification" section below
@@ -94,7 +94,7 @@ Every successful TestBoost command prints an integrity token on the last line:
 3. Extract the **full token line** (from `[` to `]`) and verify it by running:
 
 ```bash
-bash testboost_lite/scripts/tb-verify.sh <project_path> '<full_token_line>'
+bash scripts/tb-verify.sh <project_path> '<full_token_line>'
 ```
 
 4. The verify command must print `[TESTBOOST_VERIFY:OK]` — if it prints `[TESTBOOST_VERIFY:FAILED]` or exits non-zero, STOP and report the failure to the user

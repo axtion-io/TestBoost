@@ -32,8 +32,7 @@ jobs:
 
       - name: Install TestBoost
         run: |
-          pip install testboost
-          # Or for development: pip install -e .
+          pip install -e .
 
       - name: Run Impact Analysis
         id: impact

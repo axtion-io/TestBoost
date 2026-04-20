@@ -24,7 +24,7 @@ TestBoost is a Python toolkit that generates tests for Java projects using LLMs.
 |  +---------------------+----------------------+  |
 |                         | imports                 |
 |  +---------------------v----------------------+  |
-|  | Core Functions (src/mcp_servers/*, src/lib) |  |
+|  | Core Functions (src/test_generation/, src/java/, src/lib/) |  |
 |  +--------------------------------------------+  |
 +--------------------------------------------------+
          |
@@ -134,37 +134,50 @@ The `verify` command (`src/lib/integrity.py`) re-computes the HMAC of a token pr
 
 ### 8. TestBoost Bridge
 
-`src/lib/testboost_bridge.py` is the boundary between the CLI layer and the core functions. It re-exports functions from `src/` so they can be easily mocked in tests.
+`src/lib/bridge.py` is the boundary between the CLI layer and the core functions. It re-exports functions from `src/` so they can be easily mocked in tests.
 
 | Bridge Function | Source Module |
 |----------------|---------------|
-| `analyze_project_context()` | `src/mcp_servers/test_generator/tools/analyze.py` |
-| `detect_test_conventions()` | `src/mcp_servers/test_generator/tools/conventions.py` |
-| `find_source_files()` | `src/lib/java_discovery.py` |
-| `classify_file()` | `src/lib/java_discovery.py` |
-| `find_test_for_source()` | `src/lib/java_discovery.py` |
-| `build_class_index()` | `src/lib/java_class_analyzer.py` |
-| `extract_test_examples()` | `src/lib/java_class_analyzer.py` |
-| `generate_adaptive_tests()` | `src/mcp_servers/test_generator/tools/generate_unit.py` |
-| `fix_compilation_errors()` | `src/mcp_servers/test_generator/tools/generate_unit.py` |
+| `analyze_project_context()` | `src/test_generation/analyze.py` |
+| `detect_test_conventions()` | `src/test_generation/conventions.py` |
+| `find_source_files()` | `src/java/discovery.py` |
+| `classify_file()` | `src/java/discovery.py` |
+| `find_test_for_source()` | `src/java/discovery.py` |
+| `build_class_index()` | `src/java/class_analyzer.py` |
+| `extract_test_examples()` | `src/java/class_analyzer.py` |
+| `generate_adaptive_tests()` | `src/test_generation/generate_unit.py` |
+| `fix_compilation_errors()` | `src/test_generation/generate_unit.py` |
+| `analyze_edge_cases()` | `src/test_generation/generate_unit.py` |
+| `run_mutation_testing()` | `src/test_generation/mutation.py` |
+| `analyze_mutants()` | `src/test_generation/analyze_mutants.py` |
+| `generate_killer_tests()` | `src/test_generation/killer_tests.py` |
 | `parse_maven_errors()` | `src/lib/maven_error_parser.py` |
 
-### 9. Core Functions (MCP Servers)
+### 9. Test Generation (`src/test_generation/`)
 
-The actual analysis and generation logic lives in `src/mcp_servers/test_generator/`:
+The LLM-based analysis and generation logic:
 
 - **analyze.py** -- Parses `pom.xml`, detects frameworks, analyzes project structure
 - **conventions.py** -- Detects test naming patterns, assertion styles, mocking conventions
 - **generate_unit.py** -- Generates unit tests using LLMs with project-aware prompts; also handles LLM-based compilation error fixing
+- **mutation.py** -- Runs PIT mutation testing via Maven
+- **analyze_mutants.py** -- Analyzes PIT XML reports, identifies hard-to-kill mutants
+- **killer_tests.py** -- Generates targeted tests to kill surviving mutants
 
 These modules use the LLM abstraction in `src/lib/llm.py` which supports Google Gemini, Anthropic Claude, and OpenAI through LangChain.
 
-### 10. Shared Library (`src/lib/`)
+### 10. Java Analysis (`src/java/`)
 
-Supporting modules used across the core:
+Shared Java parsing and discovery modules with no LLM dependency:
 
-- **java_discovery.py** -- Finds and classifies Java source files in Maven projects (`src/main/java`); locates existing test files
-- **java_class_analyzer.py** -- Builds a full class index from Java source files: extracts class name, package, category, extends/implements, annotations, fields (with exact types and annotations), public methods, and dependencies. Also extracts representative test examples for LLM prompts. See [Project-Level Analysis](#project-level-analysis) below.
+- **parsing_utils.py** -- Low-level Java parsing: `_PRIMITIVE_TYPES`, `_is_primitive_type`, `_extract_balanced_parens`, `_parse_parameters`, `_extract_public_signatures`, `_analyze_jpa_fields`. No dependencies on other `src.*` modules.
+- **discovery.py** -- Finds and classifies Java source files in Maven projects (`src/main/java`); locates existing test files
+- **class_analyzer.py** -- Builds a full class index from Java source files: extracts class name, package, category, extends/implements, annotations, fields (with exact types and annotations), public methods, and dependencies. Also extracts representative test examples for LLM prompts. See [Project-Level Analysis](#project-level-analysis) below.
+
+### 11. Shared Library (`src/lib/`)
+
+Infrastructure modules used across the codebase:
+
 - **maven_error_parser.py** -- Parses Maven compilation output into structured errors with fix suggestions
 - **prompt_utils.py** -- Shared `load_prompt_template()` (disk-read cached) and `render_template()` used by all LLM prompt construction; `{{placeholder}}` syntax avoids conflicts with Java `{` braces
 - **llm.py** -- LLM provider abstraction (Google Gemini, Anthropic Claude, OpenAI via LangChain)
@@ -187,12 +200,19 @@ TestBoost/
 |   +-- scripts/                # Shell script wrappers
 |   +-- templates/commands/     # Slash command templates for installation
 +-- src/
-|   +-- mcp_servers/
-|   |   +-- test_generator/     # Core analysis + generation logic
+|   +-- java/
+|   |   +-- parsing_utils.py    # Shared low-level Java parsers (no src.* deps)
+|   |   +-- discovery.py        # Java source file finder + classifier
+|   |   +-- class_analyzer.py   # Full class index builder + test example extractor
+|   +-- test_generation/
+|   |   +-- analyze.py          # Project structure analysis
+|   |   +-- conventions.py      # Test convention detection
+|   |   +-- generate_unit.py    # LLM-based unit test generation
+|   |   +-- mutation.py         # PIT mutation testing runner
+|   |   +-- analyze_mutants.py  # Mutation report analysis
+|   |   +-- killer_tests.py     # Killer test generation
 |   +-- lib/
 |   |   +-- llm.py              # LLM provider abstraction
-|   |   +-- java_discovery.py   # Java source file finder + classifier
-|   |   +-- java_class_analyzer.py  # Full class index builder + test example extractor
 |   |   +-- maven_error_parser.py
 |   |   +-- prompt_utils.py     # Shared template load+render
 |   +-- workflows/
@@ -266,5 +286,5 @@ If `.testboost/analysis.md` does not exist (project analyzed with an older versi
 1. **Markdown as state** -- All session data is human-readable markdown. No database required.
 2. **LLM-native output** -- Stdout is designed for LLM consumption (concise, structured). Detailed logs go to files.
 3. **Interactive by default** -- The user reviews and decides at each step. No silent auto-correction.
-4. **Reuse over rewrite** -- Core analysis and generation functions from `src/mcp_servers/` are reused via the bridge, not duplicated.
+4. **Reuse over rewrite** -- Core analysis and generation functions from `src/test_generation/` and `src/java/` are reused via the bridge, not duplicated.
 5. **Easy mocking** -- The bridge pattern centralizes all imports, making the CLI fully testable without LLM calls.

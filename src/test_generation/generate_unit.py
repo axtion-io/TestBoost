@@ -12,6 +12,13 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
+from src.java.parsing_utils import (
+    _analyze_jpa_fields,
+    _extract_balanced_parens,
+    _extract_public_signatures,
+    _is_primitive_type,
+    _parse_parameters,
+)
 from src.lib.llm import get_llm
 from src.lib.logging import get_logger
 from src.lib.prompt_utils import load_prompt_template, render_template
@@ -430,26 +437,6 @@ def _extract_dependency_signatures(project_path: str, dependencies: list[dict[st
     return "\n".join(results)
 
 
-def _extract_public_signatures(source_code: str) -> str:
-    """Extract public method signatures with full parameter types from Java source."""
-    pattern = re.compile(
-        r"public\s+(?:static\s+)?(?:final\s+)?(?:synchronized\s+)?"
-        r"(\w[\w<>\[\], ]*?)\s+(\w+)\s*\(([^)]*)\)"
-        r"(?:\s+throws\s+([\w, ]+))?",
-        re.MULTILINE,
-    )
-    sigs = []
-    for m in pattern.finditer(source_code):
-        ret = m.group(1).strip()
-        name = m.group(2)
-        if name in {"if", "while", "for", "switch", "class", "new", "return"}:
-            continue
-        params = m.group(3).strip()
-        throws = f" throws {m.group(4).strip()}" if m.group(4) else ""
-        sigs.append(f"  - `{ret} {name}({params}){throws}`")
-    return "\n".join(sigs[:20])
-
-
 def _resolve_dependency_signatures_from_index(
     dependencies: list[dict[str, Any]], class_index: dict[str, dict[str, Any]]
 ) -> str:
@@ -589,7 +576,7 @@ async def _generate_test_code_with_llm(context: dict[str, Any], source_code: str
     # Extract project context from pom.xml
     project_context = _extract_project_context(project_path) if project_path else ""
 
-    # Detect test framework and available dependencies (P1/P2)
+    # Detect test framework and available dependencies
     test_deps = _detect_test_dependencies(project_path) if project_path else {
         "framework": "junit5", "has_mockito": True, "has_assertj": True,
         "has_hamcrest": False, "has_spring_test": False, "available_deps": [],
@@ -769,7 +756,7 @@ async def _generate_test_code_with_llm(context: dict[str, Any], source_code: str
                 "output does not contain @Test annotation or class declaration"
             )
 
-        # Validate imports match available dependencies (P5)
+        # Validate imports match available dependencies
         import_warnings = _validate_generated_imports(test_code, test_deps)
         if import_warnings:
             logger.warning(
@@ -820,39 +807,32 @@ def _analyze_class(source_code: str) -> dict[str, Any]:
     if package_match:
         info["package"] = package_match.group(1)
 
-    # Extract imports (FIX: Add import extraction from source files)
+    # Extract imports
     import_pattern = re.compile(r"import\s+([\w.]+(?:\.\*)?);", re.MULTILINE)
     for match in import_pattern.finditer(source_code):
         imports.append(match.group(1))
 
-    # Check if this is a Java record (FIX: Add Java record detection)
+    # Check if this is a Java record
     record_match = re.search(r"(?:public\s+)?record\s+(\w+)\s*\(([^)]*)\)", source_code)
     if record_match:
         info["class_name"] = record_match.group(1)
         info["is_record"] = True
-        # Record components become constructor params - parse them as dependencies
         record_params = record_match.group(2)
         for param in _parse_parameters(record_params):
-            # Filter out primitive types from dependencies
             if not _is_primitive_type(param["type"]):
                 dependencies.append({"type": param["type"], "name": param["name"]})
         return info
 
-    # Extract class name (also check for record)
+    # Extract class name
     class_match = re.search(r"(?:public\s+)?(?:abstract\s+)?class\s+(\w+)", source_code)
     if class_match:
         info["class_name"] = class_match.group(1)
 
     # Extract ALL class-level annotations (before the class declaration)
-    # Find where the class declaration starts
     class_decl_match = re.search(r'(?:public\s+)?(?:abstract\s+)?class\s+\w+', source_code)
     if class_decl_match:
-        # Get all annotations in the code before the class declaration
         before_class = source_code[:class_decl_match.start()]
-        # Find the last group of annotations (those closest to class declaration)
-        # Look for annotations that are not inside method signatures
         class_annotations = re.findall(r'@(\w+)(?:\([^)]*\))?', before_class)
-        # Filter to class-level annotations (skip parameter annotations like @Valid)
         class_level_annots = [a for a in class_annotations if a in (
             'Controller', 'RestController', 'Service', 'Repository', 'Component',
             'RequestMapping', 'Timed', 'Transactional', 'Configuration', 'Bean',
@@ -860,8 +840,7 @@ def _analyze_class(source_code: str) -> dict[str, Any]:
         )]
         annotations.extend(class_level_annots)
 
-    # FIX: Extract constructor parameters for dependency injection
-    # Modern Spring uses constructor injection without @Autowired annotation
+    # Extract constructor parameters for dependency injection
     class_name = info["class_name"]
     if class_name:
         constructor_pattern = re.compile(
@@ -872,14 +851,11 @@ def _analyze_class(source_code: str) -> dict[str, Any]:
             constructor_params = match.group(1)
             if constructor_params.strip():
                 for param in _parse_parameters(constructor_params):
-                    # Only add non-primitive types as dependencies
                     if not _is_primitive_type(param["type"]):
-                        # Avoid duplicates
                         if not any(d["name"] == param["name"] for d in dependencies):
                             dependencies.append({"type": param["type"], "name": param["name"]})
 
-    # Extract methods (FIX: capture visibility to filter private methods)
-    # FIX: Use two-step approach to handle annotations with parentheses
+    # Extract methods
     method_sig_pattern = re.compile(
         r"(public|private|protected)\s+"
         r"(?:static\s+)?(?:final\s+)?(?:synchronized\s+)?"
@@ -893,19 +869,14 @@ def _analyze_class(source_code: str) -> dict[str, Any]:
         return_type = match.group(2)
         method_name = match.group(3)
 
-        # Skip constructors
         if method_name == info["class_name"]:
             continue
 
-        # FIX: Filter private methods - they shouldn't be tested directly
+        # Filter private methods - they shouldn't be tested directly
         if visibility == "private":
             continue
 
-        # FIX: Extract balanced parentheses for parameters
-        # (handles annotations like @PathVariable("ownerId") correctly)
         params = _extract_balanced_parens(source_code, match.end() - 1)
-
-        # Parse parameters into structured form
         parsed_params = _parse_parameters(params)
 
         methods.append(
@@ -920,126 +891,21 @@ def _analyze_class(source_code: str) -> dict[str, Any]:
         )
 
     # Extract dependencies (fields with @Autowired, @Inject, etc.)
-    # This is a fallback for field injection pattern
     dep_pattern = re.compile(
         r"@(?:Autowired|Inject|Resource)\s+(?:private\s+)?(\w+(?:<[^>]+>)?)\s+(\w+)", re.MULTILINE
     )
-
     for match in dep_pattern.finditer(source_code):
         dep_type = match.group(1)
         dep_name = match.group(2)
-        # Avoid duplicates (may already be added from constructor)
         if not any(d["name"] == dep_name for d in dependencies):
             dependencies.append({"type": dep_type, "name": dep_name})
 
-    # Analyze JPA entity fields for @GeneratedValue, @Id
+    # Analyze JPA entity fields
     jpa_info = _analyze_jpa_fields(source_code)
     info["jpa_info"] = jpa_info
     info["is_jpa_entity"] = "Entity" in annotations or "Table" in annotations
 
     return info
-
-
-def _analyze_jpa_fields(source_code: str) -> dict[str, Any]:
-    """Analyze JPA entity fields to detect @GeneratedValue, @Id, and field types.
-
-    This information is critical for generating correct tests that don't call
-    setId() on @GeneratedValue fields.
-    """
-    jpa_info: dict[str, Any] = {
-        "id_field": None,
-        "id_type": None,
-        "has_generated_value": False,
-        "generated_value_strategy": None,
-        "date_fields": [],  # Fields using Date vs LocalDate
-    }
-
-    # Pattern to detect @Id field with potential @GeneratedValue
-    # Matches patterns like:
-    # @Id
-    # @GeneratedValue(strategy = GenerationType.IDENTITY)
-    # private Long id;
-    id_block_pattern = re.compile(
-        r'@Id\s*'
-        r'(?:@GeneratedValue\s*(?:\(\s*(?:strategy\s*=\s*)?(?:GenerationType\.)?(\w+)\s*\))?\s*)?'
-        r'(?:@\w+(?:\([^)]*\))?\s*)*'  # Other annotations
-        r'(?:private|protected)?\s*'
-        r'(\w+)\s+'  # Type (Long, Integer, UUID, etc.)
-        r'(\w+)\s*;',  # Field name
-        re.MULTILINE | re.DOTALL
-    )
-
-    id_match = id_block_pattern.search(source_code)
-    if id_match:
-        strategy = id_match.group(1)  # IDENTITY, SEQUENCE, AUTO, etc.
-        id_type = id_match.group(2)   # Long, Integer, UUID
-        id_name = id_match.group(3)   # id, entityId, etc.
-
-        jpa_info["id_field"] = id_name
-        jpa_info["id_type"] = id_type
-        jpa_info["has_generated_value"] = strategy is not None or "@GeneratedValue" in source_code
-        jpa_info["generated_value_strategy"] = strategy
-
-    # Also check for simpler @GeneratedValue pattern
-    if not jpa_info["has_generated_value"] and "@GeneratedValue" in source_code:
-        jpa_info["has_generated_value"] = True
-
-    # Detect date field types (java.util.Date vs java.time.LocalDate)
-    date_pattern = re.compile(
-        r'(?:private|protected)?\s*'
-        r'(Date|LocalDate|LocalDateTime|Instant|ZonedDateTime)\s+'
-        r'(\w+)\s*;',
-        re.MULTILINE
-    )
-
-    for match in date_pattern.finditer(source_code):
-        date_type = match.group(1)
-        field_name = match.group(2)
-        jpa_info["date_fields"].append({
-            "name": field_name,
-            "type": date_type
-        })
-
-    return jpa_info
-
-
-def _is_primitive_type(type_name: str) -> bool:
-    """Check if a type is a Java primitive or wrapper type."""
-    primitives = {
-        "int", "long", "short", "byte", "double", "float", "boolean", "char",
-        "Integer", "Long", "Short", "Byte", "Double", "Float", "Boolean", "Character",
-        "String", "java.lang.String", "java.lang.Integer", "java.lang.Long",
-        "java.lang.Double", "java.lang.Float", "java.lang.Boolean",
-    }
-    # Strip generics and 'final' modifier
-    clean_type = type_name.replace("final", "").strip().split("<")[0].strip()
-    return clean_type in primitives
-
-
-def _extract_balanced_parens(text: str, start_pos: int) -> str:
-    """Extract content between balanced parentheses starting at start_pos.
-
-    This handles nested parentheses correctly, unlike a simple regex [^)]*.
-    For example: @PathVariable("ownerId") int ownerId -> correctly captures full params
-    """
-    depth = 0
-    content = []
-    i = start_pos
-    while i < len(text):
-        c = text[i]
-        if c == "(":
-            if depth > 0:
-                content.append(c)
-            depth += 1
-        elif c == ")":
-            depth -= 1
-            if depth == 0:
-                return "".join(content)
-            content.append(c)
-        elif depth > 0:
-            content.append(c)
-        i += 1
-    return "".join(content)
 
 
 def _detect_class_type(source_code: str, class_info: dict[str, Any]) -> str:
@@ -1061,7 +927,6 @@ def _detect_class_type(source_code: str, class_info: dict[str, Any]) -> str:
 
 def _get_test_file_path(project_dir: Path, source_path: Path) -> Path:
     """Generate test file path from source file path."""
-    # Convert main/java to test/java
     relative = source_path.relative_to(project_dir)
     parts = list(relative.parts)
 
@@ -1069,51 +934,11 @@ def _get_test_file_path(project_dir: Path, source_path: Path) -> Path:
         idx = parts.index("main")
         parts[idx] = "test"
 
-    # Add Test suffix to filename
     filename = parts[-1]
     if filename.endswith(".java"):
         parts[-1] = filename.replace(".java", "Test.java")
 
-    # Return relative path from project root (not absolute path)
     return Path(*parts)
-
-
-def _parse_parameters(params_str: str) -> list[dict[str, str]]:
-    """Parse Java method parameters into structured form."""
-    if not params_str or not params_str.strip():
-        return []
-
-    params = []
-    # Split by comma, handling generic types
-    depth = 0
-    current = ""
-    for char in params_str:
-        if char in "<(":
-            depth += 1
-        elif char in ">)":
-            depth -= 1
-        elif char == "," and depth == 0:
-            if current.strip():
-                params.append(current.strip())
-            current = ""
-            continue
-        current += char
-
-    if current.strip():
-        params.append(current.strip())
-
-    result = []
-    for param in params:
-        # Handle annotations like @Valid, @PathVariable, etc.
-        param = re.sub(r"@\w+(?:\([^)]*\))?\s*", "", param).strip()
-        # FIX: Remove 'final' modifier from parameter type
-        param = re.sub(r"\bfinal\s+", "", param).strip()
-        parts = param.rsplit(None, 1)
-        if len(parts) == 2:
-            param_type, param_name = parts
-            result.append({"type": param_type, "name": param_name})
-
-    return result
 
 
 async def analyze_edge_cases(source_code: str, class_name: str, class_type: str) -> list[dict[str, Any]]:

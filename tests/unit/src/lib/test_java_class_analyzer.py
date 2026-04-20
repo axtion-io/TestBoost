@@ -1,8 +1,8 @@
-"""Unit tests for src.lib.java_class_analyzer."""
+"""Unit tests for src.java.class_analyzer."""
 
 
 
-from src.lib.java_class_analyzer import (
+from src.java.class_analyzer import (
     _extract_extends_implements,
     _extract_field_details,
     analyze_java_class,

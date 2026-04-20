@@ -3,10 +3,6 @@
 Builds a class index over all source files during the analyze phase,
 so the generate phase can access pre-analyzed class structures without
 lazy filesystem lookups.
-
-This module intentionally duplicates the parsing utilities from
-generate_unit.py to avoid circular imports. Future refactor: make
-generate_unit.py import from here.
 """
 
 from __future__ import annotations
@@ -15,95 +11,17 @@ import re
 from pathlib import Path
 from typing import Any
 
-# ---------------------------------------------------------------------------
-# Parsing utilities (mirrored from generate_unit.py to avoid circular import)
-# ---------------------------------------------------------------------------
-
-_PRIMITIVE_TYPES = {
-    "int", "long", "short", "byte", "double", "float", "boolean", "char",
-    "Integer", "Long", "Short", "Byte", "Double", "Float", "Boolean", "Character",
-    "String", "java.lang.String", "java.lang.Integer", "java.lang.Long",
-    "java.lang.Double", "java.lang.Float", "java.lang.Boolean",
-    "void", "Object",
-}
-
-
-def _is_primitive_type(type_name: str) -> bool:
-    clean = type_name.replace("final", "").strip().split("<")[0].strip()
-    return clean in _PRIMITIVE_TYPES
-
-
-def _extract_balanced_parens(text: str, start_pos: int) -> str:
-    depth = 0
-    content: list[str] = []
-    i = start_pos
-    while i < len(text):
-        c = text[i]
-        if c == "(":
-            if depth > 0:
-                content.append(c)
-            depth += 1
-        elif c == ")":
-            depth -= 1
-            if depth == 0:
-                return "".join(content)
-            content.append(c)
-        elif depth > 0:
-            content.append(c)
-        i += 1
-    return "".join(content)
-
-
-def _parse_parameters(params_str: str) -> list[dict[str, str]]:
-    if not params_str or not params_str.strip():
-        return []
-    params: list[str] = []
-    depth = 0
-    current = ""
-    for char in params_str:
-        if char in "<(":
-            depth += 1
-        elif char in ">)":
-            depth -= 1
-        elif char == "," and depth == 0:
-            if current.strip():
-                params.append(current.strip())
-            current = ""
-            continue
-        current += char
-    if current.strip():
-        params.append(current.strip())
-    result = []
-    for param in params:
-        param = re.sub(r"@\w+(?:\([^)]*\))?\s*", "", param).strip()
-        param = re.sub(r"\bfinal\s+", "", param).strip()
-        parts = param.rsplit(None, 1)
-        if len(parts) == 2:
-            result.append({"type": parts[0], "name": parts[1]})
-    return result
-
-
-def _extract_public_signatures(source_code: str) -> str:
-    pattern = re.compile(
-        r"public\s+(?:static\s+)?(?:final\s+)?(?:synchronized\s+)?"
-        r"(\w[\w<>\[\], ]*?)\s+(\w+)\s*\(([^)]*)\)"
-        r"(?:\s+throws\s+([\w, ]+))?",
-        re.MULTILINE,
-    )
-    sigs = []
-    for m in pattern.finditer(source_code):
-        ret = m.group(1).strip()
-        name = m.group(2)
-        if name in {"if", "while", "for", "switch", "class", "new", "return"}:
-            continue
-        params = m.group(3).strip()
-        throws = f" throws {m.group(4).strip()}" if m.group(4) else ""
-        sigs.append(f"  - `{ret} {name}({params}){throws}`")
-    return "\n".join(sigs[:20])
-
+from src.java.parsing_utils import (
+    _PRIMITIVE_TYPES,  # noqa: F401 — re-exported for callers that import from here
+    _analyze_jpa_fields,
+    _extract_balanced_parens,
+    _extract_public_signatures,
+    _is_primitive_type,
+    _parse_parameters,
+)
 
 # ---------------------------------------------------------------------------
-# New: extends / implements extraction
+# extends / implements extraction
 # ---------------------------------------------------------------------------
 
 _CLASS_DECL_PATTERN = re.compile(
@@ -144,7 +62,7 @@ def _extract_extends_implements(source_code: str) -> tuple[str | None, list[str]
 
 
 # ---------------------------------------------------------------------------
-# New: richer field extraction (with annotations)
+# richer field extraction (with annotations)
 # ---------------------------------------------------------------------------
 
 def _extract_field_details(source_code: str) -> list[dict[str, Any]]:
@@ -336,37 +254,6 @@ def analyze_java_class(source_code: str, relative_path: str = "") -> dict[str, A
     entry["public_signatures"] = _extract_public_signatures(source_code)
 
     return entry
-
-
-def _analyze_jpa_fields(source_code: str) -> dict[str, Any]:
-    jpa_info: dict[str, Any] = {
-        "id_field": None, "id_type": None, "has_generated_value": False, "date_fields": [],
-    }
-    id_block = re.compile(
-        r'@Id\s*'
-        r'(?:@GeneratedValue\s*(?:\(\s*(?:strategy\s*=\s*)?(?:GenerationType\.)?(\w+)\s*\))?\s*)?'
-        r'(?:@\w+(?:\([^)]*\))?\s*)*'
-        r'(?:private|protected)?\s*'
-        r'(\w+)\s+(\w+)\s*;',
-        re.MULTILINE | re.DOTALL,
-    )
-    m = id_block.search(source_code)
-    if m:
-        jpa_info["id_field"] = m.group(3)
-        jpa_info["id_type"] = m.group(2)
-        jpa_info["has_generated_value"] = m.group(1) is not None or "@GeneratedValue" in source_code
-    elif "@GeneratedValue" in source_code:
-        jpa_info["has_generated_value"] = True
-
-    date_pat = re.compile(
-        r'(?:private|protected)?\s*'
-        r'(Date|LocalDate|LocalDateTime|Instant|ZonedDateTime)\s+(\w+)\s*;',
-        re.MULTILINE,
-    )
-    for dm in date_pat.finditer(source_code):
-        jpa_info["date_fields"].append({"name": dm.group(2), "type": dm.group(1)})
-
-    return jpa_info
 
 
 def _detect_category(source_code: str, entry: dict[str, Any]) -> str:

@@ -76,7 +76,7 @@ class TestLLMIntegration:
     async def test_test_generation_with_mock_llm(self, mock_gemini_response):
         """Test that test generation module can work with LLM."""
         # Test that the test generator MCP tools exist
-        from src.mcp_servers.test_generator.tools import generate_unit
+        from src.test_generation import generate_unit
 
         assert generate_unit is not None
 

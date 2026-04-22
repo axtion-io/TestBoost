@@ -6,7 +6,7 @@ TestBoost uses LLMs for project analysis and test generation. It supports three 
 
 | Provider | Recommended Model | Cost (1M tokens) | Typical Latency |
 |----------|-------------------|-------------------|-----------------|
-| **Google Gemini** | `gemini-2.0-flash` | $0.075 input / $0.30 output | 1-3s |
+| **Google Gemini** | `gemini-2.5-flash` | $0.075 input / $0.30 output | 1-3s |
 | **Anthropic Claude** | `claude-sonnet-4-20250514` | $3.00 input / $15.00 output | 2-5s |
 | **OpenAI GPT-4o** | `gpt-4o` | $2.50 input / $10.00 output | 2-4s |
 
@@ -21,7 +21,7 @@ export ANTHROPIC_API_KEY="sk-ant-..." # Anthropic Claude
 export OPENAI_API_KEY="sk-..."        # OpenAI
 
 # Choose the provider and model (default: anthropic + claude-sonnet-4-6)
-export LLM_PROVIDER="google-genai" && export MODEL="gemini-2.0-flash"
+export LLM_PROVIDER="google-genai" && export MODEL="gemini-2.5-flash"
 export LLM_PROVIDER="anthropic"    && export MODEL="claude-sonnet-4-6"
 export LLM_PROVIDER="openai"       && export MODEL="gpt-4o"
 ```

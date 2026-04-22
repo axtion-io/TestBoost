@@ -78,6 +78,20 @@ python -m testboost generate /path/to/java/project
 python -m testboost validate /path/to/java/project
 ```
 
+### Installing into a Java project
+
+You can install TestBoost commands directly into a Java project. The installer
+copies slash commands and wrapper scripts so the LLM CLI can call TestBoost
+from the target project directory.
+
+```bash
+# Install with bash wrapper scripts (default, Linux/macOS)
+python -m testboost install /path/to/java/project
+
+# Install with PowerShell wrapper scripts (Windows)
+python -m testboost install /path/to/java/project --shell-type powershell
+```
+
 ## How It Works
 
 1. **Init** -- Creates a `.testboost/` session directory in your Java project

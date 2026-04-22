@@ -106,6 +106,7 @@ corp-ca.pem
 corp-ca.der
 corp-ca-bundle.pem
 export_cert.ps1
+setup-ssl.ps1
 
 # TestBoost session data (generated at runtime, not source)
 .testboost/

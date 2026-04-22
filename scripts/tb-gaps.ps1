@@ -18,6 +18,12 @@ if (Test-Path "$TestBoostRoot\.venv\Scripts\Activate.ps1") {
     & "$TestBoostRoot\venv\Scripts\Activate.ps1"
 }
 
+if (-not (Test-Path -LiteralPath $ProjectPath)) {
+    Write-Host "Error: project path not found: $ProjectPath"
+    exit 1
+}
+$ProjectPath = (Resolve-Path -LiteralPath $ProjectPath).Path
+
 Push-Location $TestBoostRoot
 try {
     python -m testboost gaps $ProjectPath @ExtraArgs

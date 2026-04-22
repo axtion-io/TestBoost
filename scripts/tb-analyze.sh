@@ -18,6 +18,12 @@ fi
 PROJECT_PATH="${1:?Usage: tb-analyze.sh <project_path> [--verbose]}"
 shift
 
+if [ ! -d "$PROJECT_PATH" ]; then
+    echo "Error: project path not found: $PROJECT_PATH" >&2
+    exit 1
+fi
+PROJECT_PATH="$(cd "$PROJECT_PATH" && pwd)"
+
 cd "$TESTBOOST_ROOT"
 set +e
 python -m testboost analyze "$PROJECT_PATH" "$@"

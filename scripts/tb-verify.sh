@@ -18,5 +18,11 @@ fi
 PROJECT_PATH="${1:?Usage: tb-verify.sh <project_path> <token>}"
 TOKEN="${2:?Usage: tb-verify.sh <project_path> <token>}"
 
+if [ ! -d "$PROJECT_PATH" ]; then
+    echo "Error: project path not found: $PROJECT_PATH" >&2
+    exit 1
+fi
+PROJECT_PATH="$(cd "$PROJECT_PATH" && pwd)"
+
 cd "$TESTBOOST_ROOT"
 python -m testboost verify "$PROJECT_PATH" "$TOKEN"

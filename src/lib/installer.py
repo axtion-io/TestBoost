@@ -126,6 +126,14 @@ fi
 PROJECT_PATH="${{1:?Usage: tb-{step}.sh <project_path> [options]}}"
 shift
 
+# Resolve to absolute path BEFORE changing directory, otherwise `.` would
+# point to TESTBOOST_ROOT after the cd below.
+if [ ! -d "$PROJECT_PATH" ]; then
+    echo "Error: project path not found: $PROJECT_PATH" >&2
+    exit 1
+fi
+PROJECT_PATH="$(cd "$PROJECT_PATH" && pwd)"
+
 cd "$TESTBOOST_ROOT"
 python -m testboost {step} "$PROJECT_PATH" "$@"
 EXIT_CODE=$?
@@ -161,6 +169,15 @@ if (Test-Path "$TestBoostRoot\\.venv\\Scripts\\Activate.ps1") {{
 }} elseif (Test-Path "$TestBoostRoot\\venv\\Scripts\\Activate.ps1") {{
     & "$TestBoostRoot\\venv\\Scripts\\Activate.ps1"
 }}
+
+# Resolve to absolute path BEFORE Push-Location, otherwise a relative path
+# like "." would be re-rooted at $TestBoostRoot and the wrong project would
+# be scanned.
+if (-not (Test-Path -LiteralPath $ProjectPath)) {{
+    Write-Host "Error: project path not found: $ProjectPath"
+    exit 1
+}}
+$ProjectPath = (Resolve-Path -LiteralPath $ProjectPath).Path
 
 Push-Location $TestBoostRoot
 try {{

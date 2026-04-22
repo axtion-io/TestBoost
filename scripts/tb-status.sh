@@ -17,5 +17,11 @@ fi
 
 PROJECT_PATH="${1:?Usage: tb-status.sh <project_path>}"
 
+if [ ! -d "$PROJECT_PATH" ]; then
+    echo "Error: project path not found: $PROJECT_PATH" >&2
+    exit 1
+fi
+PROJECT_PATH="$(cd "$PROJECT_PATH" && pwd)"
+
 cd "$TESTBOOST_ROOT"
 python -m testboost status "$PROJECT_PATH"

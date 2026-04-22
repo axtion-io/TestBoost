@@ -18,6 +18,12 @@ fi
 PROJECT_PATH="${1:?Usage: tb-mutate.sh <project_path> [--target-classes ...] [--min-score N] [--verbose]}"
 shift
 
+if [ ! -d "$PROJECT_PATH" ]; then
+    echo "Error: project path not found: $PROJECT_PATH" >&2
+    exit 1
+fi
+PROJECT_PATH="$(cd "$PROJECT_PATH" && pwd)"
+
 cd "$TESTBOOST_ROOT"
 set +e
 python -m testboost mutate "$PROJECT_PATH" "$@"

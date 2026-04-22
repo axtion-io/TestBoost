@@ -461,12 +461,15 @@ async def _cmd_generate_async(args: argparse.Namespace) -> int:
         conventions = None
         maven_compile_cmd = None
 
+        maven_test_cmd = None
+
         project_data = read_project_analysis_data(project_path)
         if project_data:
             class_index = project_data.get("class_index")
             test_examples = project_data.get("test_examples")
             conventions = project_data.get("conventions")
             maven_compile_cmd = project_data.get("maven_compile_cmd")
+            maven_test_cmd = project_data.get("maven_test_cmd")
         else:
             logger.warn(
                 "No project-level class index found. Re-run `analyze` to build it "
@@ -479,10 +482,13 @@ async def _cmd_generate_async(args: argparse.Namespace) -> int:
             analysis_content = analysis_file.read_text(encoding="utf-8")
             session_conventions = _extract_json_field(analysis_content, "conventions")
             session_compile_cmd = _extract_json_field(analysis_content, "maven_compile_cmd")
+            session_test_cmd = _extract_json_field(analysis_content, "maven_test_cmd")
             if session_conventions:
                 conventions = session_conventions
             if session_compile_cmd:
                 maven_compile_cmd = session_compile_cmd
+            if session_test_cmd:
+                maven_test_cmd = session_test_cmd
 
         # Apply file filter if specified
         target_files = gaps
@@ -598,6 +604,7 @@ async def _cmd_generate_async(args: argparse.Namespace) -> int:
                     written_files.append((full_path, test))
 
             # Compile-and-fix: one mvn test-compile for all files, fix per-file errors
+            skip_runtime_fix = getattr(args, "no_runtime_fix", False)
             for full_path, test in written_files:
                 class_name = test.get("class_name", full_path.stem)
                 fixed = await _attempt_compile_fix(
@@ -606,6 +613,14 @@ async def _cmd_generate_async(args: argparse.Namespace) -> int:
                 )
                 if fixed != test.get("content", ""):
                     test["content"] = fixed
+
+                if not skip_runtime_fix:
+                    fixed = await _attempt_test_runtime_fix(
+                        project_path, full_path, test.get("content", ""),
+                        class_name, logger, session_dir, maven_test_cmd,
+                    )
+                    if fixed != test.get("content", ""):
+                        test["content"] = fixed
 
             for test in generated:
                 test_path = test.get("path", "")
@@ -641,6 +656,9 @@ async def _cmd_generate_async(args: argparse.Namespace) -> int:
 
 
 _MAX_COMPILE_FIX_ATTEMPTS = 3
+_MAX_TEST_FIX_ATTEMPTS = 2  # `mvn test` is slower than `test-compile`, keep shorter
+_TEST_FIX_TIMEOUT_SECONDS = 180
+_TEST_FIX_OUTPUT_LINES = 80
 
 
 async def _attempt_compile_fix(
@@ -713,6 +731,81 @@ async def _attempt_compile_fix(
             logger.info(f"Applied fix attempt {attempt} for {class_name}, recompiling...")
         except Exception as e:
             logger.warn(f"Auto-fix failed for {class_name}: {e}")
+            return current_code
+
+    return current_code
+
+
+async def _attempt_test_runtime_fix(
+    project_path: str,
+    test_file: Path,
+    test_code: str,
+    class_name: str,
+    logger,
+    session_dir: str | None = None,
+    maven_test_cmd: str | None = None,
+) -> str:
+    """Run `mvn test -Dtest=<class>` and use LLM to fix runtime failures, retrying up to N times.
+
+    Runs AFTER the test compiles cleanly. Only the test code is rewritten — the
+    production class under test is never modified.
+    """
+    base_cmd = _parse_maven_cmd(maven_test_cmd) if maven_test_cmd else None
+    if not base_cmd:
+        base_cmd = [
+            shutil.which("mvn") or shutil.which("mvn.cmd") or "mvn",
+            "test", "-q", "--no-transfer-progress",
+        ]
+
+    cmd = [*base_cmd, f"-Dtest={class_name}"]
+    current_code = test_code
+
+    for attempt in range(1, _MAX_TEST_FIX_ATTEMPTS + 1):
+        try:
+            result = subprocess.run(
+                cmd, cwd=project_path, capture_output=True, text=True,
+                timeout=_TEST_FIX_TIMEOUT_SECONDS,
+            )
+        except (subprocess.TimeoutExpired, FileNotFoundError) as e:
+            logger.warn(f"Test run skipped ({class_name}): {e}")
+            return current_code
+
+        if result.returncode == 0:
+            if attempt == 1:
+                logger.info(f"Tests passing: {class_name}")
+            else:
+                logger.info(f"Tests passing after {attempt - 1} runtime-fix(es): {class_name}")
+            return current_code
+
+        output = result.stdout + result.stderr
+        # Keep only lines useful for diagnosis to avoid prompt bloat from Maven noise
+        markers = ("FAIL", "ERROR", "Tests run:", "Caused by:", "at ", class_name)
+        relevant_lines = [ln for ln in output.splitlines() if any(m in ln for m in markers)]
+        if not relevant_lines:
+            relevant_lines = output.splitlines()[-40:]
+        relevant_errors = "\n".join(relevant_lines[:_TEST_FIX_OUTPUT_LINES])
+
+        logger.info(
+            f"Test failures in {class_name} "
+            f"(attempt {attempt}/{_MAX_TEST_FIX_ATTEMPTS}):\n"
+            + "\n".join(relevant_lines[:15])
+        )
+
+        if attempt == _MAX_TEST_FIX_ATTEMPTS:
+            logger.info(f"Max runtime-fix attempts reached for {class_name} — leaving for manual correction")
+            return current_code
+
+        try:
+            from src.lib.bridge import fix_test_runtime_errors
+            fixed = await fix_test_runtime_errors(current_code, relevant_errors, class_name)
+            if fixed == current_code:
+                logger.info(f"LLM returned identical code for {class_name} — stopping runtime-fix retries")
+                return current_code
+            test_file.write_text(fixed, encoding="utf-8")
+            current_code = fixed
+            logger.info(f"Applied runtime-fix attempt {attempt} for {class_name}, re-running tests...")
+        except Exception as e:
+            logger.warn(f"Auto-fix (runtime) failed for {class_name}: {e}")
             return current_code
 
     return current_code
@@ -1515,6 +1608,11 @@ def main() -> int:
     p_gen = subparsers.add_parser("generate", help="Generate tests")
     p_gen.add_argument("project_path", help="Path to the Java project")
     p_gen.add_argument("--files", nargs="*", help="Filter specific files")
+    p_gen.add_argument(
+        "--no-runtime-fix",
+        action="store_true",
+        help="Skip the per-test `mvn test` auto-fix loop (compile-fix only)",
+    )
     p_gen.add_argument("--verbose", "-v", action="store_true")
 
     # validate

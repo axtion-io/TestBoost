@@ -72,6 +72,14 @@ async def fix_compilation_errors(test_code: str, compile_errors: str, class_name
     return await _fix(test_code, compile_errors, class_name)
 
 
+async def fix_test_runtime_errors(test_code: str, test_errors: str, class_name: str) -> str:
+    """Fix runtime test failures in generated test code using LLM."""
+    from src.test_generation.generate_unit import (
+        fix_test_runtime_errors as _fix,
+    )
+    return await _fix(test_code, test_errors, class_name)
+
+
 def build_class_index(project_path: str, source_files: list[str]) -> dict[str, dict]:
     """Build the full class index for all source files."""
     from src.java.class_analyzer import build_class_index as _build

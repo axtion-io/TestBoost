@@ -549,6 +549,43 @@ async def fix_compilation_errors(test_code: str, compile_errors: str, class_name
     return code
 
 
+async def fix_test_runtime_errors(test_code: str, test_errors: str, class_name: str) -> str:
+    """Fix runtime test failures in generated test code using LLM.
+
+    Runs after the test compiles but `mvn test` reports failures/errors. The LLM
+    sees the stack traces and the current test code, and returns a corrected
+    version. The class under test is never modified.
+    """
+    llm = get_llm()
+    template = load_prompt_template("testing/test_runtime_fix.md")
+    prompt = render_template(template, test_errors=test_errors, test_code=test_code)
+
+    logger.debug(
+        "llm_runtime_fix_prompt",
+        class_name=class_name,
+        prompt_length=len(prompt),
+        error_lines=test_errors.count("\n") + 1,
+    )
+
+    response = await llm.ainvoke(prompt)
+    raw = response.content if hasattr(response, "content") else str(response)
+    code = str(raw) if not isinstance(raw, str) else raw
+
+    usage = _extract_token_usage(response)
+    logger.debug(
+        "llm_runtime_fix_response",
+        class_name=class_name,
+        response_length=len(raw),
+        **usage,
+    )
+
+    if "```java" in code:
+        code = code.split("```java")[1].split("```")[0].strip()
+    elif "```" in code:
+        code = code.split("```")[1].split("```")[0].strip()
+    return code
+
+
 async def _generate_test_code_with_llm(context: dict[str, Any], source_code: str) -> str:
     """
     Generate test code using LLM for intelligent, context-aware tests.

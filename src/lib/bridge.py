@@ -34,16 +34,51 @@ async def detect_test_conventions(project_path: str, **kwargs) -> str:
     return await _detect(project_path, **kwargs)
 
 
+def get_plugin_for_session(project_path: str):
+    """Return the plugin for the project's current session.
+
+    Reads the technology identifier from session metadata and looks up
+    the corresponding plugin in the registry.
+
+    Falls back to 'java-spring' if no session or no technology field exists
+    (backward compatibility for sessions created before the plugin system).
+
+    Args:
+        project_path: Path to the project root.
+
+    Returns:
+        TechnologyPlugin instance for this session's technology.
+    """
+    from pathlib import Path as _Path
+
+    from src.lib.plugins import get_registry
+    from src.lib.session_tracker import get_current_session, get_session_technology
+
+    session = get_current_session(project_path)
+    if session:
+        technology = get_session_technology(_Path(session["session_dir"]))
+    else:
+        technology = "java-spring"
+
+    return get_registry().get(technology)
+
+
 def find_source_files(project_path: str) -> list[str]:
-    """Find testable Java source files."""
-    from src.java.discovery import find_source_files as _find
-    return _find(project_path)
+    """Find testable source files for the current session's technology."""
+    from pathlib import Path as _Path
+    plugin = get_plugin_for_session(project_path)
+    return plugin.find_source_files(_Path(project_path))
 
 
-def classify_file(relative_path: str) -> str:
-    """Classify a Java source file by category."""
-    from src.java.discovery import classify_source_file
-    return classify_source_file(relative_path)
+def classify_file(relative_path: str, project_path: str = "") -> str:
+    """Classify a source file by category using the current session's plugin."""
+    if project_path:
+        plugin = get_plugin_for_session(project_path)
+    else:
+        # Fallback: use Java plugin for backward compatibility
+        from src.java.discovery import classify_source_file
+        return classify_source_file(relative_path)
+    return plugin.classify_source_file(relative_path)
 
 
 def find_test_for_source(project_path: str, source_relative_path: str) -> str | None:
@@ -73,7 +108,11 @@ async def fix_compilation_errors(test_code: str, compile_errors: str, class_name
 
 
 def build_class_index(project_path: str, source_files: list[str]) -> dict[str, dict]:
-    """Build the full class index for all source files."""
+    """Build the full class index for all source files.
+
+    Delegates to the Java class analyzer for backward compatibility.
+    For the Python plugin, use plugin.build_generation_context() directly.
+    """
     from src.java.class_analyzer import build_class_index as _build
     return _build(project_path, source_files)
 

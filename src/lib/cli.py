@@ -22,11 +22,9 @@ import argparse
 import asyncio
 import json
 import re
-import shlex
 import shutil
 import subprocess
 import sys
-import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Any
 
@@ -45,14 +43,66 @@ except ImportError:
 
 def cmd_init(args: argparse.Namespace) -> int:
     """Initialize .testboost/ in a project."""
+    from pathlib import Path as _Path
+
     from src.lib.integrity import emit_token, get_or_create_secret
-    from src.lib.session_tracker import create_session, init_project
+    from src.lib.plugins import get_registry
+    from src.lib.session_tracker import create_session, init_project, set_session_technology
 
     project_path = args.project_path
 
-    if not Path(project_path).exists():
+    if not _Path(project_path).exists():
         print(f"Error: Project path does not exist: {project_path}", file=sys.stderr)
         return 1
+
+    # --- Technology detection / selection (T016, T017, T018, T019) ---
+    registry = get_registry()
+    tech_arg = getattr(args, "tech", None)
+
+    if tech_arg:
+        # Explicit --tech override
+        try:
+            plugin = registry.get(tech_arg)
+        except ValueError:
+            available = [p["identifier"] for p in registry.list_plugins()]
+            print(
+                f"Error: Unknown technology '{tech_arg}'. "
+                f"Available: {available}. "
+                f"Run `testboost --list-plugins` to see all options.",
+                file=sys.stderr,
+            )
+            return 1
+        print(f"[+] Technology selected: {plugin.identifier}")
+    else:
+        # Auto-detect based on files present in project root
+        plugin = registry.detect(_Path(project_path))
+        if plugin is None:
+            available = [p["identifier"] for p in registry.list_plugins()]
+            print(
+                "Error: Could not detect project technology. "
+                f"No detection patterns matched. Available plugins: {available}. "
+                "Use --tech <identifier> to specify explicitly.",
+                file=sys.stderr,
+            )
+            return 1
+
+        # Check if multiple plugins would match (T019)
+        matched_plugins = [
+            p for p in registry.list_plugins()
+            if any((_Path(project_path) / pat).exists() for pat in p["detection_patterns"])
+        ]
+        if len(matched_plugins) > 1:
+            others = [p["identifier"] for p in matched_plugins if p["identifier"] != plugin.identifier]
+            print(
+                f"[!] Multiple technology indicators found. Using: {plugin.identifier}. "
+                f"Others: {others}. Override with --tech if needed."
+            )
+        else:
+            matched_file = next(
+                (pat for pat in plugin.detection_patterns if (_Path(project_path) / pat).exists()),
+                plugin.detection_patterns[0],
+            )
+            print(f"[+] Technology detected: {plugin.identifier} (matched: {matched_file})")
 
     # Initialize directory structure
     result = init_project(project_path)
@@ -70,6 +120,10 @@ def cmd_init(args: argparse.Namespace) -> int:
     print(f"[+] {session['message']}")
     print(f"    Session directory: {session['session_dir']}")
     print(f"    Session ID: {session['session_id']}")
+
+    # Write technology to session metadata (T018)
+    set_session_technology(_Path(session["session_dir"]), plugin.identifier)
+    print(f"    Technology: {plugin.identifier}")
 
     emit_token(project_path, "init", session["session_id"])
     return 0
@@ -161,7 +215,7 @@ async def _cmd_analyze_async(args: argparse.Namespace) -> int:
         # Classify source files and check for existing tests
         file_details = []
         for sf in source_files:
-            category = classify_file(sf)
+            category = classify_file(sf, project_path)
             test_file = find_test_for_source(project_path, sf)
             file_details.append({
                 "path": sf,
@@ -196,16 +250,30 @@ async def _cmd_analyze_async(args: argparse.Namespace) -> int:
             content += f"- **Uses Mockito**: {'yes' if mocking.get('uses_mockito') else 'no'}\n"
             content += f"- **Uses Spring MockBean**: {'yes' if mocking.get('uses_spring_mock_bean') else 'no'}\n\n"
 
-        # Detect Maven build configuration
-        maven_config = _detect_maven_build_config(project_path)
-        content += "## Maven Build Configuration\n\n"
-        content += f"- **Compile command**: `{maven_config['compile_cmd']}`\n"
-        content += f"- **Test command**: `{maven_config['test_cmd']}`\n"
-        for note in maven_config["notes"]:
+        # Detect build configuration via plugin
+        from src.lib.bridge import get_plugin_for_session
+        from pathlib import Path as _Path
+        analysis_plugin = get_plugin_for_session(project_path)
+        compile_cmd_list = analysis_plugin.validation_command(_Path(project_path), {})
+        test_cmd_list = analysis_plugin.test_run_command(_Path(project_path), {})
+        compile_cmd_str = " ".join(compile_cmd_list)
+        test_cmd_str = " ".join(test_cmd_list)
+
+        # For Java: also detect Maven profiles and .mvn/maven.config
+        maven_config_notes: list[str] = []
+        if analysis_plugin.identifier == "java-spring":
+            from src.lib.plugins.java_spring import _detect_maven_build_config
+            maven_config = _detect_maven_build_config(project_path)
+            compile_cmd_str = maven_config["compile_cmd"]
+            test_cmd_str = maven_config["test_cmd"]
+            maven_config_notes = maven_config["notes"]
+
+        content += "## Build Configuration\n\n"
+        content += f"- **Compile command**: `{compile_cmd_str}`\n"
+        content += f"- **Test command**: `{test_cmd_str}`\n"
+        for note in maven_config_notes:
             content += f"- {note}\n"
-        content += "\n> **Customize**: edit `maven_compile_cmd` / `maven_test_cmd` in the session "
-        content += "`analysis.md` JSON block (e.g. add `-P corp` for profiles, "
-        content += "`-Dskip.integration=true` for properties).\n\n"
+        content += "\n"
 
         # --- Build class index (project-level, persisted across sessions) ---
         logger.info(f"Building class index for {len(source_files)} source files...")
@@ -241,8 +309,8 @@ async def _cmd_analyze_async(args: argparse.Namespace) -> int:
             "conventions": conventions,
             "source_files": source_files,
             "source_file_details": file_details,
-            "maven_compile_cmd": maven_config["compile_cmd"],
-            "maven_test_cmd": maven_config["test_cmd"],
+            "maven_compile_cmd": compile_cmd_str,
+            "maven_test_cmd": test_cmd_str,
             "class_index": class_index,
             "test_examples": test_examples,
         }
@@ -254,15 +322,15 @@ async def _cmd_analyze_async(args: argparse.Namespace) -> int:
             "# Session Analysis\n\n"
             f"This session uses the project-level analysis at "
             f"`{get_project_analysis_path(project_path)}`.\n\n"
-            "## Maven Command Overrides\n\n"
+            "## Build Command Overrides\n\n"
             "> Edit `maven_compile_cmd` / `maven_test_cmd` in the JSON block below\n"
-            "> to add profiles (`-P`) or properties (`-D`) for this session only.\n\n"
+            "> to customize build commands for this session only.\n\n"
         )
         update_step_file(
             session["session_dir"], "analysis", STATUS_COMPLETED, session_content,
             data={
-                "maven_compile_cmd": maven_config["compile_cmd"],
-                "maven_test_cmd": maven_config["test_cmd"],
+                "maven_compile_cmd": compile_cmd_str,
+                "maven_test_cmd": test_cmd_str,
                 "project_analysis_path": str(project_analysis_path),
             },
         )
@@ -499,6 +567,11 @@ async def _cmd_generate_async(args: argparse.Namespace) -> int:
 
         logger.info(f"Generating tests for {len(target_files)} files...")
 
+        # Resolve plugin for prompt template directory
+        from src.lib.bridge import get_plugin_for_session
+        plugin = get_plugin_for_session(project_path)
+        prompt_template_dir = plugin.prompt_template_dir
+
         # --- Reuse existing TestBoost test generation via bridge ---
         # Verify LLM connectivity before generating tests
         from src.lib.bridge import (
@@ -550,9 +623,13 @@ async def _cmd_generate_async(args: argparse.Namespace) -> int:
                     class_index=class_index,
                     test_examples=test_examples,
                     test_requirements=edge_cases if edge_cases else None,
+                    prompt_template_dir=prompt_template_dir,
                 )
                 result = json.loads(result_json)
-                if result.get("success") and result.get("test_code") and "@Test" in result.get("test_code", ""):
+                test_code = result.get("test_code", "")
+                # Technology-aware validation: Java uses @Test, Python uses def test_
+                has_tests = "@Test" in test_code or "def test_" in test_code
+                if result.get("success") and test_code and has_tests:
                     generated.append({
                         "path": result.get("test_file", ""),
                         "content": result.get("test_code", ""),
@@ -657,7 +734,12 @@ async def _attempt_compile_fix(
     Uses maven_compile_cmd from analysis.md if available, so profiles and
     custom properties set there are respected.
     """
-    cmd = _parse_maven_cmd(maven_compile_cmd) if maven_compile_cmd else None
+    from src.lib.plugins.java_spring import _parse_maven_cmd as _java_parse_maven_cmd
+    try:
+        cmd = _java_parse_maven_cmd(maven_compile_cmd) if maven_compile_cmd else None
+    except ValueError as e:
+        logger.warn(f"Invalid maven_compile_cmd, using default: {e}")
+        cmd = None
     if not cmd:
         cmd = [shutil.which("mvn") or shutil.which("mvn.cmd") or "mvn", "test-compile", "-q", "--no-transfer-progress"]
 
@@ -752,18 +834,27 @@ async def _cmd_validate_async(args: argparse.Namespace) -> int:
     update_step_file(session_dir, "validation", STATUS_IN_PROGRESS, "# Validation\n\nCompiling and testing...")
 
     try:
-        # Read Maven commands from analysis.md (allows profile/property customization)
+        # Resolve plugin for this session's technology
+        from pathlib import Path as _Path
+
+        from src.lib.bridge import get_plugin_for_session
+
+        plugin = get_plugin_for_session(project_path)
+
+        # Build session_config from analysis.md (allows profile/property customization)
+        session_config: dict = {}
         analysis_file = Path(session_dir) / "analysis.md"
-        maven_compile_cmd = None
-        maven_test_cmd = None
         if analysis_file.exists():
             analysis_content = analysis_file.read_text(encoding="utf-8")
             maven_compile_cmd = _extract_json_field(analysis_content, "maven_compile_cmd")
             maven_test_cmd = _extract_json_field(analysis_content, "maven_test_cmd")
+            if maven_compile_cmd:
+                session_config["maven_compile_cmd"] = maven_compile_cmd
+            if maven_test_cmd:
+                session_config["maven_test_cmd"] = maven_test_cmd
 
-        mvn = shutil.which("mvn") or shutil.which("mvn.cmd") or "mvn"
-        compile_cmd = _parse_maven_cmd(maven_compile_cmd) if maven_compile_cmd else [mvn, "test-compile", "-q", "--no-transfer-progress"]
-        test_run_cmd = _parse_maven_cmd(maven_test_cmd) if maven_test_cmd else [mvn, "test", "-q", "--no-transfer-progress"]
+        compile_cmd = plugin.validation_command(_Path(project_path), session_config)
+        test_run_cmd = plugin.test_run_command(_Path(project_path), session_config)
 
         content = "# Validation Results\n\n"
         content += f"- **Compile**: `{' '.join(compile_cmd)}`\n"
@@ -1279,125 +1370,28 @@ def cmd_verify(args: argparse.Namespace) -> int:
 
 def cmd_status(args: argparse.Namespace) -> int:
     """Show current session status."""
-    from src.lib.session_tracker import get_session_status
+    from pathlib import Path as _Path
+
+    from src.lib.session_tracker import (
+        get_current_session,
+        get_session_status,
+        get_session_technology,
+    )
 
     status = get_session_status(args.project_path)
+
+    # Prepend technology info to the status output
+    session = get_current_session(args.project_path)
+    if session:
+        technology = get_session_technology(_Path(session["session_dir"]))
+        print(f"**Technology**: {technology}")
+        print()
+
     print(status)
     return 0
 
 
 # --- Helpers ---
-
-def _detect_maven_build_config(project_path: str) -> dict:
-    """Detect Maven build configuration from pom.xml and .mvn/maven.config.
-
-    Returns a dict with:
-      - compile_cmd: str  (e.g. "mvn test-compile -q --no-transfer-progress")
-      - test_cmd:    str  (e.g. "mvn test -q --no-transfer-progress")
-      - notes:       list[str]  (human-readable config notes)
-    """
-    project_dir = Path(project_path)
-    notes: list[str] = []
-    extra_flags = ""
-
-    # Check for .mvn/maven.config (flags applied to every Maven invocation)
-    maven_config_file = project_dir / ".mvn" / "maven.config"
-    if maven_config_file.exists():
-        try:
-            config_content = maven_config_file.read_text(encoding="utf-8").strip()
-            if config_content:
-                extra_flags = " " + config_content.replace("\n", " ")
-                notes.append(f"`.mvn/maven.config` adds flags: `{config_content.replace(chr(10), ' ')}`")
-        except OSError:
-            pass
-
-    # Check for activeByDefault profiles in pom.xml
-    pom_file = project_dir / "pom.xml"
-    active_profiles: list[str] = []
-    if pom_file.exists():
-        try:
-            tree = ET.parse(pom_file)
-            root = tree.getroot()
-            ns = {"maven": "http://maven.apache.org/POM/4.0.0"}
-
-            profiles = root.findall(".//maven:profile", ns) or root.findall(".//profile")
-            for profile in profiles:
-                activation = (
-                    profile.find("maven:activation", ns)
-                    or profile.find("activation")
-                )
-                if activation is not None:
-                    active_by_default = (
-                        activation.find("maven:activeByDefault", ns)
-                        or activation.find("activeByDefault")
-                    )
-                    if active_by_default is not None and active_by_default.text == "true":
-                        profile_id = profile.find("maven:id", ns) or profile.find("id")
-                        if profile_id is not None and profile_id.text:
-                            pid = profile_id.text.strip()
-                            if re.match(r"^[a-zA-Z0-9_.\-]+$", pid):
-                                active_profiles.append(pid)
-                            else:
-                                notes.append(
-                                    f"Skipped profile with invalid ID: {pid!r} "
-                                    f"(only alphanumeric, _, ., - allowed)"
-                                )
-        except ET.ParseError:
-            pass
-
-    if active_profiles:
-        profile_flags = " -P " + ",".join(active_profiles)
-        extra_flags += profile_flags
-        notes.append(
-            f"Detected active-by-default profiles: `{', '.join(active_profiles)}` "
-            f"— added `-P {','.join(active_profiles)}`"
-        )
-
-    if not notes:
-        notes.append("No special profiles or Maven config detected — using default flags")
-
-    return {
-        "compile_cmd": f"mvn test-compile -q --no-transfer-progress{extra_flags}",
-        "test_cmd": f"mvn test -q --no-transfer-progress{extra_flags}",
-        "notes": notes,
-    }
-
-
-_ALLOWED_MAVEN_BINARIES = {"mvn", "mvn.cmd", "./mvnw", "mvnw"}
-
-
-def _parse_maven_cmd(cmd_str: str) -> list[str]:
-    """Parse a Maven command string into a list, resolving the mvn binary.
-
-    Only binaries in _ALLOWED_MAVEN_BINARIES are accepted to prevent arbitrary
-    command execution from user-editable analysis.md fields.
-
-    Example: "mvn test-compile -q -P corp" -> ["/usr/bin/mvn", "test-compile", "-q", "-P", "corp"]
-
-    Raises:
-        ValueError: If the command starts with a disallowed binary.
-    """
-    try:
-        parts = shlex.split(cmd_str)
-    except ValueError:
-        parts = cmd_str.split()
-
-    if not parts:
-        return []
-
-    binary = parts[0]
-    if binary not in _ALLOWED_MAVEN_BINARIES:
-        raise ValueError(
-            f"Disallowed Maven binary in command: {binary!r}. "
-            f"Allowed values: {sorted(_ALLOWED_MAVEN_BINARIES)}"
-        )
-
-    if binary in ("mvn", "mvn.cmd"):
-        resolved = shutil.which("mvn") or shutil.which("mvn.cmd") or "mvn"
-        return [resolved] + parts[1:]
-
-    # Local wrapper (./mvnw, mvnw) — keep as-is; subprocess.run resolves relative to cwd
-    return parts
 
 
 def _warn_maven_config_issue(
@@ -1474,13 +1468,19 @@ def main() -> int:
         prog="testboost",
         description="TestBoost - Lightweight markdown-driven test generation",
     )
-    subparsers = parser.add_subparsers(dest="command", required=True)
+    parser.add_argument(
+        "--list-plugins",
+        action="store_true",
+        help="List all available technology plugins and exit",
+    )
+    subparsers = parser.add_subparsers(dest="command")
 
     # init
     p_init = subparsers.add_parser("init", help="Initialize .testboost/ in a project")
-    p_init.add_argument("project_path", help="Path to the Java project")
+    p_init.add_argument("project_path", help="Path to the project")
     p_init.add_argument("--name", help="Session name", default=None)
     p_init.add_argument("--description", help="What to test and why", default="")
+    p_init.add_argument("--tech", help="Technology plugin identifier (e.g. java-spring, python-pytest)", default=None)
 
     # analyze
     p_analyze = subparsers.add_parser("analyze", help="Analyze project structure")
@@ -1531,6 +1531,20 @@ def main() -> int:
     p_status.add_argument("project_path", help="Path to the Java project")
 
     args = parser.parse_args()
+
+    # T020: --list-plugins exits before any subcommand is required
+    if args.list_plugins:
+        from src.lib.plugins import get_registry
+        for plugin_info in get_registry().list_plugins():
+            print(f"  {plugin_info['identifier']}")
+            print(f"    Description : {plugin_info['description']}")
+            print(f"    Detects     : {', '.join(plugin_info['detection_patterns'])}")
+            print()
+        return 0
+
+    if not args.command:
+        parser.print_help()
+        return 1
 
     commands = {
         "init": cmd_init,

@@ -1,6 +1,6 @@
 # Workflow
 
-TestBoost follows a five-step sequential workflow. Each step builds on the output of the previous one.
+TestBoost follows a sequential workflow. Each step builds on the output of the previous one.
 
 ```mermaid
 graph LR
@@ -8,163 +8,157 @@ graph LR
     B --> C[gaps]
     C --> D[generate]
     D --> E[validate]
+    E --> F[mutate]
+    F --> G[killer]
 ```
 
 ## 1. Init
 
-**Command:** `python -m testboost init <project_path>`
+**Command:** `python -m src.lib.cli init <project_path> [--tech <identifier>]`
 
-Creates the `.testboost/` directory structure in your Java project and starts a new session.
+Creates the `.testboost/` directory structure in your project and starts a new session.
 
 **What it does:**
 - Verifies the project path exists
+- **Auto-detects** the project technology using the plugin registry (checks for `pom.xml`, `pyproject.toml`, `go.mod`, etc.)
+- If `--tech <identifier>` is provided, uses that plugin directly instead of auto-detecting
+- Prints a notice if multiple technologies are detected (e.g. both `pom.xml` and `pyproject.toml`)
 - Creates `.testboost/config.yaml` with default settings
 - Creates a numbered session directory (e.g. `001-test-generation/`)
-- Writes `spec.md` with the session intent and progress table
+- Writes `spec.md` with the session intent, progress table, and `technology` field
+- Emits an HMAC-SHA256 integrity token
 
 **Output:** `.testboost/sessions/001-test-generation/spec.md`
 
-**Integrity token:** An HMAC-SHA256 token is emitted at the end of every successful step (including `init`). The slash commands instruct the LLM to verify the token is present before proceeding. See [Architecture](./architecture.md) for details.
+**Listing available plugins:** `python -m src.lib.cli --list-plugins`
 
 ## 2. Analyze
 
-**Command:** `python -m testboost analyze <project_path>`
+**Command:** `python -m src.lib.cli analyze <project_path>`
 
-Scans the Java project to understand its structure, frameworks, and testing conventions.
+Scans the project to understand its structure, frameworks, and testing conventions.
 
 **What it does:**
-- Parses `pom.xml` (or `build.gradle`) for build configuration and dependencies
-- Detects frameworks: Spring Boot, JPA, etc.
-- Identifies Java version and project type
-- Finds all testable source files (services, controllers, repositories, utilities)
-- Detects existing test conventions: naming patterns, assertion styles, mocking frameworks
-- Builds a **full class index** for every source file (fields with exact types, methods, annotations, extends/implements hierarchy)
-- Extracts up to 3 representative test examples (one service, one controller, one repository) for LLM style reference
+- Detects the project technology via `registry.detect()` (replaces hardcoded `pom.xml`/`build.gradle` checks)
+- Parses build files for configuration and dependencies
+- Detects frameworks (Spring Boot, JPA, pytest, etc.)
+- Finds all testable source files via `plugin.find_source_files()`
+- Detects existing test conventions using `plugin.test_file_pattern()` for test file discovery
+- Builds a **full class index** for every source file (Java: fields with exact types, methods, annotations, hierarchy)
+- Extracts representative test examples for LLM style reference
 
 **Output:**
-- `.testboost/analysis.md` — project-level class index, test examples, conventions (shared across sessions)
-- `.testboost/sessions/<id>/analysis.md` — lightweight Maven command overrides for this session
-
-The project-level analysis report includes:
-- Project type and build system
-- Detected application and testing frameworks
-- Source file count and package structure
-- Classified source file table with existing test coverage
-- Detected conventions (naming, assertions, mocking)
-- Full class index table (class → package, category, parent class)
-- Embedded test pattern examples from real project tests
+- `.testboost/analysis.md` -- project-level class index, test examples, conventions (shared across sessions)
+- `.testboost/sessions/<id>/analysis.md` -- lightweight command overrides for this session
 
 **Core functions used:**
-- `analyze_project_context()` from `src/mcp_servers/test_generator/tools/analyze.py`
-- `detect_test_conventions()` from `src/mcp_servers/test_generator/tools/conventions.py`
-- `find_source_files()` from `src/lib/java_discovery.py`
-- `build_class_index()` from `src/lib/java_class_analyzer.py`
-- `extract_test_examples()` from `src/lib/java_class_analyzer.py`
+- `analyze_project_context()` from `src/test_generation/analyze.py`
+- `detect_test_conventions()` from `src/test_generation/conventions.py`
+- `find_source_files()` from `src/lib/bridge.py` (routed through plugin)
+- `build_class_index()` from `src/java/class_analyzer.py`
+- `extract_test_examples()` from `src/java/class_analyzer.py`
 
 ## 3. Gaps
 
-**Command:** `python -m testboost gaps <project_path>`
+**Command:** `python -m src.lib.cli gaps <project_path>`
 
 Identifies which source files are missing test coverage.
 
 **What it does:**
 - Reads the source file list from the analysis step
-- Scans `src/test/java/` for existing `*Test.java` and `*Tests.java` files
-- Matches source files to test files by name (e.g. `UserService.java` -> `UserServiceTest.java`)
+- Scans for existing test files using technology-appropriate patterns
+- Matches source files to test files by name
 - Assigns priority: services and controllers are **high**, others are **medium**
 
 **Output:** `.testboost/sessions/<id>/coverage-gaps.md`
 
-The gaps report includes:
-- Total testable files, files with tests, files without tests
-- Estimated coverage percentage
-- Prioritized table of files needing tests
-- List of already-covered files
-
 ## 4. Generate
 
-**Command:** `python -m testboost generate <project_path>`
+**Command:** `python -m src.lib.cli generate <project_path> [--files file1 file2]`
 
 Generates unit tests for files identified as lacking coverage.
 
 **What it does:**
 - Reads the gap list and analysis conventions from previous steps
 - For each source file, calls the LLM to generate a test class
+- Uses the plugin's `prompt_template_dir` to load technology-specific prompts (Java prompts for Java projects, pytest prompts for Python projects)
 - Passes project conventions (naming, assertions, mocking) to the LLM prompt
-- Writes generated test files directly to `src/test/java/...` in the project
-
-**Options:**
-- `--files ServiceA.java ServiceB.java` -- Generate tests only for specific files
-- `--verbose` / `-v` -- Show detailed output
+- Writes generated test files to the project
+- Runs compile-and-fix loop: compiles tests, sends errors to LLM for fixing, retries up to 3 times
 
 **Output:** `.testboost/sessions/<id>/generation.md` + test files on disk
 
-The generation report includes:
-- Number of target files and generated tests
-- Table mapping source files to generated test files
-- Test method counts per file
-
 **Core function used:**
-- `generate_adaptive_tests()` from `src/mcp_servers/test_generator/tools/generate_unit.py`
+- `generate_adaptive_tests()` from `src/test_generation/generate_unit.py`
 
 The LLM prompt includes:
 - Class information (name, type, package, methods, dependencies)
-- **Full dependency signatures** from the class index (exact field types, all public methods) — avoids hallucinated method names and wrong types
-- **Inheritance context** — if the tested class extends another class in the index, the parent's fields and methods are included
-- **Multiple test examples** from the project (up to 3 real files, one per category) — gives the LLM concrete style references
+- **Full dependency signatures** from the class index (exact field types, all public methods)
+- **Inheritance context** -- if the tested class extends another class in the index
+- **Multiple test examples** from the project (up to 3 real files)
 - Project conventions detected in the analysis step
-- JUnit 5 / Mockito best practices
+- Technology-specific best practices (JUnit 5/Mockito for Java, pytest/unittest.mock for Python)
 - Class-type-specific patterns (controller, service, repository)
-- Mutation-resistant testing patterns
-
-If `.testboost/analysis.md` is absent (project analyzed before this feature existed), generation falls back to lazy dependency loading — re-running `analyze` will rebuild it.
-
-See [Prompts](./prompts.md) for details on the LLM prompts.
 
 ## 5. Validate
 
-**Command:** `python -m testboost validate <project_path>`
+**Command:** `python -m src.lib.cli validate <project_path>`
 
-Compiles and runs the generated tests using Maven.
+Compiles and runs the generated tests using the plugin's build commands.
 
 **What it does:**
-1. Runs `mvn test-compile` to check for compilation errors
-2. If compilation fails, parses errors using `MavenErrorParser` and presents them
-3. If compilation succeeds, runs `mvn test`
-4. Reports test results (passed/failed/skipped)
+1. Resolves the technology plugin for the current session
+2. Runs `plugin.validation_command()` (e.g. `mvn test-compile` for Java, `py_compile` for Python)
+3. If compilation fails, parses errors and presents them
+4. If compilation succeeds, runs `plugin.test_run_command()` (e.g. `mvn test` for Java, `pytest` for Python)
+5. Reports test results (passed/failed/skipped)
 
 **Output:** `.testboost/sessions/<id>/validation.md`
 
-When tests fail, the LLM CLI sees the errors and can help you fix them interactively. This is by design: rather than silently auto-correcting, TestBoost shows you what went wrong so you can decide how to proceed.
+## 6. Mutate
 
-**Core function used:**
-- `MavenErrorParser` from `src/lib/maven_error_parser.py`
+**Command:** `python -m src.lib.cli mutate <project_path> [--min-score 80]`
 
-## 6. Status (Auxiliary)
+Runs PIT mutation testing to measure test quality (Java only).
 
-**Command:** `python -m testboost status <project_path>`
+**What it does:**
+- Runs PIT mutation testing via Maven
+- Analyzes mutation results: killed vs. surviving mutants
+- Identifies hard-to-kill mutant patterns
+- Provides priority improvement recommendations
 
-Displays the current session progress. Shows which steps are completed, in progress, or pending.
+**Output:** `.testboost/sessions/<id>/mutation.md`
 
-## Install (Setup)
+## 7. Killer
 
-**Command:** `python -m testboost install <project_path>`
+**Command:** `python -m src.lib.cli killer <project_path> [--max-tests 10]`
 
-Installs TestBoost slash commands and wrapper scripts into a target Java project so that you can run TestBoost from your Java project directory. See [Getting Started](./getting-started.md#installing-testboost-in-your-java-project) for details.
+Generates targeted tests to kill surviving mutants.
 
-## Verify (Auxiliary)
+**What it does:**
+- Reads surviving mutants from the mutation step
+- Generates killer tests via LLM
+- Runs compile-and-fix loop on generated tests
 
-**Command:** `python -m testboost verify <project_path> <token>`
+**Output:** `.testboost/sessions/<id>/killer-tests.md` + test files on disk
+
+## 8. Status (Auxiliary)
+
+**Command:** `python -m src.lib.cli status <project_path>`
+
+Displays the current session progress including the detected **technology** plugin. Shows which steps are completed, in progress, or pending.
+
+## 9. Install (Setup)
+
+**Command:** `python -m src.lib.cli install <project_path>`
+
+Installs TestBoost slash commands and wrapper scripts into a target project so that you can run TestBoost from your project directory. See [Getting Started](./getting-started.md) for details.
+
+## 10. Verify (Auxiliary)
+
+**Command:** `python -m src.lib.cli verify <project_path> <token>`
 
 Verifies an HMAC integrity token emitted at the end of a CLI step.
-
-**Usage:** Each successful CLI step prints a line like:
-```
-[TESTBOOST_INTEGRITY:sha256=<hex>:<step>:<session_id>:<timestamp>]
-```
-Pass this entire line as the `<token>` argument. The command exits 0 and prints `[TESTBOOST_VERIFY:OK]` if the token is authentic, or exits 1 with `[TESTBOOST_VERIFY:FAILED]` if it is invalid or forged.
-
-This command is primarily used by slash commands to confirm that CLI output is genuine before proceeding to the next step. See [Architecture](./architecture.md) for details on the integrity token system.
 
 ## Interactive Workflow with LLM CLI
 

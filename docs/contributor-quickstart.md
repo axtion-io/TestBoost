@@ -53,15 +53,18 @@ Most unit tests mock the LLM calls, so this is only needed for integration testi
 # All tests
 pytest tests/
 
-# TestBoost CLI tests
-pytest testboost/tests/
+# Plugin system tests
+pytest tests/unit/lib/plugins/ tests/integration/test_plugin_detection.py -v
+
+# CLI and session tests
+pytest tests/unit/testboost/ -v
 
 # With coverage report
-pytest --cov=src --cov=testboost --cov-report=html
+pytest --cov=src --cov-report=html
 # Open htmlcov/index.html in your browser
 
 # Specific test file
-pytest tests/unit/test_cli.py
+pytest tests/unit/testboost/test_cli.py
 
 # Tests matching a pattern
 pytest -k "test_session"
@@ -79,38 +82,47 @@ ruff check .
 # Auto-fix lint issues
 ruff check --fix .
 
-# Type checking
-mypy src/
-
 # Run everything (same as CI)
-pytest && ruff check . && mypy src/
+pytest && ruff check .
 ```
 
 ## Project Structure
 
 ```
 TestBoost/
-+-- testboost/             # CLI and session management
-|   +-- lib/
-|   |   +-- cli.py              # Main CLI (7 commands incl. install)
-|   |   +-- session_tracker.py  # Markdown-based session tracking
-|   |   +-- md_logger.py        # Dual-output logger (stdout + .md files)
-|   |   +-- testboost_bridge.py # Bridge to core functions in src/
-|   |   +-- integrity.py        # HMAC-SHA256 integrity token system
-|   |   +-- installer.py        # Persistent installer for target projects
-|   +-- scripts/                # Shell script wrappers for slash commands
-|   +-- templates/commands/     # Slash command templates for installation
-|   +-- tests/                  # CLI unit tests
 +-- src/
-|   +-- mcp_servers/
-|   |   +-- test_generator/     # Core analysis and generation logic
-|   +-- lib/
+|   +-- java/                   # Java-specific analysis (no LLM dependency)
+|   |   +-- parsing_utils.py    # Shared low-level Java parsers
+|   |   +-- discovery.py        # Java source file finder + classifier
+|   |   +-- class_analyzer.py   # Full class index builder + test example extractor
+|   +-- test_generation/        # LLM-backed generation tools
+|   |   +-- analyze.py          # Project structure analysis
+|   |   +-- conventions.py      # Test convention detection
+|   |   +-- generate_unit.py    # LLM-based unit test generation
+|   |   +-- mutation.py         # PIT mutation testing runner
+|   |   +-- analyze_mutants.py  # Mutation report analysis
+|   |   +-- killer_tests.py     # Killer test generation
+|   +-- lib/                    # Infrastructure layer
+|   |   +-- bridge.py           # Bridge to core functions (mockable boundary)
+|   |   +-- cli.py              # CLI entry point (10 commands + --list-plugins)
+|   |   +-- session_tracker.py  # Markdown-based session management
+|   |   +-- plugins/            # Technology plugin system
+|   |   |   +-- base.py         # TechnologyPlugin ABC
+|   |   |   +-- registry.py     # PluginRegistry
+|   |   |   +-- java_spring.py  # Java/Spring plugin
+|   |   |   +-- python_pytest.py # Python/pytest plugin
+|   |   |   +-- go_testing_stub.py # Go stub (extensibility demo)
 |   |   +-- llm.py              # LLM provider abstraction
 |   |   +-- maven_error_parser.py
-+-- config/prompts/             # LLM prompt templates
-+-- .claude/commands/           # Claude Code slash commands
-+-- .opencode/commands/         # OpenCode slash commands
-+-- tests/                      # Core function tests
+|   |   +-- prompt_utils.py     # Shared template load + render
++-- config/
+|   +-- prompts/testing/        # Java/Spring LLM prompt templates
+|   +-- prompts/testing/python_pytest/ # Python/pytest LLM prompt templates
++-- tests/                      # Test suite
+|   +-- unit/lib/plugins/       # Plugin unit tests
+|   +-- unit/testboost/         # CLI, session, integrity tests
+|   +-- integration/            # Plugin detection, LLM connectivity
+|   +-- e2e/                    # Full LLM workflow tests
 +-- docs/                       # Documentation
 ```
 
@@ -152,10 +164,10 @@ git push origin feature/short-description
 
 ### Bridge Pattern for Mocking
 
-All imports from `src/` go through `src/lib/testboost_bridge.py`. In tests, mock at the bridge level:
+All imports from `src/` go through `src/lib/bridge.py`. In tests, mock at the bridge level:
 
 ```python
-@patch("testboost.lib.testboost_bridge.analyze_project_context")
+@patch("src.lib.bridge.analyze_project_context")
 async def test_analyze(mock_fn):
     mock_fn.return_value = '{"success": true}'
     # ...
@@ -163,13 +175,22 @@ async def test_analyze(mock_fn):
 
 ### Session State in Markdown
 
-Session state is stored in `.testboost/sessions/<id>/<step>.md` files with YAML frontmatter. See [Session Format](./session-format.md).
+Session state is stored in `.testboost/sessions/<id>/<step>.md` files with YAML frontmatter. The `technology` field in session `spec.md` tracks which plugin is used. See [Session Format](./session-format.md).
 
 ### Dual-Output Logging
 
 The `MdLogger` writes concise output to stdout (for LLM consumption) and detailed logs to markdown files (for the user).
 
 ## Common Tasks
+
+### Adding a New Technology Plugin
+
+1. Create `src/lib/plugins/<your_plugin>.py` implementing all `TechnologyPlugin` abstract members
+2. Add `_registry.register(YourPlugin())` in `src/lib/plugins/__init__.py`
+3. Create prompt templates in `config/prompts/testing/<your_tech>/`
+4. Add unit tests in `tests/unit/lib/plugins/test_<your_plugin>.py`
+5. Add detection test cases in `tests/integration/test_plugin_detection.py`
+6. No changes to the core engine (`cli.py`, `bridge.py`, `generate_unit.py`) are required
 
 ### Adding a New CLI Command
 
@@ -181,12 +202,12 @@ The `MdLogger` writes concise output to stdout (for LLM consumption) and detaile
 
 ### Modifying Test Generation Prompts
 
-Edit the prompt templates in `config/prompts/testing/`. Changes take effect on the next `generate` run.
+Edit the prompt templates in `config/prompts/testing/` (Java) or `config/prompts/testing/python_pytest/` (Python). Changes take effect on the next `generate` run.
 
 ### Adding a New Core Function
 
-1. Implement in `src/mcp_servers/test_generator/tools/`
-2. Add a bridge function in `src/lib/testboost_bridge.py`
+1. Implement in `src/test_generation/`
+2. Add a bridge function in `src/lib/bridge.py`
 3. Call it from the relevant CLI command
 4. Add tests with mocked bridge calls
 
@@ -219,7 +240,6 @@ poetry install               # Install dependencies
 pytest                       # Run tests
 ruff check .                 # Lint
 ruff check --fix .           # Auto-fix
-mypy src/                    # Type check
 git checkout -b feature/x    # Create branch
 git commit -m "feat: ..."    # Commit
 ```

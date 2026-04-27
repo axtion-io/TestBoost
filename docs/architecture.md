@@ -2,7 +2,7 @@
 
 ## Overview
 
-TestBoost is a Python toolkit that generates tests for Java projects using LLMs. It is designed to be orchestrated by an LLM CLI (Claude Code, OpenCode) through slash commands, but can also be used directly from the command line.
+TestBoost is a Python toolkit that generates tests for software projects using LLMs. It supports multiple technologies through a plugin system and is designed to be orchestrated by an LLM CLI (Claude Code, OpenCode) through slash commands, but can also be used directly from the command line.
 
 ```
 +--------------------------------------------------+
@@ -12,26 +12,33 @@ TestBoost is a Python toolkit that generates tests for Java projects using LLMs.
 |  +---------------------+----------------------+  |
 |                         | calls                   |
 |  +---------------------v----------------------+  |
-|  | Shell Scripts (scripts/)     |  |
+|  | Shell Scripts (scripts/)                    |  |
 |  +---------------------+----------------------+  |
 |                         | calls                   |
 |  +---------------------v----------------------+  |
-|  | Python CLI (src/lib/cli.py)      |  |
+|  | Python CLI (src/lib/cli.py)                 |  |
 |  +---------------------+----------------------+  |
 |                         | uses                    |
 |  +---------------------v----------------------+  |
-|  | TestBoost Bridge (testboost_bridge.py)      |  |
+|  | Bridge (src/lib/bridge.py)                  |  |
 |  +---------------------+----------------------+  |
-|                         | imports                 |
+|                         | routes via              |
 |  +---------------------v----------------------+  |
-|  | Core Functions (src/test_generation/, src/java/, src/lib/) |  |
+|  | Plugin System (src/lib/plugins/)            |  |
+|  |   JavaSpringPlugin -> src/java/*            |  |
+|  |   PythonPytestPlugin -> stdlib ast          |  |
+|  |   GoTestingPlugin (stub)                    |  |
+|  +---------------------+----------------------+  |
+|                         | calls                   |
+|  +---------------------v----------------------+  |
+|  | Core Functions (src/test_generation/)       |  |
 |  +--------------------------------------------+  |
 +--------------------------------------------------+
          |
          | writes to
          v
 +--------------------------------------------------+
-|  .testboost/ (in the target Java project)         |
+|  .testboost/ (in the target project)              |
 |  +-- config.yaml                                  |
 |  +-- analysis.md        <- project-level index    |
 |  +-- sessions/                                    |
@@ -60,34 +67,55 @@ Thin wrappers in `scripts/` that call the Python CLI:
 #!/bin/bash
 TESTBOOST_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../.."
 cd "$TESTBOOST_ROOT"
-python -m testboost <command> "$@"
+python -m src.lib.cli <command> "$@"
 ```
 
 These ensure the correct working directory and Python module path.
 
 ### 3. Python CLI
 
-The main entry point: `src/lib/cli.py`. Uses `argparse` to dispatch to eight commands: `init`, `analyze`, `gaps`, `generate`, `validate`, `status`, `install`, `verify`.
+The main entry point: `src/lib/cli.py`. Uses `argparse` to dispatch to ten commands: `init`, `analyze`, `gaps`, `generate`, `validate`, `mutate`, `killer`, `status`, `install`, `verify`, plus the `--list-plugins` flag.
 
 Each command:
 1. Reads the current session state from `.testboost/`
-2. Calls core functions via the bridge
-3. Writes results as markdown to the session directory
-4. Prints concise output to stdout for the LLM to consume
+2. Resolves the technology plugin for the session
+3. Calls core functions via the bridge (routed through the plugin)
+4. Writes results as markdown to the session directory
+5. Prints concise output to stdout for the LLM to consume
 
-### 4. Session Tracker
+### 4. Plugin System
 
-`src/lib/session_tracker.py` manages the `.testboost/` directory structure. It replaces the database with markdown files using YAML frontmatter for metadata.
+`src/lib/plugins/` provides the technology abstraction layer. All technology-specific behavior is encapsulated in plugins.
+
+**`TechnologyPlugin` (ABC in `base.py`)** defines 11 abstract members:
+- Properties: `identifier`, `description`, `detection_patterns`, `prompt_template_dir`
+- Methods: `find_source_files()`, `classify_source_file()`, `test_file_name()`, `test_file_pattern()`, `validation_command()`, `test_run_command()`, `build_generation_context()`
+
+**`PluginRegistry` (`registry.py`)** manages plugin lookup:
+- `detect(project_path)` — returns first plugin whose detection patterns match (priority = registration order)
+- `get(identifier)` — returns plugin by ID or raises `ValueError` listing available plugins
+- `list_plugins()` — returns info dicts for all registered plugins
+
+**Registered plugins** (in `__init__.py`, priority order):
+1. `JavaSpringPlugin` — detects `pom.xml`, `build.gradle`, `build.gradle.kts`; delegates to `src.java.*`
+2. `PythonPytestPlugin` — detects `pyproject.toml`, `setup.py`, `setup.cfg`; uses stdlib `ast`
+3. `GoTestingPlugin` — detects `go.mod` (stub proving extensibility)
+
+**Adding a new plugin**: Create `src/lib/plugins/<name>.py` implementing `TechnologyPlugin`, add one `register()` call in `__init__.py`. No other files need to change.
+
+### 5. Session Tracker
+
+`src/lib/session_tracker.py` manages the `.testboost/` directory structure. It replaces the database with markdown files using YAML frontmatter for metadata. The session frontmatter includes a `technology` field storing the plugin identifier (defaults to `"java-spring"` for backward compatibility).
 
 See [Session Format](./session-format.md) for details.
 
-### 5. Markdown Logger
+### 6. Markdown Logger
 
 `src/lib/md_logger.py` provides dual-output logging:
 - **stdout**: Concise `[+]` prefixed messages for the LLM CLI
 - **log files**: Detailed markdown tables in `.testboost/sessions/<id>/logs/`
 
-### 6. Integrity Token
+### 7. Integrity Token
 
 `src/lib/integrity.py` implements an HMAC-SHA256 token system that proves CLI output is genuine and was not fabricated by the LLM.
 
@@ -105,14 +133,14 @@ See [Session Format](./session-format.md) for details.
 
 **Verification:** `verify_token()` re-computes the HMAC from the payload and compares it to the claimed digest using `hmac.compare_digest` (constant-time comparison).
 
-### 7. Installer and Verify
+### 8. Installer and Verify
 
-`src/lib/installer.py` provides the `install` command that deploys TestBoost slash commands and wrapper scripts into a target Java project. This allows users to run TestBoost from their Java project directory rather than from the TestBoost repo root.
+`src/lib/installer.py` provides the `install` command that deploys TestBoost slash commands and wrapper scripts into a target project. This allows users to run TestBoost from their project directory rather than from the TestBoost repo root.
 
 **What gets installed:**
 
 ```
-<java-project>/
+<project>/
 ├── .claude/commands/testboost.*.md    # Claude Code slash commands
 ├── .opencode/commands/testboost.*.md  # OpenCode slash commands
 └── .testboost/
@@ -121,27 +149,17 @@ See [Session Format](./session-format.md) for details.
     └── config.yaml                    # TestBoost configuration
 ```
 
-**How it works:**
+### 9. TestBoost Bridge
 
-1. Reads command templates from `templates/commands/`.
-2. Rewrites script paths from relative (`scripts/tb-*.sh`) to installed (`<project>/.testboost/scripts/tb-*.sh`).
-3. Generates wrapper shell scripts that activate the TestBoost virtualenv and call the CLI with absolute paths.
-4. Creates the integrity secret via `get_or_create_secret()`.
-
-**Usage:** `python -m testboost install /path/to/java/project`
-
-The `verify` command (`src/lib/integrity.py`) re-computes the HMAC of a token printed to stdout and exits 0 if authentic. See the Integrity Token section above for details.
-
-### 8. TestBoost Bridge
-
-`src/lib/bridge.py` is the boundary between the CLI layer and the core functions. It re-exports functions from `src/` so they can be easily mocked in tests.
+`src/lib/bridge.py` is the boundary between the CLI layer and the core functions. It re-exports functions from `src/` so they can be easily mocked in tests. It also routes technology-specific calls through the plugin system.
 
 | Bridge Function | Source Module |
 |----------------|---------------|
+| `get_plugin_for_session()` | `src/lib/plugins/` + `src/lib/session_tracker.py` |
+| `find_source_files()` | Routed through session plugin |
+| `classify_file()` | Routed through session plugin (fallback: `src/java/discovery.py`) |
 | `analyze_project_context()` | `src/test_generation/analyze.py` |
 | `detect_test_conventions()` | `src/test_generation/conventions.py` |
-| `find_source_files()` | `src/java/discovery.py` |
-| `classify_file()` | `src/java/discovery.py` |
 | `find_test_for_source()` | `src/java/discovery.py` |
 | `build_class_index()` | `src/java/class_analyzer.py` |
 | `extract_test_examples()` | `src/java/class_analyzer.py` |
@@ -153,20 +171,20 @@ The `verify` command (`src/lib/integrity.py`) re-computes the HMAC of a token pr
 | `generate_killer_tests()` | `src/test_generation/killer_tests.py` |
 | `parse_maven_errors()` | `src/lib/maven_error_parser.py` |
 
-### 9. Test Generation (`src/test_generation/`)
+### 10. Test Generation (`src/test_generation/`)
 
 The LLM-based analysis and generation logic:
 
-- **analyze.py** -- Parses `pom.xml`, detects frameworks, analyzes project structure
-- **conventions.py** -- Detects test naming patterns, assertion styles, mocking conventions
-- **generate_unit.py** -- Generates unit tests using LLMs with project-aware prompts; also handles LLM-based compilation error fixing
+- **analyze.py** -- Analyzes project structure; delegates technology detection to the plugin registry
+- **conventions.py** -- Detects test naming patterns, assertion styles, mocking conventions; uses `plugin.test_file_pattern()` for test file discovery
+- **generate_unit.py** -- Generates unit tests using LLMs with project-aware prompts; accepts `prompt_template_dir` from the plugin for technology-specific prompts
 - **mutation.py** -- Runs PIT mutation testing via Maven
 - **analyze_mutants.py** -- Analyzes PIT XML reports, identifies hard-to-kill mutants
 - **killer_tests.py** -- Generates targeted tests to kill surviving mutants
 
 These modules use the LLM abstraction in `src/lib/llm.py` which supports Google Gemini, Anthropic Claude, and OpenAI through LangChain.
 
-### 10. Java Analysis (`src/java/`)
+### 11. Java Analysis (`src/java/`)
 
 Shared Java parsing and discovery modules with no LLM dependency:
 
@@ -174,10 +192,11 @@ Shared Java parsing and discovery modules with no LLM dependency:
 - **discovery.py** -- Finds and classifies Java source files in Maven projects (`src/main/java`); locates existing test files
 - **class_analyzer.py** -- Builds a full class index from Java source files: extracts class name, package, category, extends/implements, annotations, fields (with exact types and annotations), public methods, and dependencies. Also extracts representative test examples for LLM prompts. See [Project-Level Analysis](#project-level-analysis) below.
 
-### 11. Shared Library (`src/lib/`)
+### 12. Shared Library (`src/lib/`)
 
 Infrastructure modules used across the codebase:
 
+- **plugins/** -- Technology plugin system (see section 4 above)
 - **maven_error_parser.py** -- Parses Maven compilation output into structured errors with fix suggestions
 - **prompt_utils.py** -- Shared `load_prompt_template()` (disk-read cached) and `render_template()` used by all LLM prompt construction; `{{placeholder}}` syntax avoids conflicts with Java `{` braces
 - **llm.py** -- LLM provider abstraction (Google Gemini, Anthropic Claude, OpenAI via LangChain)
@@ -189,16 +208,6 @@ Infrastructure modules used across the codebase:
 TestBoost/
 +-- .claude/commands/           # Claude Code slash commands
 +-- .opencode/commands/         # OpenCode slash commands
-+-- testboost/
-|   +-- lib/
-|   |   +-- cli.py              # CLI entry point (7 commands incl. install)
-|   |   +-- session_tracker.py  # Markdown-based session management
-|   |   +-- md_logger.py        # Dual-output logger
-|   |   +-- testboost_bridge.py # Bridge to core functions
-|   |   +-- integrity.py        # HMAC-SHA256 integrity token system
-|   |   +-- installer.py        # Persistent installer for target projects
-|   +-- scripts/                # Shell script wrappers
-|   +-- templates/commands/     # Slash command templates for installation
 +-- src/
 |   +-- java/
 |   |   +-- parsing_utils.py    # Shared low-level Java parsers (no src.* deps)
@@ -212,20 +221,39 @@ TestBoost/
 |   |   +-- analyze_mutants.py  # Mutation report analysis
 |   |   +-- killer_tests.py     # Killer test generation
 |   +-- lib/
+|   |   +-- bridge.py           # Bridge to core functions (mockable boundary)
+|   |   +-- cli.py              # CLI entry point (10 commands + --list-plugins)
+|   |   +-- session_tracker.py  # Markdown-based session management
+|   |   +-- integrity.py        # HMAC-SHA256 integrity token system
+|   |   +-- installer.py        # Persistent installer for target projects
+|   |   +-- plugins/            # Technology plugin system
+|   |   |   +-- base.py         # TechnologyPlugin ABC
+|   |   |   +-- registry.py     # PluginRegistry
+|   |   |   +-- __init__.py     # Plugin registration (priority order)
+|   |   |   +-- java_spring.py  # Java/Spring plugin
+|   |   |   +-- python_pytest.py # Python/pytest plugin
+|   |   |   +-- go_testing_stub.py # Go stub (extensibility demo)
 |   |   +-- llm.py              # LLM provider abstraction
 |   |   +-- maven_error_parser.py
-|   |   +-- prompt_utils.py     # Shared template load+render
+|   |   +-- prompt_utils.py     # Shared template load + render
+|   |   +-- md_logger.py        # Dual-output logger
+|   |   +-- startup_checks.py   # LLM connectivity check
 |   +-- workflows/
-|   |   +-- test_generation_agent.py  # Java test validation utilities
+|   |   +-- test_generation_agent.py
 +-- config/
-|   +-- prompts/                # LLM prompt templates
-+-- tests/                      # Test suite
+|   +-- prompts/testing/        # Java/Spring LLM prompt templates
+|   +-- prompts/testing/python_pytest/ # Python/pytest LLM prompt templates
++-- tests/
+|   +-- unit/lib/plugins/       # Plugin unit tests
+|   +-- unit/testboost/         # CLI, session, integrity, installer tests
+|   +-- integration/            # Plugin detection, LLM connectivity tests
+|   +-- e2e/                    # Full LLM workflow tests
 +-- docs/                       # Documentation
 ```
 
 ## Project-Level Analysis
 
-A key design goal is to give the LLM maximum context about the target Java project without re-reading files on every generation call.
+A key design goal is to give the LLM maximum context about the target project without re-reading files on every generation call.
 
 ### Two-level analysis files
 
@@ -234,9 +262,9 @@ A key design goal is to give the LLM maximum context about the target Java proje
 | File | Location | Lifetime | Purpose |
 |------|----------|----------|---------|
 | `.testboost/analysis.md` | Project root | Persists across sessions | Full class index, test examples, conventions |
-| `.testboost/sessions/<id>/analysis.md` | Session directory | Per session | Lightweight Maven command overrides only |
+| `.testboost/sessions/<id>/analysis.md` | Session directory | Per session | Lightweight command overrides only |
 
-The project-level file is built once and reused by every subsequent `generate` call (even in new sessions). The session file exists only to allow per-session customization of Maven flags (e.g. `-P corp-profile`).
+The project-level file is built once and reused by every subsequent `generate` call (even in new sessions). The session file exists only to allow per-session customization of build flags (e.g. Maven `-P corp-profile`).
 
 ### Class Index
 
@@ -274,8 +302,8 @@ Before this, the LLM received only the source file being tested plus lazily-load
 
 With the class index:
 - **Exact types** for all dependency fields (e.g. `BigDecimal amount`, not `double amount`)
-- **Inheritance context** — when a tested class extends another class in the index, the parent's fields and methods are injected into the prompt as `{{inheritance_context}}`
-- **Multiple test examples** — up to 3 real test files (one service, one controller, one repository) replace the previous single 80-line truncated example
+- **Inheritance context** -- when a tested class extends another class in the index, the parent's fields and methods are injected into the prompt as `{{inheritance_context}}`
+- **Multiple test examples** -- up to 3 real test files (one service, one controller, one repository) replace the previous single 80-line truncated example
 
 ### Backward compatibility
 
@@ -288,3 +316,4 @@ If `.testboost/analysis.md` does not exist (project analyzed with an older versi
 3. **Interactive by default** -- The user reviews and decides at each step. No silent auto-correction.
 4. **Reuse over rewrite** -- Core analysis and generation functions from `src/test_generation/` and `src/java/` are reused via the bridge, not duplicated.
 5. **Easy mocking** -- The bridge pattern centralizes all imports, making the CLI fully testable without LLM calls.
+6. **Technology-agnostic core** -- The core engine knows nothing about specific technologies; all technology-specific behavior lives in plugins.

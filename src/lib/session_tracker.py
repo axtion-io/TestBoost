@@ -443,6 +443,42 @@ def write_project_analysis(project_path: str, content: str, data: dict[str, Any]
     return analysis_path
 
 
+def get_session_technology(session_dir: Path) -> str:
+    """Read the technology field from session spec.md frontmatter.
+
+    Args:
+        session_dir: Path to the session directory.
+
+    Returns:
+        Technology identifier string. Returns 'java-spring' when the field
+        is absent (backward compatibility for existing sessions).
+    """
+    spec_path = Path(session_dir) / "spec.md"
+    if not spec_path.exists():
+        return "java-spring"
+    frontmatter = _parse_frontmatter(spec_path.read_text(encoding="utf-8"))
+    return frontmatter.get("technology", "java-spring")
+
+
+def set_session_technology(session_dir: Path, technology: str) -> None:
+    """Write the technology field to session spec.md frontmatter.
+
+    Args:
+        session_dir: Path to the session directory.
+        technology: Technology identifier to write (e.g. 'java-spring').
+    """
+    spec_path = Path(session_dir) / "spec.md"
+    if not spec_path.exists():
+        return
+    content = spec_path.read_text(encoding="utf-8")
+    if re.search(r"^technology:", content, re.MULTILINE):
+        content = re.sub(r"(?m)^technology:.*$", f"technology: {technology}", content)
+    else:
+        # Insert before the closing --- of the frontmatter block
+        content = re.sub(r"\n---\n\n", f"\ntechnology: {technology}\n---\n\n", content, count=1)
+    spec_path.write_text(content, encoding="utf-8")
+
+
 def read_project_analysis_data(project_path: str) -> dict[str, Any] | None:
     """Read the structured data from the project-level analysis.md.
 

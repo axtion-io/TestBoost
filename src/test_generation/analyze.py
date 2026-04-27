@@ -51,7 +51,13 @@ async def analyze_project_context(
         "module_info": {},
     }
 
-    # Detect build system
+    # Detect technology via plugin registry
+    from src.lib.plugins import get_registry
+    detected_plugin = get_registry().detect(project_dir)
+    if detected_plugin:
+        results["project_type"] = detected_plugin.identifier
+
+    # Detect build system (Java-specific detailed analysis when applicable)
     pom_file = project_dir / "pom.xml"
     gradle_file = project_dir / "build.gradle"
     gradle_kts = project_dir / "build.gradle.kts"
@@ -73,8 +79,9 @@ async def analyze_project_context(
     frameworks.extend(await _detect_frameworks(project_dir))
     test_frameworks.extend(await _detect_test_frameworks(project_dir))
 
-    # Determine project type
-    results["project_type"] = _determine_project_type(frameworks)
+    # Determine project type (only refine for Java plugins; non-Java keeps plugin identifier)
+    if not detected_plugin or detected_plugin.identifier == "java-spring":
+        results["project_type"] = _determine_project_type(frameworks)
 
     return json.dumps(results, indent=2)
 

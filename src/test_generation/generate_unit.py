@@ -35,6 +35,7 @@ async def generate_adaptive_tests(
     test_requirements: list[dict[str, Any]] | None = None,
     class_index: dict[str, dict[str, Any]] | None = None,
     test_examples: list[dict[str, str]] | None = None,
+    prompt_template_dir: str | None = None,
 ) -> str:
     """
     Generate unit tests adapted to project conventions.
@@ -96,7 +97,7 @@ async def generate_adaptive_tests(
 
     # Generate test code using LLM
     logger.info("generating_tests_with_llm", class_name=class_info["class_name"])
-    test_code = await _generate_test_code_with_llm(context, source_code)
+    test_code = await _generate_test_code_with_llm(context, source_code, prompt_template_dir=prompt_template_dir)
 
     results = {
         "success": True,
@@ -106,7 +107,7 @@ async def generate_adaptive_tests(
         "test_code": test_code,
         "methods_covered": len(class_info["methods"]),
         "estimated_coverage": min(coverage_target, 85),
-        "test_count": test_code.count("@Test"),
+        "test_count": test_code.count("@Test") or test_code.count("def test_"),
         "context": context,
     }
 
@@ -517,10 +518,16 @@ def _extract_token_usage(response: object) -> dict[str, int | None]:
     return usage
 
 
-async def fix_compilation_errors(test_code: str, compile_errors: str, class_name: str) -> str:
+async def fix_compilation_errors(
+    test_code: str,
+    compile_errors: str,
+    class_name: str,
+    prompt_template_dir: str | None = None,
+) -> str:
     """Fix compilation errors in generated test code using LLM."""
     llm = get_llm()
-    template = load_prompt_template("testing/compilation_fix.md")
+    _template_path = f"{prompt_template_dir}/compilation_fix.md" if prompt_template_dir else "testing/compilation_fix.md"
+    template = load_prompt_template(_template_path)
     prompt = render_template(template, compile_errors=compile_errors, test_code=test_code)
 
     logger.debug(
@@ -549,7 +556,7 @@ async def fix_compilation_errors(test_code: str, compile_errors: str, class_name
     return code
 
 
-async def _generate_test_code_with_llm(context: dict[str, Any], source_code: str) -> str:
+async def _generate_test_code_with_llm(context: dict[str, Any], source_code: str, *, prompt_template_dir: str | None = None) -> str:
     """
     Generate test code using LLM for intelligent, context-aware tests.
 
@@ -695,7 +702,8 @@ async def _generate_test_code_with_llm(context: dict[str, Any], source_code: str
         else "Generate standard coverage tests for all public methods."
     )
 
-    template = load_prompt_template("testing/unit_test_generation.md")
+    _template_path = f"{prompt_template_dir}/unit_test_generation.md" if prompt_template_dir else "testing/unit_test_generation.md"
+    template = load_prompt_template(_template_path)
     prompt = render_template(
         template,
         project_context=project_context,
@@ -741,11 +749,15 @@ async def _generate_test_code_with_llm(context: dict[str, Any], source_code: str
         # Clean up any markdown code blocks if present
         if "```java" in test_code:
             test_code = test_code.split("```java")[1].split("```")[0].strip()
+        elif "```python" in test_code:
+            test_code = test_code.split("```python")[1].split("```")[0].strip()
         elif "```" in test_code:
             test_code = test_code.split("```")[1].split("```")[0].strip()
 
-        # Validate that we got actual test code
-        if "@Test" not in test_code or "class" not in test_code:
+        # Validate that we got actual test code (technology-aware)
+        has_java_tests = "@Test" in test_code and "class" in test_code
+        has_python_tests = "def test_" in test_code
+        if not has_java_tests and not has_python_tests:
             logger.warning(
                 "llm_generated_invalid_test",
                 class_name=class_name,
@@ -753,7 +765,7 @@ async def _generate_test_code_with_llm(context: dict[str, Any], source_code: str
             )
             raise ValueError(
                 f"LLM generated invalid test code for {class_name}: "
-                "output does not contain @Test annotation or class declaration"
+                "output does not contain @Test annotation, class declaration, or def test_ functions"
             )
 
         # Validate imports match available dependencies

@@ -1,9 +1,9 @@
 # SPDX-License-Identifier: Apache-2.0
 """Unit tests for JavaSpringPlugin."""
 
+from unittest.mock import patch
+
 import pytest
-from pathlib import Path
-from unittest.mock import MagicMock, patch
 
 from src.lib.plugins.java_spring import JavaSpringPlugin
 
@@ -58,7 +58,7 @@ class TestTestFileName:
 
     def test_backslash_separator(self, plugin):
         result = plugin.test_file_name("src\\main\\java\\com\\example\\Bar.java")
-        assert "src/test/java/com/example/BarTest.java" == result
+        assert result == "src/test/java/com/example/BarTest.java"
 
 
 # ---------------------------------------------------------------------------

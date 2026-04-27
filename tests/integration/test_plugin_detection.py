@@ -4,8 +4,8 @@
 These tests use real temp directories with real files — no mocks.
 """
 
+
 import pytest
-from pathlib import Path
 
 from src.lib.plugins import get_registry
 

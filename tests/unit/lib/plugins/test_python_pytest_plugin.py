@@ -2,8 +2,8 @@
 """Unit tests for PythonPytestPlugin."""
 
 import textwrap
+
 import pytest
-from pathlib import Path
 
 from src.lib.plugins.python_pytest import PythonPytestPlugin
 

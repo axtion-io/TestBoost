@@ -251,8 +251,9 @@ async def _cmd_analyze_async(args: argparse.Namespace) -> int:
             content += f"- **Uses Spring MockBean**: {'yes' if mocking.get('uses_spring_mock_bean') else 'no'}\n\n"
 
         # Detect build configuration via plugin
-        from src.lib.bridge import get_plugin_for_session
         from pathlib import Path as _Path
+
+        from src.lib.bridge import get_plugin_for_session
         analysis_plugin = get_plugin_for_session(project_path)
         compile_cmd_list = analysis_plugin.validation_command(_Path(project_path), {})
         test_cmd_list = analysis_plugin.test_run_command(_Path(project_path), {})

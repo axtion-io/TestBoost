@@ -1,13 +1,12 @@
 # SPDX-License-Identifier: Apache-2.0
 """Unit tests for PluginRegistry."""
 
-import pytest
 from pathlib import Path
-from unittest.mock import patch
+
+import pytest
 
 from src.lib.plugins.base import TechnologyPlugin
 from src.lib.plugins.registry import PluginRegistry
-
 
 # ---------------------------------------------------------------------------
 # Minimal concrete plugin for testing

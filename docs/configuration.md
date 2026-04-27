@@ -18,7 +18,7 @@ Set at least one LLM API key:
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `MODEL` | `claude-sonnet-4-6` | LLM model to use (default provider is `anthropic`). Examples: `gemini-2.0-flash`, `openai/gpt-4o` |
+| `MODEL` | `claude-sonnet-4-6` | LLM model to use (default provider is `anthropic`). Examples: `gemini-2.5-flash`, `openai/gpt-4o` |
 | `LLM_TIMEOUT` | `120` | Timeout in seconds for LLM requests |
 | `LANGSMITH_TRACING` | `false` | Enable LangSmith tracing for LLM observability |
 | `LANGSMITH_API_KEY` | -- | LangSmith API key (required if tracing is enabled) |

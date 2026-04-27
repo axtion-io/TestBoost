@@ -37,7 +37,7 @@ Set `LLM_PROVIDER` and `MODEL` for your provider (default: `anthropic` / `claude
 
 ```bash
 # Google Gemini
-export LLM_PROVIDER="google-genai" && export MODEL="gemini-2.0-flash"
+export LLM_PROVIDER="google-genai" && export MODEL="gemini-2.5-flash"
 # Anthropic Claude (default)
 export LLM_PROVIDER="anthropic"    && export MODEL="claude-sonnet-4-6"
 # OpenAI
@@ -114,12 +114,19 @@ If you prefer to work from your project directory instead of the TestBoost repo,
 ```bash
 cd TestBoost
 source .venv/bin/activate
+
+# Linux / macOS (bash wrappers -- default)
 python -m src.lib.cli install /path/to/your/project
+
+# Windows (PowerShell wrappers)
+python -m src.lib.cli install /path/to/your/project --shell-type powershell
 ```
+
+If you omit `--shell-type`, the command prompts you to choose.
 
 This installs:
 - Slash commands in `.claude/commands/` and `.opencode/commands/`
-- Wrapper scripts in `.testboost/scripts/` with absolute paths to the TestBoost installation
+- Wrapper scripts in `.testboost/scripts/` (either `tb-*.sh` or `tb-*.ps1`) with absolute paths to the TestBoost installation
 - An integrity token secret in `.testboost/.tb_secret`
 
 After installation, you can launch your LLM CLI directly from your project:
@@ -145,8 +152,8 @@ your-project/
 |   +-- .tb_secret              # Integrity token secret (git-ignored)
 |   +-- analysis.md             # Project-level analysis (shared across sessions)
 |   +-- scripts/                # Wrapper scripts (only after install)
-|   |   +-- tb-init.sh
-|   |   +-- tb-analyze.sh
+|   |   +-- tb-init.sh          # or tb-init.ps1 on Windows
+|   |   +-- tb-analyze.sh       # or tb-analyze.ps1 on Windows
 |   |   +-- ...
 |   +-- sessions/
 |       +-- 001-test-generation/

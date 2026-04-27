@@ -854,44 +854,67 @@ async def _cmd_validate_async(args: argparse.Namespace) -> int:
             if maven_test_cmd:
                 session_config["maven_test_cmd"] = maven_test_cmd
 
-        compile_cmd = plugin.validation_command(_Path(project_path), session_config)
-        test_run_cmd = plugin.test_run_command(_Path(project_path), session_config)
+        compile_cmd_tpl = plugin.validation_command(_Path(project_path), session_config)
+        test_run_cmd_tpl = plugin.test_run_command(_Path(project_path), session_config)
+
+        # Collect generated test files from the generation step
+        gen_content = gen_file.read_text(encoding="utf-8")
+        generated_files = _extract_json_field(gen_content, "generated") or []
+        test_file_paths = [g["path"] for g in generated_files if g.get("path")]
+
+        # Helper: substitute {test_file} placeholder or run as-is
+        def _expand_cmd(cmd_tpl: list[str], test_file: str) -> list[str]:
+            return [part.replace("{test_file}", test_file) for part in cmd_tpl]
+
+        has_placeholder = any("{test_file}" in part for part in compile_cmd_tpl)
 
         content = "# Validation Results\n\n"
-        content += f"- **Compile**: `{' '.join(compile_cmd)}`\n"
-        content += f"- **Test**: `{' '.join(test_run_cmd)}`\n\n"
+        content += f"- **Compile**: `{' '.join(compile_cmd_tpl)}`\n"
+        content += f"- **Test**: `{' '.join(test_run_cmd_tpl)}`\n\n"
 
         # Step 1: Compile tests
-        logger.info(f"Compiling tests: {' '.join(compile_cmd)}")
-        compile_result = subprocess.run(
-            compile_cmd,
-            cwd=project_path,
-            capture_output=True,
-            text=True,
-            timeout=120,
-        )
+        compile_failed = False
+        if has_placeholder:
+            # Per-file validation (Python, Go, etc.)
+            for tf in test_file_paths:
+                compile_cmd = _expand_cmd(compile_cmd_tpl, tf)
+                logger.info(f"Validating: {' '.join(compile_cmd)}")
+                compile_result = subprocess.run(
+                    compile_cmd, cwd=project_path, capture_output=True, text=True, timeout=120,
+                )
+                if compile_result.returncode != 0:
+                    content += f"## Compilation: FAILED (`{tf}`)\n\n"
+                    content += f"```\n{(compile_result.stdout + compile_result.stderr)[-2000:]}\n```\n"
+                    logger.error(f"Validation failed for {tf}")
+                    compile_failed = True
+        else:
+            # Whole-project validation (Java/Maven)
+            compile_cmd = compile_cmd_tpl
+            logger.info(f"Compiling tests: {' '.join(compile_cmd)}")
+            compile_result = subprocess.run(
+                compile_cmd, cwd=project_path, capture_output=True, text=True, timeout=120,
+            )
+            if compile_result.returncode != 0:
+                from src.lib.bridge import parse_maven_errors
 
-        if compile_result.returncode != 0:
-            # --- Reuse MavenErrorParser via bridge ---
-            from src.lib.bridge import parse_maven_errors
+                parser, errors = parse_maven_errors(compile_result.stdout + compile_result.stderr)
 
-            parser, errors = parse_maven_errors(compile_result.stdout + compile_result.stderr)
+                content += "## Compilation: FAILED\n\n"
+                if errors:
+                    content += parser.format_for_llm(errors)
+                    summary = parser.get_summary(errors)
+                    logger.error(f"Compilation failed: {summary['total_errors']} errors")
+                    logger.data("Errors by type", summary["errors_by_type"])
+                else:
+                    content += f"```\n{compile_result.stderr[-2000:]}\n```\n"
+                    logger.error("Compilation failed (no structured errors parsed)")
+                compile_failed = True
 
-            content += "## Compilation: FAILED\n\n"
-            if errors:
-                content += parser.format_for_llm(errors)
-                summary = parser.get_summary(errors)
-                logger.error(f"Compilation failed: {summary['total_errors']} errors")
-                logger.data("Errors by type", summary["errors_by_type"])
-            else:
-                content += f"```\n{compile_result.stderr[-2000:]}\n```\n"
-                logger.error("Compilation failed (no structured errors parsed)")
-
+        if compile_failed:
             update_step_file(
                 session_dir, "validation", STATUS_FAILED, content,
-                data={"compilation": "failed", "error_count": len(errors)},
+                data={"compilation": "failed"},
             )
-
             logger.result("Validation: Compilation Failed", content)
             return 1
 
@@ -899,19 +922,35 @@ async def _cmd_validate_async(args: argparse.Namespace) -> int:
         content += "## Compilation: PASSED\n\n"
 
         # Step 2: Run tests
-        logger.info(f"Running tests: {' '.join(test_run_cmd)}")
+        has_test_placeholder = any("{test_file}" in part for part in test_run_cmd_tpl)
         test_timeout = 300  # 5 minutes
-        test_result = subprocess.run(
-            test_run_cmd,
-            cwd=project_path,
-            capture_output=True,
-            text=True,
-            timeout=test_timeout,
-        )
 
-        test_output = test_result.stdout + test_result.stderr
+        if has_test_placeholder:
+            # Per-file test execution (Python, Go, etc.)
+            all_output = ""
+            final_returncode = 0
+            for tf in test_file_paths:
+                test_run_cmd = _expand_cmd(test_run_cmd_tpl, tf)
+                logger.info(f"Running tests: {' '.join(test_run_cmd)}")
+                test_result = subprocess.run(
+                    test_run_cmd, cwd=project_path, capture_output=True, text=True, timeout=test_timeout,
+                )
+                all_output += test_result.stdout + test_result.stderr + "\n"
+                if test_result.returncode != 0:
+                    final_returncode = test_result.returncode
+            test_output = all_output
+            test_returncode = final_returncode
+        else:
+            # Whole-project test execution (Java/Maven)
+            test_run_cmd = test_run_cmd_tpl
+            logger.info(f"Running tests: {' '.join(test_run_cmd)}")
+            test_result = subprocess.run(
+                test_run_cmd, cwd=project_path, capture_output=True, text=True, timeout=test_timeout,
+            )
+            test_output = test_result.stdout + test_result.stderr
+            test_returncode = test_result.returncode
 
-        if test_result.returncode == 0:
+        if test_returncode == 0:
             content += "## Tests: PASSED\n\n"
             content += "All tests passed successfully.\n\n"
 
@@ -945,17 +984,17 @@ async def _cmd_validate_async(args: argparse.Namespace) -> int:
             session_dir, "validation", status, content,
             data={
                 "compilation": "passed",
-                "tests": "passed" if test_result.returncode == 0 else "failed",
-                "return_code": test_result.returncode,
+                "tests": "passed" if test_returncode == 0 else "failed",
+                "return_code": test_returncode,
             },
         )
 
         logger.result("Validation Results", content)
 
-        if test_result.returncode == 0:
+        if test_returncode == 0:
             from src.lib.integrity import emit_token
             emit_token(project_path, "validation", session["session_id"])
-        return 0 if test_result.returncode == 0 else 1
+        return 0 if test_returncode == 0 else 1
 
     except subprocess.TimeoutExpired:
         logger.error(f"Maven timed out after {test_timeout}s")

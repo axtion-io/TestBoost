@@ -1,11 +1,11 @@
 # Session Format
 
-TestBoost tracks all state in markdown files inside a `.testboost/` directory created in your Java project. No database is needed.
+TestBoost tracks all state in markdown files inside a `.testboost/` directory created in your project. No database is needed.
 
 ## Directory Structure
 
 ```
-your-java-project/
+your-project/
 +-- .testboost/
 |   +-- config.yaml                       # Project-level settings
 |   +-- analysis.md                       # Project-level class index (shared across sessions)
@@ -17,6 +17,8 @@ your-java-project/
 |   |   +-- tb-gaps.sh
 |   |   +-- tb-generate.sh
 |   |   +-- tb-validate.sh
+|   |   +-- tb-mutate.sh
+|   |   +-- tb-killer.sh
 |   |   +-- tb-status.sh
 |   |   +-- tb-verify.sh
 |   +-- sessions/
@@ -36,14 +38,14 @@ your-java-project/
 
 `.testboost/analysis.md` is created by `analyze` and **shared across all sessions**. It contains:
 
-- A full class index for every Java source file (class name, package, category, extends/implements, annotations, fields with exact types, public methods)
-- Up to 3 representative test examples extracted from the project (one service, one controller, one repository)
+- A full index of source files (for Java: class name, package, category, extends/implements, annotations, fields with exact types, public methods)
+- Up to 3 representative test examples extracted from the project
 - Detected test conventions
-- Maven compile and test commands
+- Compile and test commands for the project's build tool
 
-This file persists between runs of `analyze`. The `generate` command reads it to give the LLM precise context about the whole project — not just the class being tested.
+This file persists between runs of `analyze`. The `generate` command reads it to give the LLM precise context about the whole project — not just the file being tested.
 
-The **session-level** `analysis.md` (under `sessions/<id>/`) is intentionally lightweight: it only stores Maven command overrides (`maven_compile_cmd`, `maven_test_cmd`). Edit those values to add profiles (`-P`) or properties (`-D`) that are specific to this session, without affecting other sessions.
+The **session-level** `analysis.md` (under `sessions/<id>/`) is intentionally lightweight: it only stores build command overrides (`maven_compile_cmd`, `maven_test_cmd`). Edit those values to add profiles (`-P`) or properties (`-D`) that are specific to this session, without affecting other sessions.
 
 See [Architecture](./architecture.md#project-level-analysis) for the full design rationale.
 

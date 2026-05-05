@@ -73,6 +73,8 @@ Most commands accept these flags:
 |------|-------------|
 | `--verbose` / `-v` | Show detailed output during execution |
 | `--files FILE1 FILE2` | (generate only) Limit generation to specific source files |
-| `--no-llm` | (generate only) Use template-based generation instead of LLM |
 | `--name NAME` | (init only) Custom session name |
 | `--description TEXT` | (init only) Description of what to test and why |
+| `--tech IDENTIFIER` | (init only) Override auto-detected technology plugin (e.g. `java-spring`, `python-pytest`) |
+| `--min-score FLOAT` | (mutate only) Minimum mutation score threshold (default: 80) |
+| `--max-tests INT` | (killer only) Maximum number of killer tests to generate (default: 10) |

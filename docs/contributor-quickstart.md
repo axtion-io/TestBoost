@@ -90,6 +90,7 @@ pytest && ruff check .
 
 ```
 TestBoost/
++-- scripts/                    # Shell wrappers (tb-init.sh, tb-analyze.sh, …)
 +-- src/
 |   +-- java/                   # Java-specific analysis (no LLM dependency)
 |   |   +-- parsing_utils.py    # Shared low-level Java parsers

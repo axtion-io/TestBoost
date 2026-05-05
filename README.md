@@ -125,7 +125,7 @@ point `OPENAI_API_BASE` to the vLLM endpoint, and set `MODEL` to the model path 
 
 **Corporate proxy / SSL:** if your LLM endpoint uses an internal CA certificate,
 configure `SSL_CERT_FILE` and `REQUESTS_CA_BUNDLE` in `.env`.
-See [CLAUDE.md](./CLAUDE.md#corporate-network--proxy--ssl) and `.env.example` for details.
+See `.env.example` for details.
 
 Set the `MODEL` environment variable to choose a specific model. See [LLM Providers](./docs/llm-providers.md) for more.
 

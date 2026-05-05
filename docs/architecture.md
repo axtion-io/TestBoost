@@ -208,6 +208,7 @@ Infrastructure modules used across the codebase:
 TestBoost/
 +-- .claude/commands/           # Claude Code slash commands
 +-- .opencode/commands/         # OpenCode slash commands
++-- scripts/                    # Shell wrappers that call the Python CLI
 +-- src/
 |   +-- java/
 |   |   +-- parsing_utils.py    # Shared low-level Java parsers (no src.* deps)

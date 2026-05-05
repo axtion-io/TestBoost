@@ -14,9 +14,9 @@ config/prompts/
 |   +-- unit_test_generation.md      # Main test generation prompt
 |   +-- unit_test_strategy.md        # Unit test strategy (agent system prompt)
 |   +-- compilation_fix.md           # Fix compilation errors in generated tests
-|   +-- test_review.md               # Post-generation quality review pass
 |   +-- mutation_killer.md           # LLM-powered killer tests for surviving mutants
 |   +-- edge_case_analysis.md        # Pre-generation edge case scenario analysis
+|   +-- python_pytest/               # Python/pytest-specific prompt overrides
 +-- maven/
 |   +-- compilation_errors_format.md # Format Maven errors for LLM consumption
 |   +-- system_agent.md              # Maven maintenance agent system prompt
@@ -33,9 +33,12 @@ Used by `generate_adaptive_tests()` in `generate_unit.py`. This is the main prom
 | Placeholder | Description |
 |-------------|-------------|
 | `{{project_context}}` | Java version, Spring Boot version, key dependencies from `pom.xml` |
+| `{{framework_instructions}}` | Technology-specific framework rules injected by the plugin |
 | `{{conventions_section}}` | Detected test conventions (naming, assertion style, Mockito usage) |
 | `{{class_type_instructions}}` | Controller / service / repository-specific test patterns |
-| `{{dep_section}}` | Public method signatures of dependency classes |
+| `{{dep_section}}` | Public method signatures of dependency classes (from class index) |
+| `{{inheritance_context}}` | Parent class fields and methods when the tested class extends another class in the index |
+| `{{existing_test_example}}` | Up to 3 representative test files from the project for style reference |
 | `{{source_code}}` | Full source code of the class to test |
 | `{{class_name}}` | Simple class name |
 | `{{package}}` | Java package |
@@ -76,26 +79,6 @@ Used by `MavenErrorParser.format_for_llm()` to produce a structured error report
 |-------------|-------------|
 | `{{total_errors}}` | Total number of compilation errors |
 | `{{error_details}}` | Per-file, per-error markdown blocks with type, message, and fix suggestion |
-
-## Test Review (Post-Generation Quality Pass)
-
-**File:** `config/prompts/testing/test_review.md`
-
-Used by `_review_generated_tests()` in `generate_unit.py`. Runs automatically after test generation to fix weak assertions, missing mock verifications, and anti-patterns.
-
-| Placeholder | Description |
-|-------------|-------------|
-| `{{test_code}}` | The generated test class to review |
-| `{{source_code}}` | Source code of the class under test |
-
-### What the prompt fixes
-
-- Weak assertions (`isNotNull` → exact value checks)
-- Missing `verify()` calls for important side-effects
-- `Thread.sleep()` → `Awaitility`
-- `try/catch` swallowing → `assertThatThrownBy()`
-- Missing tests for untested public methods
-- Missing boundary value tests for numeric comparisons
 
 ## Mutation Killer (LLM-Powered)
 

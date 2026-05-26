@@ -403,3 +403,137 @@ class TestProjectAnalysis:
         )
         result = read_project_analysis_data(str(tmp_path))
         assert result is None
+
+
+# ============================================================================
+# Human-in-the-loop: emit_question / consume_answer (spike)
+# ============================================================================
+
+
+class TestEmitQuestion:
+    def _new_session(self, tmp_path):
+        from src.lib.session_tracker import create_session, init_project
+        init_project(str(tmp_path))
+        return create_session(str(tmp_path), name="hitl")
+
+    def test_writes_question_json(self, tmp_path):
+        import json
+
+        from src.lib.session_tracker import emit_question
+        session = self._new_session(tmp_path)
+        path = emit_question(
+            session["session_dir"],
+            "generation",
+            {"kind": "missing_business_context", "question": "What are the rules?"},
+        )
+        assert path.name == "question.json"
+        assert path.exists()
+        payload = json.loads(path.read_text())
+        assert payload["kind"] == "missing_business_context"
+        assert payload["step"] == "generation"
+        assert payload["question"] == "What are the rules?"
+        assert "created_at" in payload
+
+    def test_sets_status_awaiting_input(self, tmp_path):
+        from pathlib import Path
+
+        from src.lib.session_tracker import (
+            STATUS_AWAITING_INPUT,
+            _parse_frontmatter,
+            emit_question,
+        )
+        session = self._new_session(tmp_path)
+        emit_question(session["session_dir"], "generation", {"question": "?"})
+        step_file = (Path(session["session_dir"]) / "generation.md")
+        fm = _parse_frontmatter(step_file.read_text())
+        assert fm["status"] == STATUS_AWAITING_INPUT
+
+    def test_preserves_explicit_step_and_timestamp(self, tmp_path):
+        import json
+
+        from src.lib.session_tracker import emit_question
+        session = self._new_session(tmp_path)
+        path = emit_question(
+            session["session_dir"],
+            "generation",
+            {"step": "custom", "created_at": "2024-01-01T00:00:00Z", "question": "?"},
+        )
+        payload = json.loads(path.read_text())
+        assert payload["step"] == "custom"
+        assert payload["created_at"] == "2024-01-01T00:00:00Z"
+
+
+class TestConsumeAnswer:
+    def _new_session(self, tmp_path):
+        from src.lib.session_tracker import create_session, init_project
+        init_project(str(tmp_path))
+        return create_session(str(tmp_path), name="hitl")
+
+    def test_reads_answer_payload(self, tmp_path):
+        import json
+
+        from src.lib.session_tracker import consume_answer
+        session = self._new_session(tmp_path)
+        answer = tmp_path / "answer.json"
+        answer.write_text(json.dumps({"test_requirements": [{"scenario": "edge"}]}))
+        payload = consume_answer(session["session_dir"], answer)
+        assert payload == {"test_requirements": [{"scenario": "edge"}]}
+
+    def test_writes_consumed_copy(self, tmp_path):
+        import json
+        from pathlib import Path
+
+        from src.lib.session_tracker import consume_answer
+        session = self._new_session(tmp_path)
+        answer = tmp_path / "answer.json"
+        answer.write_text(json.dumps({"k": "v"}))
+        consume_answer(session["session_dir"], answer)
+        consumed = Path(session["session_dir"]) / "answer.json.consumed"
+        assert consumed.exists()
+        assert json.loads(consumed.read_text()) == {"k": "v"}
+
+    def test_clears_existing_question(self, tmp_path):
+        import json
+        from pathlib import Path
+
+        from src.lib.session_tracker import consume_answer, emit_question
+        session = self._new_session(tmp_path)
+        emit_question(session["session_dir"], "generation", {"question": "?"})
+        qpath = Path(session["session_dir"]) / "question.json"
+        assert qpath.exists()
+
+        answer = tmp_path / "answer.json"
+        answer.write_text(json.dumps({"k": "v"}))
+        consume_answer(session["session_dir"], answer)
+        assert not qpath.exists()
+
+    def test_missing_file_raises(self, tmp_path):
+        from src.lib.session_tracker import consume_answer
+        session = self._new_session(tmp_path)
+        try:
+            consume_answer(session["session_dir"], tmp_path / "nope.json")
+        except FileNotFoundError:
+            return
+        raise AssertionError("expected FileNotFoundError")
+
+    def test_malformed_json_raises(self, tmp_path):
+        from src.lib.session_tracker import consume_answer
+        session = self._new_session(tmp_path)
+        bad = tmp_path / "bad.json"
+        bad.write_text("{ not json")
+        try:
+            consume_answer(session["session_dir"], bad)
+        except ValueError:
+            return
+        raise AssertionError("expected ValueError")
+
+    def test_non_object_top_level_raises(self, tmp_path):
+        from src.lib.session_tracker import consume_answer
+        session = self._new_session(tmp_path)
+        bad = tmp_path / "list.json"
+        bad.write_text("[1, 2, 3]")
+        try:
+            consume_answer(session["session_dir"], bad)
+        except ValueError:
+            return
+        raise AssertionError("expected ValueError")

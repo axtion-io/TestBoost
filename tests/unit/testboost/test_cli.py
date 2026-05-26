@@ -1083,3 +1083,154 @@ class TestEdgeCaseIntegration:
             result = await _cmd_generate_async(gen_args)
 
         assert result == 0
+
+
+# ============================================================================
+# cmd_generate — human-in-the-loop interruption (spike)
+# ============================================================================
+
+
+class TestCmdGenerateInterruption:
+    """Round-trip: pause on missing context → answer file → resume."""
+
+    async def _setup_gaps(self, project_path):
+        from src.lib.cli import _cmd_analyze_async, _cmd_gaps_async
+        mock_context = json.dumps({
+            "success": True, "project_type": "spring-boot", "build_system": "maven",
+            "java_version": "17", "frameworks": [], "test_frameworks": [],
+            "source_structure": {"class_count": 1, "packages": []},
+            "test_structure": {"test_count": 0}, "dependencies": [],
+        })
+        mock_files = ["src/main/java/com/example/service/OrderService.java"]
+        args = argparse.Namespace(project_path=str(project_path), verbose=False)
+        with patch("src.lib.bridge.analyze_project_context", new_callable=AsyncMock, return_value=mock_context), \
+             patch("src.lib.bridge.detect_test_conventions", new_callable=AsyncMock, return_value=json.dumps({"success": False})), \
+             patch("src.lib.bridge.find_source_files", return_value=mock_files), \
+             patch("src.lib.bridge.build_class_index", return_value={}), \
+             patch("src.lib.bridge.extract_test_examples", return_value=[]):
+            await _cmd_analyze_async(args)
+        await _cmd_gaps_async(args)
+
+    @pytest.mark.asyncio
+    async def test_pauses_and_emits_question_when_uncertain(self, initialized_project):
+        """fail_on_uncertainty=True + empty edge_cases + no answer → exit 78."""
+        from src.lib.cli import _cmd_generate_async
+        from src.lib.session_tracker import (
+            EXIT_AWAITING_INPUT,
+            STATUS_AWAITING_INPUT,
+            _parse_frontmatter,
+        )
+        await self._setup_gaps(initialized_project)
+
+        gen_args = argparse.Namespace(
+            project_path=str(initialized_project),
+            verbose=False, files=None,
+            fail_on_uncertainty=True, answer_file=None,
+        )
+        with patch("src.lib.startup_checks.check_llm_connection", new_callable=AsyncMock), \
+             patch("src.lib.bridge.analyze_edge_cases", new_callable=AsyncMock, return_value=[]), \
+             patch("src.lib.bridge.generate_adaptive_tests", new_callable=AsyncMock) as mock_gen:
+            result = await _cmd_generate_async(gen_args)
+
+        assert result == EXIT_AWAITING_INPUT, f"expected exit 78, got {result}"
+        # LLM generation must NOT have run when we paused
+        mock_gen.assert_not_called()
+
+        session = get_current_session(str(initialized_project))
+        session_dir = Path(session["session_dir"])
+
+        # question.json must exist and be well-formed
+        qpath = session_dir / "question.json"
+        assert qpath.exists(), "question.json was not written"
+        payload = json.loads(qpath.read_text())
+        assert payload["kind"] == "missing_business_context"
+        assert payload["step"] == "generation"
+        assert payload["subject"]["class_name"] == "OrderService"
+        assert "answer_schema" in payload
+
+        # Step status must be awaiting_input (not failed)
+        step_md = (session_dir / "generation.md").read_text()
+        fm = _parse_frontmatter(step_md)
+        assert fm["status"] == STATUS_AWAITING_INPUT
+
+    @pytest.mark.asyncio
+    async def test_does_not_pause_when_flag_off(self, initialized_project):
+        """fail_on_uncertainty=False → existing behaviour, generation completes."""
+        from src.lib.cli import _cmd_generate_async
+        await self._setup_gaps(initialized_project)
+
+        mock_result = json.dumps({
+            "success": True,
+            "test_code": "package com.example;\nimport org.junit.jupiter.api.Test;\nclass OrderServiceTest {\n  @Test\n  void t() {}\n}",
+            "test_file": "src/test/java/com/example/OrderServiceTest.java",
+            "test_count": 1,
+            "context": {"class_name": "OrderService", "package": "com.example"},
+        })
+        gen_args = argparse.Namespace(
+            project_path=str(initialized_project),
+            verbose=False, files=None,
+            fail_on_uncertainty=False, answer_file=None,
+        )
+        mock_compile = MagicMock(returncode=0, stdout="", stderr="")
+        with patch("src.lib.startup_checks.check_llm_connection", new_callable=AsyncMock), \
+             patch("src.lib.bridge.analyze_edge_cases", new_callable=AsyncMock, return_value=[]), \
+             patch("src.lib.bridge.generate_adaptive_tests", new_callable=AsyncMock, return_value=mock_result), \
+             patch("subprocess.run", return_value=mock_compile):
+            result = await _cmd_generate_async(gen_args)
+
+        assert result == 0
+        session = get_current_session(str(initialized_project))
+        assert not (Path(session["session_dir"]) / "question.json").exists()
+
+    @pytest.mark.asyncio
+    async def test_resumes_with_answer_file(self, initialized_project, tmp_path):
+        """answer-file provided → injected into test_requirements, generation completes."""
+        from src.lib.cli import _cmd_generate_async
+        await self._setup_gaps(initialized_project)
+
+        # Simulate a prior paused run by writing a question.json into the session
+        session = get_current_session(str(initialized_project))
+        session_dir = Path(session["session_dir"])
+        (session_dir / "question.json").write_text(json.dumps({"step": "generation"}))
+
+        # The developer's answer (the shape the question advertised)
+        answer = tmp_path / "answer.json"
+        answer.write_text(json.dumps({
+            "test_requirements": [
+                {"scenario": "order with zero items must throw", "expected": "IllegalArgumentException"},
+                {"scenario": "discount > 100% must be capped", "expected": "value = 100"},
+            ]
+        }))
+
+        mock_result = json.dumps({
+            "success": True,
+            "test_code": "package com.example;\nimport org.junit.jupiter.api.Test;\nclass OrderServiceTest {\n  @Test\n  void t() {}\n}",
+            "test_file": "src/test/java/com/example/OrderServiceTest.java",
+            "test_count": 1,
+            "context": {"class_name": "OrderService", "package": "com.example"},
+        })
+        gen_args = argparse.Namespace(
+            project_path=str(initialized_project),
+            verbose=False, files=None,
+            fail_on_uncertainty=True, answer_file=str(answer),
+        )
+        mock_compile = MagicMock(returncode=0, stdout="", stderr="")
+        with patch("src.lib.startup_checks.check_llm_connection", new_callable=AsyncMock), \
+             patch("src.lib.bridge.analyze_edge_cases", new_callable=AsyncMock, return_value=[]), \
+             patch("src.lib.bridge.generate_adaptive_tests", new_callable=AsyncMock, return_value=mock_result) as mock_gen, \
+             patch("subprocess.run", return_value=mock_compile):
+            result = await _cmd_generate_async(gen_args)
+
+        assert result == 0
+
+        # Verify the answer was injected into test_requirements
+        call_kwargs = mock_gen.call_args.kwargs
+        injected = call_kwargs.get("test_requirements")
+        assert injected, "test_requirements should not be empty"
+        scenarios = [r["scenario"] for r in injected]
+        assert any("zero items" in s for s in scenarios)
+        assert any("discount" in s for s in scenarios)
+
+        # Question file must be cleared, consumed marker present
+        assert not (session_dir / "question.json").exists()
+        assert (session_dir / "answer.json.consumed").exists()

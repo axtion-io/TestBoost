@@ -31,6 +31,16 @@ STATUS_PENDING = "pending"
 STATUS_IN_PROGRESS = "in_progress"
 STATUS_COMPLETED = "completed"
 STATUS_FAILED = "failed"
+STATUS_AWAITING_INPUT = "awaiting_input"
+
+# Exit code used when a step pauses waiting for human input (sysexits-style).
+# 78 maps to EX_CONFIG; we reuse it to signal "human action required" so a CI
+# job can treat it as neutral rather than a hard failure.
+EXIT_AWAITING_INPUT = 78
+
+QUESTION_FILENAME = "question.json"
+ANSWER_FILENAME = "answer.json"
+ANSWER_CONSUMED_FILENAME = "answer.json.consumed"
 
 
 def get_testboost_dir(project_path: str) -> Path:
@@ -336,6 +346,91 @@ def get_session_status(project_path: str) -> str:
                 lines.append("")
 
     return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
+# Human-in-the-loop interruption (spike)
+# ---------------------------------------------------------------------------
+
+
+class AwaitingInputError(Exception):
+    """Raised by a step when it needs human input to continue.
+
+    The caller catches this and returns EXIT_AWAITING_INPUT so a CI runner
+    can treat the job as neutral and post `question.json` to the MR.
+    """
+
+    def __init__(self, question_path: Path, step_name: str):
+        self.question_path = question_path
+        self.step_name = step_name
+        super().__init__(f"{step_name} awaiting input — see {question_path}")
+
+
+def emit_question(session_dir: str, step_name: str, payload: dict[str, Any]) -> Path:
+    """Write a structured question to question.json and flip status to awaiting_input.
+
+    The payload is a free-form dict but the caller SHOULD include:
+      - "kind": short tag (e.g. "missing_business_context")
+      - "step": the step that paused
+      - "subject": what the question is about (file, class, error)
+      - "question": human-readable question text
+      - "answer_schema": hint about the shape expected back in answer.json
+    """
+    session_path = Path(session_dir)
+    question_path = session_path / QUESTION_FILENAME
+
+    enriched = dict(payload)
+    enriched.setdefault("step", step_name)
+    enriched.setdefault("created_at", _now_iso())
+
+    question_path.write_text(json.dumps(enriched, indent=2, default=str), encoding="utf-8")
+
+    update_step_file(
+        session_dir,
+        step_name,
+        STATUS_AWAITING_INPUT,
+        f"# {step_name} — awaiting input\n\n"
+        f"**Question**: {enriched.get('question', '(no question text)')}\n\n"
+        f"Resume with: `python -m testboost <command> <project> "
+        f"--answer-file {QUESTION_FILENAME.replace('question', 'answer')}`\n",
+        data={"question": enriched},
+    )
+
+    return question_path
+
+
+def consume_answer(session_dir: str, answer_file: str | Path) -> dict[str, Any]:
+    """Load an answer payload and mark it consumed.
+
+    Reads answer_file, parses JSON, copies it into the session as answer.json,
+    then renames it to answer.json.consumed so a subsequent run won't reapply
+    the same answer silently.
+
+    Returns the parsed payload. Raises ValueError on malformed JSON.
+    """
+    src_path = Path(answer_file)
+    if not src_path.exists():
+        raise FileNotFoundError(f"answer file not found: {src_path}")
+
+    raw = src_path.read_text(encoding="utf-8")
+    try:
+        payload = json.loads(raw)
+    except json.JSONDecodeError as e:
+        raise ValueError(f"answer file is not valid JSON: {e}") from e
+
+    if not isinstance(payload, dict):
+        raise ValueError("answer payload must be a JSON object at the top level")
+
+    session_path = Path(session_dir)
+    consumed_path = session_path / ANSWER_CONSUMED_FILENAME
+    consumed_path.write_text(json.dumps(payload, indent=2, default=str), encoding="utf-8")
+
+    # Clear stale question.json so the session isn't reported as awaiting.
+    question_path = session_path / QUESTION_FILENAME
+    if question_path.exists():
+        question_path.unlink()
+
+    return payload
 
 
 # --- Private helpers ---

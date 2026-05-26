@@ -484,9 +484,13 @@ def cmd_generate(args: argparse.Namespace) -> int:
 async def _cmd_generate_async(args: argparse.Namespace) -> int:
     from src.lib.md_logger import MdLogger
     from src.lib.session_tracker import (
+        EXIT_AWAITING_INPUT,
         STATUS_COMPLETED,
         STATUS_FAILED,
         STATUS_IN_PROGRESS,
+        AwaitingInputError,
+        consume_answer,
+        emit_question,
         get_current_session,
         update_step_file,
     )
@@ -508,6 +512,19 @@ async def _cmd_generate_async(args: argparse.Namespace) -> int:
         return 1
 
     update_step_file(session_dir, "generation", STATUS_IN_PROGRESS, "# Test Generation\n\nGenerating...")
+
+    # --- Human-in-the-loop: load answer file if provided (spike) ---
+    answer_payload: dict | None = None
+    answer_file = getattr(args, "answer_file", None)
+    if answer_file:
+        try:
+            answer_payload = consume_answer(session_dir, answer_file)
+            logger.info(f"Loaded answer payload from {answer_file}")
+        except (FileNotFoundError, ValueError) as e:
+            logger.error(f"Cannot consume answer file: {e}")
+            return 1
+
+    fail_on_uncertainty = bool(getattr(args, "fail_on_uncertainty", False))
 
     try:
         # Extract gaps from the coverage-gaps.md
@@ -617,13 +634,45 @@ async def _cmd_generate_async(args: argparse.Namespace) -> int:
                 except Exception as ec_err:
                     logger.warn(f"Edge case analysis skipped for {source_file}: {ec_err}")
 
+                # --- Human-in-the-loop trigger (spike) ---
+                # If we have no edge cases AND no injected answer AND the caller
+                # asked us to pause on uncertainty, export a question and exit 78.
+                injected = answer_payload.get("test_requirements", []) if answer_payload else []
+                if not edge_cases and not injected and fail_on_uncertainty:
+                    qpath = emit_question(
+                        session_dir,
+                        "generation",
+                        {
+                            "kind": "missing_business_context",
+                            "subject": {
+                                "source_file": source_file,
+                                "class_name": class_name,
+                                "class_type": class_type,
+                            },
+                            "question": (
+                                f"No edge cases were derived for `{class_name}`. "
+                                f"Please provide business rules, invariants, or specific "
+                                f"scenarios that the generated tests must cover."
+                            ),
+                            "answer_schema": {
+                                "test_requirements": [
+                                    {"scenario": "string", "expected": "string"}
+                                ]
+                            },
+                        },
+                    )
+                    logger.info(f"Paused: question written to {qpath}")
+                    raise AwaitingInputError(qpath, "generation")
+
+                merged_requirements = list(edge_cases or []) + list(injected or [])
+
                 result_json = await generate_adaptive_tests(
                     project_path=project_path,
                     source_file=source_file,
                     conventions=conventions,
                     class_index=class_index,
                     test_examples=test_examples,
-                    test_requirements=edge_cases if edge_cases else None,
+                    test_requirements=merged_requirements if merged_requirements else None,
                     prompt_template_dir=prompt_template_dir,
                 )
                 result = json.loads(result_json)
@@ -709,6 +758,10 @@ async def _cmd_generate_async(args: argparse.Namespace) -> int:
         emit_token(project_path, "generation", session["session_id"])
         return 0
 
+    except AwaitingInputError as wait:
+        logger.info(f"Generation paused — awaiting human input ({wait.question_path})")
+        print(f"[TESTBOOST_AWAITING_INPUT:step=generation:question={wait.question_path}]")
+        return EXIT_AWAITING_INPUT
     except Exception as e:
         logger.error(f"Test generation failed: {e}")
         update_step_file(
@@ -1556,6 +1609,17 @@ def main() -> int:
     p_gen.add_argument("project_path", help="Path to the Java project")
     p_gen.add_argument("--files", nargs="*", help="Filter specific files")
     p_gen.add_argument("--verbose", "-v", action="store_true")
+    p_gen.add_argument(
+        "--fail-on-uncertainty",
+        action="store_true",
+        help="Pause with exit code 78 and emit question.json when extra context is needed",
+    )
+    p_gen.add_argument(
+        "--answer-file",
+        type=str,
+        default=None,
+        help="JSON file with answers/context to inject as test_requirements (for resume)",
+    )
 
     # validate
     p_val = subparsers.add_parser("validate", help="Compile and run tests")

@@ -8,8 +8,8 @@
 | Phase | Goal | Effort | Status | Completed |
 |-------|------|--------|--------|-----------|
 | Spike | Prove pause/resume primitives | 2 j/h | ✅ done | 2026-06-01 |
-| 1 | Security & state foundations | 5 j/h | ⏳ in progress | — |
-| 2 | UX extension (hints, more triggers) | 5 j/h | 🔒 blocked on P1 | — |
+| 1 | Security & state foundations | 5 j/h | ✅ done | 2026-06-02 |
+| 2 | UX extension (hints, more triggers) | 5 j/h | ⏳ in progress | — |
 | 3 | Operability (cleanup, doctor, metrics) | 3 j/h | 🔒 blocked on P2 | — |
 | 4 | GitLab integration layer | 5 j/h | 🔒 blocked on P3 | — |
 | Cross-cutting | E2E tests, changelog, security review | 2 j/h | rolling | — |
@@ -238,7 +238,25 @@ at the file level.
 
 ## Lessons learned (filled at each phase end)
 
-### Phase 1 — TBD
+### Phase 1 — 2026-06-02
+
+- **Refactor**: the original `generate` used a 3-pass structure (collect in
+  memory → bulk write → bulk compile-fix). Merged into one per-file
+  pipeline (edge cases → generate → write → compile-fix) so the cursor
+  has a single semantic anchor.
+- **Signing**: signing on `emit_question` is opt-in via the
+  `project_path` parameter to preserve backwards compat with the spike
+  tests. In production, `cli.py` always passes it.
+- **`markdown_preview` field** in `question.json` is computed *before*
+  signing so it's included in the HMAC and authoritative — pasting it
+  back into a comment is safe.
+- **Acceptance criteria met**:
+  - P1.A ✅ `test_resume_skips_completed_files` proves only files ≥ paused index are regenerated
+  - P1.B ✅ `test_resume_rejects_unsigned_answer` proves no LLM call happens on signature failure
+  - P1.C ✅ `test_verify_answer_rejects_mismatched_question_id` covers cross-session attack
+  - P1.D ✅ `test_show_pending_prints_markdown_preview` covers show-pending mode
+- **Tests**: 28 new (12 cursor/integrity primitives + 11 CLI E2E + 5 spike
+  tests updated to use signed flow). Total 290 unit tests, lint clean.
 ### Phase 2 — TBD
 ### Phase 3 — TBD
 ### Phase 4 — TBD

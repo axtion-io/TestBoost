@@ -145,38 +145,102 @@ A `resume` job (manual or webhook-triggered) downloads the previous
 artifact, builds `answer.json` from the MR reply, and runs
 `generate --answer-file answer.json`.
 
-## What's *not* done (out of spike scope)
+## Per-file cursor (Phase 1)
 
-These remain on the roadmap before this is a production-grade MVP:
+The `generate` command persists its progress through the gap list in
+`.testboost/sessions/<id>/generation_cursor.json`:
 
-1. **Per-file cursor.** Today, a resume re-runs `generate` over the
-   *entire* gap list. Tests that already compiled get regenerated (LLM
-   cost). Persist `current_file_index` in `spec.md` to skip the rest.
-2. **Dedicated `resume` command.** `generate --answer-file` works but a
-   thin `python -m testboost resume <project> --answer-file …` would be
-   clearer for operators.
-3. **HMAC on `question.json` ↔ `answer.json`.** A malicious comment
-   could inject arbitrary `fixed_code`. Sign the question with `.tb_secret`,
-   require the signature to be echoed back in the answer.
-4. **Hints (vs full fixed_code) for compile-fix.** Developers will more
-   often write a natural-language hint than paste 200 lines of Java in a
-   comment. Add `compile_fixes.<class>.hints: [string]` and feed it to
-   `fix_compilation_errors` as additional context for one more retry.
-5. **`unsubscribe` semantics.** What happens if a paused session is
-   abandoned (MR closed)? Add TTL-based cleanup via
-   `session_retention_days`.
-6. **Wire the same pattern to other steps.** Currently only `generate`
-   pauses. The same primitives (`emit_question`, `consume_answer`,
-   `STATUS_AWAITING_INPUT`, exit 78) apply trivially to `validate`,
-   `mutate`, and `killer`.
+```json
+{
+  "target_files": ["A.java", "B.java", "C.java"],
+  "current_index": 1,
+  "completed_files": ["A.java"],
+  "updated_at": "2026-06-02T10:00:00Z"
+}
+```
+
+On a resume, files with index < `current_index` are **skipped** entirely
+(no LLM call, no compile-fix). The cursor advances after each per-file
+success and is **cleared on full completion**. A pause re-saves the
+cursor pointing at the file that needs human input.
+
+If you change the gap list between runs (e.g. by re-running `analyze` →
+`gaps`), the cursor is invalidated and the loop restarts from index 0.
+
+## Signing answers (Phase 1)
+
+Every question is HMAC-signed with the project's `.tb_secret`. An answer
+is rejected unless it:
+
+1. Carries the same `question_id` as the pending question,
+2. Has a valid signature over its content (`signature` field at the top),
+3. Was generated before the question's TTL elapsed (default 24h).
+
+### Producing a signed answer
+
+```bash
+# Capture the pending question
+cp .testboost/sessions/001-xxx/question.json /tmp/q.json
+
+# Author your raw answer (just the payload, no signature)
+cat > /tmp/raw_answer.json <<'EOF'
+{
+  "test_requirements": [
+    {"scenario": "negative price must throw", "expected": "IllegalArgumentException"}
+  ]
+}
+EOF
+
+# Sign it
+python -m testboost sign-answer ./my-project \
+  --question-file /tmp/q.json \
+  --answer-file /tmp/raw_answer.json \
+  --output /tmp/signed_answer.json
+```
+
+### Resuming with a signed answer
+
+```bash
+# Show pending question (markdown_preview, ready to paste into a MR comment)
+python -m testboost resume ./my-project
+
+# Apply the answer
+python -m testboost resume ./my-project --answer-file /tmp/signed_answer.json
+```
+
+`resume` exits 0 if the answer is accepted, 1 on signature/TTL failure,
+or 2 if no question is pending.
+
+## What's *not* done (still open)
+
+These remain on the roadmap (see `docs/mvp-plan.md`):
+
+- **Hints (vs full `fixed_code`) for compile-fix.** Developers will more
+  often write natural-language hints than paste full Java in an MR
+  comment. (Phase 2)
+- **Pause triggers on `validate`, `mutate`, `killer`.** Today only
+  `generate` pauses. (Phase 2)
+- **Session TTL cleanup.** Abandoned `awaiting_input` sessions linger
+  forever. (Phase 3)
+- **GitLab automation layer.** Scripts to post questions and harvest
+  answers from MR comments. (Phase 4)
 
 ## Primitives reference
 
-All in `src/lib/session_tracker.py`:
+In `src/lib/session_tracker.py`:
 
 - `STATUS_AWAITING_INPUT = "awaiting_input"` — distinct from `failed`
 - `EXIT_AWAITING_INPUT = 78`
-- `QUESTION_FILENAME`, `ANSWER_FILENAME`, `ANSWER_CONSUMED_FILENAME`
+- `QUESTION_FILENAME`, `ANSWER_FILENAME`, `ANSWER_CONSUMED_FILENAME`, `GENERATION_CURSOR_FILENAME`
 - `class AwaitingInputError(Exception)` — raise from a step to trigger pause
-- `emit_question(session_dir, step_name, payload) -> Path`
-- `consume_answer(session_dir, answer_file) -> dict`
+- `emit_question(session_dir, step_name, payload, project_path=None, session_id=None) -> Path`
+- `consume_answer(session_dir, answer_file, project_path=None, ttl_hours=None) -> dict`
+- `save_generation_cursor / load_generation_cursor / clear_generation_cursor`
+
+In `src/lib/integrity.py`:
+
+- `class SignatureError(Exception)` / `class ExpiredQuestionError(Exception)`
+- `sign_question(payload, project_path) -> dict`
+- `verify_question(payload, project_path) -> bool`
+- `sign_answer(payload, question, project_path) -> dict`
+- `verify_answer(answer, question, project_path, ttl_hours=24)` — raises on any failure

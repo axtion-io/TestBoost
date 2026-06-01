@@ -41,6 +41,7 @@ EXIT_AWAITING_INPUT = 78
 QUESTION_FILENAME = "question.json"
 ANSWER_FILENAME = "answer.json"
 ANSWER_CONSUMED_FILENAME = "answer.json.consumed"
+GENERATION_CURSOR_FILENAME = "generation_cursor.json"
 
 
 def get_testboost_dir(project_path: str) -> Path:
@@ -366,24 +367,46 @@ class AwaitingInputError(Exception):
         super().__init__(f"{step_name} awaiting input — see {question_path}")
 
 
-def emit_question(session_dir: str, step_name: str, payload: dict[str, Any]) -> Path:
-    """Write a structured question to question.json and flip status to awaiting_input.
+def emit_question(
+    session_dir: str,
+    step_name: str,
+    payload: dict[str, Any],
+    project_path: str | None = None,
+    session_id: str | None = None,
+) -> Path:
+    """Write a structured, signed question.json and flip status to awaiting_input.
 
     The payload is a free-form dict but the caller SHOULD include:
       - "kind": short tag (e.g. "missing_business_context")
-      - "step": the step that paused
       - "subject": what the question is about (file, class, error)
       - "question": human-readable question text
       - "answer_schema": hint about the shape expected back in answer.json
+
+    If project_path is supplied, the payload is HMAC-signed via
+    integrity.sign_question() so a matching answer can be verified.
+    Backwards-compatible: callers that don't pass project_path skip signing.
     """
+    from src.lib.integrity import sign_question
+
     session_path = Path(session_dir)
     question_path = session_path / QUESTION_FILENAME
 
     enriched = dict(payload)
     enriched.setdefault("step", step_name)
+    if session_id:
+        enriched.setdefault("session_id", session_id)
     enriched.setdefault("created_at", _now_iso())
 
-    question_path.write_text(json.dumps(enriched, indent=2, default=str), encoding="utf-8")
+    # markdown_preview must be added BEFORE signing so it is included in
+    # the HMAC and survives round-trip verification
+    enriched["markdown_preview"] = _render_question_markdown(enriched)
+
+    if project_path:
+        enriched = sign_question(enriched, project_path)
+
+    question_path.write_text(
+        json.dumps(enriched, indent=2, default=str), encoding="utf-8"
+    )
 
     update_step_file(
         session_dir,
@@ -391,23 +414,38 @@ def emit_question(session_dir: str, step_name: str, payload: dict[str, Any]) -> 
         STATUS_AWAITING_INPUT,
         f"# {step_name} — awaiting input\n\n"
         f"**Question**: {enriched.get('question', '(no question text)')}\n\n"
-        f"Resume with: `python -m testboost <command> <project> "
-        f"--answer-file {QUESTION_FILENAME.replace('question', 'answer')}`\n",
+        f"Resume with: `python -m testboost resume <project> "
+        f"--answer-file <signed_answer.json>`\n",
         data={"question": enriched},
     )
 
     return question_path
 
 
-def consume_answer(session_dir: str, answer_file: str | Path) -> dict[str, Any]:
-    """Load an answer payload and mark it consumed.
+def consume_answer(
+    session_dir: str,
+    answer_file: str | Path,
+    project_path: str | None = None,
+    ttl_hours: int | None = None,
+) -> dict[str, Any]:
+    """Load an answer payload, verify its signature against the pending question, mark it consumed.
 
-    Reads answer_file, parses JSON, copies it into the session as answer.json,
-    then renames it to answer.json.consumed so a subsequent run won't reapply
-    the same answer silently.
+    Reads answer_file, parses JSON, then:
+      - if project_path is supplied, loads the session's question.json and
+        verifies that the answer is correctly signed and not expired
+      - writes the answer into the session as answer.json.consumed
+      - deletes question.json so the session is no longer awaiting
 
-    Returns the parsed payload. Raises ValueError on malformed JSON.
+    Returns the parsed payload (with question_id/signature fields preserved).
+
+    Raises:
+      - FileNotFoundError: answer_file does not exist
+      - ValueError: malformed JSON or non-object payload
+      - integrity.SignatureError: signature missing/invalid/tampered
+      - integrity.ExpiredQuestionError: question is older than ttl_hours
     """
+    from src.lib.integrity import QUESTION_TTL_HOURS_DEFAULT, verify_answer
+
     src_path = Path(answer_file)
     if not src_path.exists():
         raise FileNotFoundError(f"answer file not found: {src_path}")
@@ -422,15 +460,106 @@ def consume_answer(session_dir: str, answer_file: str | Path) -> dict[str, Any]:
         raise ValueError("answer payload must be a JSON object at the top level")
 
     session_path = Path(session_dir)
+    question_path = session_path / QUESTION_FILENAME
+
+    if project_path:
+        if not question_path.exists():
+            raise ValueError(
+                "no pending question in this session; cannot verify the answer"
+            )
+        question_payload = json.loads(question_path.read_text(encoding="utf-8"))
+        verify_answer(
+            payload,
+            question_payload,
+            project_path,
+            ttl_hours=ttl_hours if ttl_hours is not None else QUESTION_TTL_HOURS_DEFAULT,
+        )
+
     consumed_path = session_path / ANSWER_CONSUMED_FILENAME
     consumed_path.write_text(json.dumps(payload, indent=2, default=str), encoding="utf-8")
 
-    # Clear stale question.json so the session isn't reported as awaiting.
-    question_path = session_path / QUESTION_FILENAME
     if question_path.exists():
         question_path.unlink()
 
     return payload
+
+
+def _render_question_markdown(payload: dict[str, Any]) -> str:
+    """Render an MR-comment-ready markdown preview of a question payload."""
+    kind = payload.get("kind", "question")
+    subject = payload.get("subject", {})
+    question = payload.get("question", "(no question text)")
+    answer_schema = payload.get("answer_schema", {})
+
+    lines = [
+        f"### 🤖 TestBoost needs input ({kind})",
+        "",
+        f"**Question**: {question}",
+        "",
+    ]
+    if subject:
+        lines.append("**Subject**:")
+        lines.append("")
+        lines.append("```json")
+        lines.append(json.dumps(subject, indent=2, default=str))
+        lines.append("```")
+        lines.append("")
+    if answer_schema:
+        lines.append("**Reply with this shape** (sign with `testboost sign-answer`):")
+        lines.append("")
+        lines.append("```json")
+        lines.append(json.dumps(answer_schema, indent=2, default=str))
+        lines.append("```")
+        lines.append("")
+    qid = payload.get("question_id")
+    if qid:
+        lines.append(f"_Question ID: `{qid}`_")
+    return "\n".join(lines)
+
+
+# --- generation cursor helpers (per-file resumability) ---
+
+
+def save_generation_cursor(
+    session_dir: str,
+    *,
+    target_files: list[str],
+    current_index: int,
+    completed_files: list[str],
+) -> Path:
+    """Persist progress through the generate per-file loop."""
+    path = Path(session_dir) / GENERATION_CURSOR_FILENAME
+    path.write_text(
+        json.dumps(
+            {
+                "target_files": target_files,
+                "current_index": current_index,
+                "completed_files": completed_files,
+                "updated_at": _now_iso(),
+            },
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+    return path
+
+
+def load_generation_cursor(session_dir: str) -> dict[str, Any] | None:
+    """Read the cursor, or None if no resume state exists."""
+    path = Path(session_dir) / GENERATION_CURSOR_FILENAME
+    if not path.exists():
+        return None
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return None
+
+
+def clear_generation_cursor(session_dir: str) -> None:
+    """Drop the cursor file once generate has run to completion."""
+    path = Path(session_dir) / GENERATION_CURSOR_FILENAME
+    if path.exists():
+        path.unlink()
 
 
 # --- Private helpers ---

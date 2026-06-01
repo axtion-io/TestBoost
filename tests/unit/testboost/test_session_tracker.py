@@ -537,3 +537,66 @@ class TestConsumeAnswer:
         except ValueError:
             return
         raise AssertionError("expected ValueError")
+
+
+# ============================================================================
+# Per-file cursor (P1.1)
+# ============================================================================
+
+
+class TestFileCursor:
+    def _new_session(self, tmp_path):
+        from src.lib.session_tracker import create_session, init_project
+        init_project(str(tmp_path))
+        return create_session(str(tmp_path), name="cursor")
+
+    def test_load_returns_none_when_absent(self, tmp_path):
+        from src.lib.session_tracker import load_generation_cursor
+        session = self._new_session(tmp_path)
+        assert load_generation_cursor(session["session_dir"]) is None
+
+    def test_save_then_load_roundtrip(self, tmp_path):
+        from src.lib.session_tracker import load_generation_cursor, save_generation_cursor
+        session = self._new_session(tmp_path)
+        save_generation_cursor(
+            session["session_dir"],
+            target_files=["a.java", "b.java", "c.java"],
+            current_index=1,
+            completed_files=["a.java"],
+        )
+        cursor = load_generation_cursor(session["session_dir"])
+        assert cursor["target_files"] == ["a.java", "b.java", "c.java"]
+        assert cursor["current_index"] == 1
+        assert cursor["completed_files"] == ["a.java"]
+        assert "updated_at" in cursor
+
+    def test_save_overwrites_existing(self, tmp_path):
+        from src.lib.session_tracker import load_generation_cursor, save_generation_cursor
+        session = self._new_session(tmp_path)
+        save_generation_cursor(
+            session["session_dir"],
+            target_files=["a"], current_index=0, completed_files=[],
+        )
+        save_generation_cursor(
+            session["session_dir"],
+            target_files=["a"], current_index=1, completed_files=["a"],
+        )
+        cursor = load_generation_cursor(session["session_dir"])
+        assert cursor["current_index"] == 1
+        assert cursor["completed_files"] == ["a"]
+
+    def test_clear_removes_file(self, tmp_path):
+        from src.lib.session_tracker import (
+            clear_generation_cursor,
+            load_generation_cursor,
+            save_generation_cursor,
+        )
+        session = self._new_session(tmp_path)
+        save_generation_cursor(
+            session["session_dir"],
+            target_files=["a"], current_index=0, completed_files=[],
+        )
+        clear_generation_cursor(session["session_dir"])
+        assert load_generation_cursor(session["session_dir"]) is None
+        # idempotent: clearing again is fine
+        clear_generation_cursor(session["session_dir"])

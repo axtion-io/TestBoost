@@ -482,6 +482,7 @@ def cmd_generate(args: argparse.Namespace) -> int:
 
 
 async def _cmd_generate_async(args: argparse.Namespace) -> int:
+    from src.lib.integrity import ExpiredQuestionError, SignatureError
     from src.lib.md_logger import MdLogger
     from src.lib.session_tracker import (
         EXIT_AWAITING_INPUT,
@@ -489,9 +490,12 @@ async def _cmd_generate_async(args: argparse.Namespace) -> int:
         STATUS_FAILED,
         STATUS_IN_PROGRESS,
         AwaitingInputError,
+        clear_generation_cursor,
         consume_answer,
         emit_question,
         get_current_session,
+        load_generation_cursor,
+        save_generation_cursor,
         update_step_file,
     )
 
@@ -513,15 +517,25 @@ async def _cmd_generate_async(args: argparse.Namespace) -> int:
 
     update_step_file(session_dir, "generation", STATUS_IN_PROGRESS, "# Test Generation\n\nGenerating...")
 
-    # --- Human-in-the-loop: load answer file if provided (spike) ---
+    # --- Human-in-the-loop: load and verify answer file if provided ---
     answer_payload: dict | None = None
     answer_file = getattr(args, "answer_file", None)
     if answer_file:
         try:
-            answer_payload = consume_answer(session_dir, answer_file)
-            logger.info(f"Loaded answer payload from {answer_file}")
+            answer_payload = consume_answer(
+                session_dir, answer_file, project_path=project_path
+            )
+            logger.info(f"Loaded and verified answer payload from {answer_file}")
         except (FileNotFoundError, ValueError) as e:
             logger.error(f"Cannot consume answer file: {e}")
+            return 1
+        except SignatureError as e:
+            logger.error(f"Answer signature invalid: {e}")
+            print(f"\nERROR: answer file rejected — {e}", file=sys.stderr)
+            return 1
+        except ExpiredQuestionError as e:
+            logger.error(f"Answer expired: {e}")
+            print(f"\nERROR: answer rejected — {e}", file=sys.stderr)
             return 1
 
     fail_on_uncertainty = bool(getattr(args, "fail_on_uncertainty", False))
@@ -605,11 +619,45 @@ async def _cmd_generate_async(args: argparse.Namespace) -> int:
             print("Check your LLM provider credentials in .env (see .env.example).")
             return 1
 
-        generated = []
-        for source_file in target_files:
-            logger.info(f"Generating tests for: {source_file}")
+        # --- Per-file cursor: resume from where a previous run paused ---
+        cursor = load_generation_cursor(session_dir)
+        if cursor and cursor.get("target_files") == target_files:
+            start_index = int(cursor.get("current_index", 0))
+            completed_files = list(cursor.get("completed_files", []))
+            if start_index > 0:
+                logger.info(
+                    f"Resuming from file index {start_index} "
+                    f"({len(completed_files)} files already completed)"
+                )
+        else:
+            if cursor:
+                logger.warn("Cursor target_files mismatch — starting fresh")
+            start_index = 0
+            completed_files = []
+        save_generation_cursor(
+            session_dir,
+            target_files=target_files,
+            current_index=start_index,
+            completed_files=completed_files,
+        )
+
+        compile_fixes = (
+            answer_payload.get("compile_fixes", {})
+            if isinstance(answer_payload, dict) else {}
+        )
+
+        generated: list[dict] = []
+        for i, source_file in enumerate(target_files):
+            if i < start_index:
+                continue
+
+            logger.info(
+                f"Generating tests for: {source_file}  (file {i + 1}/{len(target_files)})"
+            )
+            class_name = Path(source_file).stem
+            class_type = "service"
             try:
-                # --- Edge case analysis (enriches test generation) ---
+                # --- Edge case analysis ---
                 edge_cases: list[dict] = []
                 try:
                     source_path = Path(source_file)
@@ -617,9 +665,6 @@ async def _cmd_generate_async(args: argparse.Namespace) -> int:
                         source_path = Path(project_path) / source_file
                     if source_path.exists():
                         source_code = source_path.read_text(encoding="utf-8", errors="replace")
-                        class_name = source_path.stem
-                        # Determine class type from class_index or heuristic
-                        class_type = "service"
                         if class_index and class_name in class_index:
                             class_type = class_index[class_name].get("category", "service").lower()
                         elif "controller" in source_file.lower():
@@ -630,15 +675,24 @@ async def _cmd_generate_async(args: argparse.Namespace) -> int:
                             class_type = "model"
                         edge_cases = await analyze_edge_cases(source_code, class_name, class_type)
                         if edge_cases:
-                            logger.info(f"Edge case analysis: {len(edge_cases)} scenarios for {class_name}")
+                            logger.info(
+                                f"Edge case analysis: {len(edge_cases)} scenarios for {class_name}"
+                            )
                 except Exception as ec_err:
                     logger.warn(f"Edge case analysis skipped for {source_file}: {ec_err}")
 
-                # --- Human-in-the-loop trigger (spike) ---
-                # If we have no edge cases AND no injected answer AND the caller
-                # asked us to pause on uncertainty, export a question and exit 78.
-                injected = answer_payload.get("test_requirements", []) if answer_payload else []
+                # --- HITL trigger: empty edge cases + no injected requirements ---
+                injected = (
+                    answer_payload.get("test_requirements", [])
+                    if isinstance(answer_payload, dict) else []
+                )
                 if not edge_cases and not injected and fail_on_uncertainty:
+                    save_generation_cursor(
+                        session_dir,
+                        target_files=target_files,
+                        current_index=i,
+                        completed_files=completed_files,
+                    )
                     qpath = emit_question(
                         session_dir,
                         "generation",
@@ -660,6 +714,8 @@ async def _cmd_generate_async(args: argparse.Namespace) -> int:
                                 ]
                             },
                         },
+                        project_path=project_path,
+                        session_id=session["session_id"],
                     )
                     logger.info(f"Paused: question written to {qpath}")
                     raise AwaitingInputError(qpath, "generation")
@@ -677,73 +733,80 @@ async def _cmd_generate_async(args: argparse.Namespace) -> int:
                 )
                 result = json.loads(result_json)
                 test_code = result.get("test_code", "")
-                # Technology-aware validation: Java uses @Test, Python uses def test_
                 has_tests = "@Test" in test_code or "def test_" in test_code
-                if result.get("success") and test_code and has_tests:
+
+                if not (result.get("success") and test_code and has_tests):
+                    logger.warn(f"No tests generated for {source_file}")
+                else:
+                    test_path = result.get("test_file", "")
+                    cls = result.get("context", {}).get("class_name", "") or class_name
+
+                    # Developer-provided fix overrides LLM output before compile-fix
+                    dev_fix = (
+                        compile_fixes.get(cls)
+                        if isinstance(compile_fixes, dict) else None
+                    )
+                    if dev_fix and isinstance(dev_fix, dict) and "fixed_code" in dev_fix:
+                        test_code = dev_fix["fixed_code"]
+                        logger.info(f"Applied developer-provided fixed_code for {cls}")
+
+                    full_path = Path(project_path) / test_path
+                    full_path.parent.mkdir(parents=True, exist_ok=True)
+                    full_path.write_text(test_code, encoding="utf-8")
+                    logger.info(f"Wrote test file: {test_path}")
+
+                    # Compile-fix (may raise AwaitingInputError)
+                    fixed = await _attempt_compile_fix(
+                        project_path, full_path, test_code,
+                        cls, logger, session_dir, maven_compile_cmd,
+                        fail_on_uncertainty=fail_on_uncertainty,
+                        session_id=session["session_id"],
+                    )
+                    if fixed != test_code:
+                        test_code = fixed
+
                     generated.append({
-                        "path": result.get("test_file", ""),
-                        "content": result.get("test_code", ""),
-                        "class_name": result.get("context", {}).get("class_name", ""),
+                        "path": test_path,
+                        "content": test_code,
+                        "class_name": cls,
                         "package": result.get("context", {}).get("package", ""),
                         "source_file": source_file,
                         "test_count": result.get("test_count", 0),
                     })
-                else:
-                    logger.warn(f"No tests generated for {source_file}")
+
+            except AwaitingInputError:
+                save_generation_cursor(
+                    session_dir,
+                    target_files=target_files,
+                    current_index=i,
+                    completed_files=completed_files,
+                )
+                raise
             except Exception as file_err:
                 logger.error(f"Failed to generate tests for {source_file}: {file_err}")
-                raise  # Re-raise to propagate LLM errors
+                raise
 
-        # Compile-and-fix: run after ALL files are written to avoid inter-file dependency issues
-        # (done below, after the file-writing loop)
+            completed_files.append(source_file)
+            save_generation_cursor(
+                session_dir,
+                target_files=target_files,
+                current_index=i + 1,
+                completed_files=completed_files,
+            )
 
-        # Build generation report
+        # --- Build report ---
         content = "# Test Generation Results\n\n"
         content += f"**Target files**: {len(target_files)}\n"
-        content += f"**Tests generated**: {len(generated)}\n"
-        content += "\n"
+        content += f"**Tests generated**: {len(generated)}\n\n"
 
         if generated:
             content += "## Generated Tests\n\n"
             content += "| # | Source File | Test File | Test Count |\n"
             content += "|---|------------|-----------|------------|\n"
-            for i, test in enumerate(generated, 1):
-                content += f"| {i} | `{test.get('source_file', '')}` | `{test.get('path', '')}` | {test.get('test_count', 0)} |\n"
+            for idx, test in enumerate(generated, 1):
+                content += f"| {idx} | `{test.get('source_file', '')}` | `{test.get('path', '')}` | {test.get('test_count', 0)} |\n"
             content += "\n"
-
-            # Write all test files first, then compile-and-fix in one pass
-            written_files = []
             content += "## Generated Test Files\n\n"
-            for test in generated:
-                test_path = test.get("path", "")
-                test_content = test.get("content", "")
-                if test_path and test_content:
-                    full_path = Path(project_path) / test_path
-                    full_path.parent.mkdir(parents=True, exist_ok=True)
-                    full_path.write_text(test_content, encoding="utf-8")
-                    logger.info(f"Wrote test file: {test_path}")
-                    written_files.append((full_path, test))
-
-            # Compile-and-fix: one mvn test-compile for all files, fix per-file errors
-            compile_fixes = (answer_payload or {}).get("compile_fixes", {}) if answer_payload else {}
-            for full_path, test in written_files:
-                class_name = test.get("class_name", full_path.stem)
-                candidate_code = test.get("content", "")
-                # Developer-provided fix from answer-file overrides LLM output before retry
-                dev_fix = compile_fixes.get(class_name) if isinstance(compile_fixes, dict) else None
-                if dev_fix and isinstance(dev_fix, dict) and "fixed_code" in dev_fix:
-                    candidate_code = dev_fix["fixed_code"]
-                    full_path.write_text(candidate_code, encoding="utf-8")
-                    logger.info(f"Applied developer-provided fixed_code for {class_name}")
-                    test["content"] = candidate_code
-                fixed = await _attempt_compile_fix(
-                    project_path, full_path, candidate_code,
-                    class_name, logger, session_dir, maven_compile_cmd,
-                    fail_on_uncertainty=fail_on_uncertainty,
-                )
-                if fixed != test.get("content", ""):
-                    test["content"] = fixed
-
             for test in generated:
                 test_path = test.get("path", "")
                 if test_path:
@@ -761,6 +824,8 @@ async def _cmd_generate_async(args: argparse.Namespace) -> int:
             session_dir, "generation", STATUS_COMPLETED, content,
             data={"generated": [{k: v for k, v in t.items() if k != "content"} for t in generated]},
         )
+
+        clear_generation_cursor(session_dir)
 
         logger.result("Test Generation Complete", content)
 
@@ -793,6 +858,7 @@ async def _attempt_compile_fix(
     session_dir: str | None = None,
     maven_compile_cmd: str | None = None,
     fail_on_uncertainty: bool = False,
+    session_id: str | None = None,
 ) -> str:
     """Run mvn test-compile and use LLM to fix compilation errors, retrying up to N times.
 
@@ -874,6 +940,8 @@ async def _attempt_compile_fix(
                             }
                         },
                     },
+                    project_path=project_path,
+                    session_id=session_id,
                 )
                 logger.info(f"Compile-fix exhausted for {class_name} — paused, question at {qpath}")
                 raise AwaitingInputError(qpath, "generation")
@@ -1523,6 +1591,101 @@ def cmd_verify(args: argparse.Namespace) -> int:
         return 1
 
 
+def cmd_resume(args: argparse.Namespace) -> int:
+    """Resume a paused session, or display its pending question.
+
+    Without --answer-file: read the pending question.json and print it
+      to stdout (markdown_preview). Exit 0 if a question is pending,
+      1 if no session, 2 if no question is pending.
+
+    With --answer-file: dispatch to the appropriate _cmd_<step>_async
+      with the answer payload injected.
+    """
+    from src.lib.session_tracker import QUESTION_FILENAME, get_current_session
+
+    project_path = args.project_path
+    session = get_current_session(project_path)
+    if not session:
+        print("Error: No active session. Run `init` first.", file=sys.stderr)
+        return 1
+
+    session_dir = Path(session["session_dir"])
+    qpath = session_dir / QUESTION_FILENAME
+    answer_file = getattr(args, "answer_file", None)
+
+    if not answer_file:
+        if not qpath.exists():
+            print("No question pending for this session.", file=sys.stderr)
+            return 2
+        question = json.loads(qpath.read_text(encoding="utf-8"))
+        preview = question.get("markdown_preview") or json.dumps(question, indent=2)
+        print(preview)
+        return 0
+
+    # Determine which step is awaiting and dispatch
+    step = session.get("step", "")
+    if not qpath.exists():
+        print("Error: no pending question in this session.", file=sys.stderr)
+        return 1
+    question = json.loads(qpath.read_text(encoding="utf-8"))
+    step = question.get("step", step)
+
+    if step == "generation":
+        gen_args = argparse.Namespace(
+            project_path=project_path,
+            verbose=getattr(args, "verbose", False),
+            files=None,
+            fail_on_uncertainty=True,
+            answer_file=answer_file,
+        )
+        return cmd_generate(gen_args)
+
+    print(f"Error: resume is not yet wired for step '{step}'.", file=sys.stderr)
+    return 1
+
+
+def cmd_sign_answer(args: argparse.Namespace) -> int:
+    """Sign a raw answer payload so TestBoost will accept it on resume.
+
+    Reads --question-file and --answer-file (raw, unsigned), produces a
+    signed copy on stdout (or --output if provided).
+    """
+    from src.lib.integrity import sign_answer
+
+    project_path = args.project_path
+    qpath = Path(args.question_file)
+    apath = Path(args.answer_file)
+
+    if not qpath.exists():
+        print(f"Error: question file not found: {qpath}", file=sys.stderr)
+        return 1
+    if not apath.exists():
+        print(f"Error: answer file not found: {apath}", file=sys.stderr)
+        return 1
+
+    try:
+        question = json.loads(qpath.read_text(encoding="utf-8"))
+        raw_answer = json.loads(apath.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as e:
+        print(f"Error: malformed JSON ({e})", file=sys.stderr)
+        return 1
+
+    if not isinstance(raw_answer, dict):
+        print("Error: answer must be a JSON object at the top level", file=sys.stderr)
+        return 1
+
+    signed = sign_answer(raw_answer, question, project_path)
+    out_json = json.dumps(signed, indent=2)
+
+    output = getattr(args, "output", None)
+    if output:
+        Path(output).write_text(out_json, encoding="utf-8")
+        print(f"Wrote signed answer to {output}")
+    else:
+        print(out_json)
+    return 0
+
+
 def cmd_status(args: argparse.Namespace) -> int:
     """Show current session status."""
     from pathlib import Path as _Path
@@ -1702,6 +1865,28 @@ def main() -> int:
     p_status = subparsers.add_parser("status", help="Show session status")
     p_status.add_argument("project_path", help="Path to the Java project")
 
+    # resume — display pending question or apply signed answer
+    p_resume = subparsers.add_parser(
+        "resume",
+        help="Show the pending question, or resume a paused session with --answer-file",
+    )
+    p_resume.add_argument("project_path", help="Path to the Java project")
+    p_resume.add_argument(
+        "--answer-file", default=None,
+        help="Signed JSON answer file (run sign-answer first to produce one)",
+    )
+    p_resume.add_argument("--verbose", "-v", action="store_true")
+
+    # sign-answer — utility to bind a raw answer to a question and HMAC-sign it
+    p_sign = subparsers.add_parser(
+        "sign-answer",
+        help="Sign a raw answer payload against a pending question",
+    )
+    p_sign.add_argument("project_path", help="Path to the Java project")
+    p_sign.add_argument("--question-file", required=True, help="Path to question.json")
+    p_sign.add_argument("--answer-file", required=True, help="Path to raw answer JSON")
+    p_sign.add_argument("--output", "-o", default=None, help="Write signed answer here (default: stdout)")
+
     args = parser.parse_args()
 
     # T020: --list-plugins exits before any subcommand is required
@@ -1729,6 +1914,8 @@ def main() -> int:
         "verify": cmd_verify,
         "install": cmd_install,
         "status": cmd_status,
+        "resume": cmd_resume,
+        "sign-answer": cmd_sign_answer,
     }
 
     return commands[args.command](args)

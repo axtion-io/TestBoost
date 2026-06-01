@@ -17,13 +17,25 @@ The LLM cannot forge this because it doesn't know the secret.
 
 import hashlib
 import hmac
+import json
 import secrets
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import Any
 
 SECRET_FILE = ".tb_secret"
 TOKEN_PREFIX = "[TESTBOOST_INTEGRITY:"
 TOKEN_SUFFIX = "]"
+
+QUESTION_TTL_HOURS_DEFAULT = 24
+
+
+class SignatureError(Exception):
+    """Raised when a question or answer signature is invalid."""
+
+
+class ExpiredQuestionError(Exception):
+    """Raised when an answer arrives after the question's TTL has elapsed."""
 
 
 def get_or_create_secret(project_path: str) -> str:
@@ -131,6 +143,109 @@ def emit_token(project_path: str, step: str, session_id: str) -> str:
     token = generate_token(project_path, step, session_id)
     print(f"\n{token}")
     return token
+
+
+def _canonical_json(payload: dict[str, Any]) -> str:
+    """Stable JSON encoding for HMAC signing.
+
+    Sort keys and strip whitespace so the same logical payload always
+    produces the same byte string.
+    """
+    return json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str)
+
+
+def _hmac_hex(secret: str, message: str) -> str:
+    return hmac.new(
+        secret.encode("utf-8"), message.encode("utf-8"), hashlib.sha256
+    ).hexdigest()
+
+
+def sign_question(payload: dict[str, Any], project_path: str) -> dict[str, Any]:
+    """Sign a question payload.
+
+    Adds `question_id` (16-byte hex nonce) and `created_at` if missing,
+    then appends a `signature` field. The signature covers every field
+    except `signature` itself. Returns a new dict; the input is not mutated.
+    """
+    enriched = dict(payload)
+    enriched.setdefault("question_id", secrets.token_hex(16))
+    enriched.setdefault(
+        "created_at", datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+    )
+    content = {k: v for k, v in enriched.items() if k != "signature"}
+    secret = get_or_create_secret(project_path)
+    enriched["signature"] = _hmac_hex(secret, _canonical_json(content))
+    return enriched
+
+
+def verify_question(payload: dict[str, Any], project_path: str) -> bool:
+    """Return True iff `payload` carries a valid HMAC signature."""
+    if "signature" not in payload:
+        return False
+    content = {k: v for k, v in payload.items() if k != "signature"}
+    secret = get_or_create_secret(project_path)
+    expected = _hmac_hex(secret, _canonical_json(content))
+    return hmac.compare_digest(payload["signature"], expected)
+
+
+def sign_answer(
+    payload: dict[str, Any], question: dict[str, Any], project_path: str
+) -> dict[str, Any]:
+    """Bind an answer to a question and sign it.
+
+    The answer payload is augmented with the question's `question_id`,
+    then signed under the same HMAC secret. Returns a new dict.
+    """
+    if "question_id" not in question:
+        raise SignatureError("question has no question_id; cannot bind an answer")
+    enriched = dict(payload)
+    enriched["question_id"] = question["question_id"]
+    content = {k: v for k, v in enriched.items() if k != "signature"}
+    secret = get_or_create_secret(project_path)
+    enriched["signature"] = _hmac_hex(secret, _canonical_json(content))
+    return enriched
+
+
+def verify_answer(
+    answer: dict[str, Any],
+    question: dict[str, Any],
+    project_path: str,
+    ttl_hours: int = QUESTION_TTL_HOURS_DEFAULT,
+) -> None:
+    """Verify an answer against the question it claims to respond to.
+
+    Raises SignatureError if any of these conditions fail:
+      - question payload is tampered (signature mismatch)
+      - answer.question_id != question.question_id
+      - answer.signature is missing or doesn't match the answer content
+    Raises ExpiredQuestionError if the question is older than ttl_hours.
+    """
+    if not verify_question(question, project_path):
+        raise SignatureError("question signature is invalid (payload was tampered)")
+    if answer.get("question_id") != question.get("question_id"):
+        raise SignatureError(
+            "answer.question_id does not match question.question_id"
+        )
+    if "signature" not in answer:
+        raise SignatureError("answer is missing a signature")
+
+    content = {k: v for k, v in answer.items() if k != "signature"}
+    secret = get_or_create_secret(project_path)
+    expected = _hmac_hex(secret, _canonical_json(content))
+    if not hmac.compare_digest(answer["signature"], expected):
+        raise SignatureError("answer signature does not match its content")
+
+    created = question.get("created_at")
+    if not created:
+        return
+    try:
+        ts = datetime.strptime(created, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=UTC)
+    except ValueError as e:
+        raise SignatureError(f"question created_at is malformed: {created}") from e
+    if datetime.now(UTC) - ts > timedelta(hours=ttl_hours):
+        raise ExpiredQuestionError(
+            f"question expired (created {created}, TTL {ttl_hours}h)"
+        )
 
 
 def _ensure_gitignored(tb_dir: Path, filename: str) -> None:

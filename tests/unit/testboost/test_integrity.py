@@ -133,3 +133,131 @@ class TestEmitToken:
         captured = capsys.readouterr()
         assert TOKEN_PREFIX in captured.out
         assert token in captured.out
+
+
+# ============================================================================
+# Question / answer signing (P1.3, P1.4)
+# ============================================================================
+
+
+class TestQuestionSigning:
+    def test_sign_adds_id_and_signature(self, project_with_testboost):
+        from src.lib.integrity import sign_question
+        signed = sign_question(
+            {"kind": "x", "question": "?"}, str(project_with_testboost)
+        )
+        assert "question_id" in signed
+        assert len(signed["question_id"]) == 32  # 16-byte hex
+        assert "signature" in signed
+        assert "created_at" in signed
+
+    def test_verify_accepts_freshly_signed(self, project_with_testboost):
+        from src.lib.integrity import sign_question, verify_question
+        signed = sign_question({"k": "v"}, str(project_with_testboost))
+        assert verify_question(signed, str(project_with_testboost)) is True
+
+    def test_verify_rejects_tampered_payload(self, project_with_testboost):
+        from src.lib.integrity import sign_question, verify_question
+        signed = sign_question({"kind": "x"}, str(project_with_testboost))
+        signed["kind"] = "y"  # tamper after signing
+        assert verify_question(signed, str(project_with_testboost)) is False
+
+    def test_verify_rejects_unsigned(self, project_with_testboost):
+        from src.lib.integrity import verify_question
+        assert verify_question({"kind": "x"}, str(project_with_testboost)) is False
+
+
+class TestAnswerSigning:
+    def test_sign_answer_binds_question_id(self, project_with_testboost):
+        from src.lib.integrity import sign_answer, sign_question
+        q = sign_question({"q": 1}, str(project_with_testboost))
+        a = sign_answer({"data": "x"}, q, str(project_with_testboost))
+        assert a["question_id"] == q["question_id"]
+        assert "signature" in a
+
+    def test_verify_answer_round_trip(self, project_with_testboost):
+        from src.lib.integrity import sign_answer, sign_question, verify_answer
+        q = sign_question({"q": 1}, str(project_with_testboost))
+        a = sign_answer({"data": "x"}, q, str(project_with_testboost))
+        verify_answer(a, q, str(project_with_testboost))  # no exception
+
+    def test_verify_answer_rejects_mismatched_question_id(self, project_with_testboost):
+        from src.lib.integrity import (
+            SignatureError,
+            sign_answer,
+            sign_question,
+            verify_answer,
+        )
+        q1 = sign_question({"q": 1}, str(project_with_testboost))
+        q2 = sign_question({"q": 2}, str(project_with_testboost))
+        a = sign_answer({"data": "x"}, q1, str(project_with_testboost))
+        try:
+            verify_answer(a, q2, str(project_with_testboost))
+        except SignatureError:
+            return
+        raise AssertionError("expected SignatureError on question-id mismatch")
+
+    def test_verify_answer_rejects_tampered_content(self, project_with_testboost):
+        from src.lib.integrity import (
+            SignatureError,
+            sign_answer,
+            sign_question,
+            verify_answer,
+        )
+        q = sign_question({"q": 1}, str(project_with_testboost))
+        a = sign_answer({"data": "x"}, q, str(project_with_testboost))
+        a["data"] = "tampered"
+        try:
+            verify_answer(a, q, str(project_with_testboost))
+        except SignatureError:
+            return
+        raise AssertionError("expected SignatureError on tampered content")
+
+    def test_verify_answer_rejects_tampered_question(self, project_with_testboost):
+        from src.lib.integrity import (
+            SignatureError,
+            sign_answer,
+            sign_question,
+            verify_answer,
+        )
+        q = sign_question({"q": 1}, str(project_with_testboost))
+        a = sign_answer({"data": "x"}, q, str(project_with_testboost))
+        q["q"] = 999  # tamper question after answering
+        try:
+            verify_answer(a, q, str(project_with_testboost))
+        except SignatureError:
+            return
+        raise AssertionError("expected SignatureError on tampered question")
+
+
+class TestAnswerTTL:
+    def test_verify_rejects_expired_question(self, project_with_testboost):
+        from datetime import UTC, datetime, timedelta
+
+        from src.lib.integrity import (
+            ExpiredQuestionError,
+            sign_answer,
+            sign_question,
+            verify_answer,
+        )
+        q = sign_question({"q": 1}, str(project_with_testboost))
+        # Backdate the question past the TTL but keep the signature consistent
+        old = (datetime.now(UTC) - timedelta(hours=48)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        q["created_at"] = old
+        # Re-sign with the back-dated timestamp so the signature is valid
+        q = sign_question(
+            {k: v for k, v in q.items() if k not in ("signature",)},
+            str(project_with_testboost),
+        )
+        q["created_at"] = old  # ensure it is the back-dated value
+        # Re-derive signature one more time on the back-dated payload
+        from src.lib.integrity import _canonical_json, _hmac_hex, get_or_create_secret
+        content = {k: v for k, v in q.items() if k != "signature"}
+        q["signature"] = _hmac_hex(get_or_create_secret(str(project_with_testboost)), _canonical_json(content))
+
+        a = sign_answer({"x": 1}, q, str(project_with_testboost))
+        try:
+            verify_answer(a, q, str(project_with_testboost), ttl_hours=24)
+        except ExpiredQuestionError:
+            return
+        raise AssertionError("expected ExpiredQuestionError")

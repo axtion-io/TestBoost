@@ -1186,21 +1186,31 @@ class TestCmdGenerateInterruption:
     async def test_resumes_with_answer_file(self, initialized_project, tmp_path):
         """answer-file provided → injected into test_requirements, generation completes."""
         from src.lib.cli import _cmd_generate_async
+        from src.lib.integrity import sign_answer, sign_question
         await self._setup_gaps(initialized_project)
 
-        # Simulate a prior paused run by writing a question.json into the session
+        # Simulate a prior paused run with a properly signed question
         session = get_current_session(str(initialized_project))
         session_dir = Path(session["session_dir"])
-        (session_dir / "question.json").write_text(json.dumps({"step": "generation"}))
+        question = sign_question(
+            {"step": "generation", "kind": "missing_business_context"},
+            str(initialized_project),
+        )
+        (session_dir / "question.json").write_text(json.dumps(question))
 
-        # The developer's answer (the shape the question advertised)
+        # The developer's signed answer (the shape the question advertised)
+        answer_payload = sign_answer(
+            {
+                "test_requirements": [
+                    {"scenario": "order with zero items must throw", "expected": "IllegalArgumentException"},
+                    {"scenario": "discount > 100% must be capped", "expected": "value = 100"},
+                ],
+            },
+            question,
+            str(initialized_project),
+        )
         answer = tmp_path / "answer.json"
-        answer.write_text(json.dumps({
-            "test_requirements": [
-                {"scenario": "order with zero items must throw", "expected": "IllegalArgumentException"},
-                {"scenario": "discount > 100% must be capped", "expected": "value = 100"},
-            ]
-        }))
+        answer.write_text(json.dumps(answer_payload))
 
         mock_result = json.dumps({
             "success": True,
@@ -1380,7 +1390,17 @@ class TestCompileFixInterruption:
     async def test_resume_applies_developer_fix(self, initialized_project, tmp_path):
         """answer-file with compile_fixes[class].fixed_code → applied, compile passes, exit 0."""
         from src.lib.cli import _cmd_generate_async
+        from src.lib.integrity import sign_answer, sign_question
         await self._setup_gaps(initialized_project)
+
+        # Simulate a prior paused run on compile-fix exhaustion
+        session = get_current_session(str(initialized_project))
+        session_dir = Path(session["session_dir"])
+        question = sign_question(
+            {"step": "generation", "kind": "compilation_fix_exhausted"},
+            str(initialized_project),
+        )
+        (session_dir / "question.json").write_text(json.dumps(question))
 
         dev_code = (
             "package com.example;\n"
@@ -1390,12 +1410,13 @@ class TestCompileFixInterruption:
             "  void developer_fixed_test() {}\n"
             "}\n"
         )
+        signed_answer = sign_answer(
+            {"compile_fixes": {"OrderService": {"fixed_code": dev_code}}},
+            question,
+            str(initialized_project),
+        )
         answer = tmp_path / "answer.json"
-        answer.write_text(json.dumps({
-            "compile_fixes": {
-                "OrderService": {"fixed_code": dev_code}
-            }
-        }))
+        answer.write_text(json.dumps(signed_answer))
 
         gen_args = argparse.Namespace(
             project_path=str(initialized_project),
@@ -1422,3 +1443,356 @@ class TestCompileFixInterruption:
         # Answer must be marked consumed
         session = get_current_session(str(initialized_project))
         assert (Path(session["session_dir"]) / "answer.json.consumed").exists()
+
+
+# ============================================================================
+# Phase 1 — `resume` and `sign-answer` commands, per-file cursor end-to-end
+# ============================================================================
+
+
+class TestResumeCommand:
+    def _setup_session_with_question(self, project_path):
+        """Initialize a project, create a session, write a signed question.json."""
+        from src.lib.session_tracker import emit_question
+        cmd_init(argparse.Namespace(
+            project_path=str(project_path), name=None, description="", tech="java-spring",
+        ))
+        session = get_current_session(str(project_path))
+        session_dir = Path(session["session_dir"])
+        emit_question(
+            str(session_dir),
+            "generation",
+            {
+                "kind": "missing_business_context",
+                "subject": {"class_name": "Foo"},
+                "question": "what?",
+                "answer_schema": {"test_requirements": []},
+            },
+            project_path=str(project_path),
+            session_id=session["session_id"],
+        )
+        question = json.loads((session_dir / "question.json").read_text())
+        return session_dir, question
+
+    def test_no_session_returns_1(self, tmp_path, capsys):
+        from src.lib.cli import cmd_resume
+        rc = cmd_resume(argparse.Namespace(
+            project_path=str(tmp_path), answer_file=None, verbose=False,
+        ))
+        assert rc == 1
+        assert "No active session" in capsys.readouterr().err
+
+    def test_no_pending_question_returns_2(self, tmp_path, capsys):
+        from src.lib.cli import cmd_resume
+        cmd_init(argparse.Namespace(project_path=str(tmp_path), name=None, description="", tech="java-spring"))
+        rc = cmd_resume(argparse.Namespace(
+            project_path=str(tmp_path), answer_file=None, verbose=False,
+        ))
+        assert rc == 2
+        assert "No question pending" in capsys.readouterr().err
+
+    def test_show_pending_prints_markdown_preview(self, tmp_path, capsys):
+        from src.lib.cli import cmd_resume
+        self._setup_session_with_question(tmp_path)
+        rc = cmd_resume(argparse.Namespace(
+            project_path=str(tmp_path), answer_file=None, verbose=False,
+        ))
+        assert rc == 0
+        out = capsys.readouterr().out
+        assert "TestBoost needs input" in out
+        assert "missing_business_context" in out
+
+    def test_dispatches_to_generate_with_answer(self, tmp_path):
+        """Resume with --answer-file should dispatch to cmd_generate."""
+        from unittest.mock import patch
+
+        from src.lib.cli import cmd_resume
+        self._setup_session_with_question(tmp_path)
+        # We don't need a real answer file here — just verify dispatch
+        called_args = {}
+        def fake_gen(args):
+            called_args["project_path"] = args.project_path
+            called_args["answer_file"] = args.answer_file
+            return 0
+        with patch("src.lib.cli.cmd_generate", side_effect=fake_gen):
+            rc = cmd_resume(argparse.Namespace(
+                project_path=str(tmp_path),
+                answer_file="/tmp/some-answer.json",
+                verbose=False,
+            ))
+        assert rc == 0
+        assert called_args["project_path"] == str(tmp_path)
+        assert called_args["answer_file"] == "/tmp/some-answer.json"
+
+
+class TestSignAnswerCommand:
+    def test_signs_to_stdout(self, tmp_path, capsys):
+        from src.lib.cli import cmd_sign_answer
+        from src.lib.integrity import sign_question
+
+        cmd_init(argparse.Namespace(project_path=str(tmp_path), name=None, description="", tech="java-spring"))
+        q = sign_question({"k": "v"}, str(tmp_path))
+        qfile = tmp_path / "q.json"
+        qfile.write_text(json.dumps(q))
+        afile = tmp_path / "raw_a.json"
+        afile.write_text(json.dumps({"test_requirements": [{"s": 1}]}))
+
+        capsys.readouterr()  # drain noise from cmd_init
+        rc = cmd_sign_answer(argparse.Namespace(
+            project_path=str(tmp_path),
+            question_file=str(qfile),
+            answer_file=str(afile),
+            output=None,
+        ))
+        assert rc == 0
+        out = capsys.readouterr().out
+        signed = json.loads(out)
+        assert signed["question_id"] == q["question_id"]
+        assert "signature" in signed
+        assert signed["test_requirements"] == [{"s": 1}]
+
+    def test_writes_to_output_file(self, tmp_path):
+        from src.lib.cli import cmd_sign_answer
+        from src.lib.integrity import sign_question
+
+        cmd_init(argparse.Namespace(project_path=str(tmp_path), name=None, description="", tech="java-spring"))
+        q = sign_question({"k": "v"}, str(tmp_path))
+        qfile = tmp_path / "q.json"
+        qfile.write_text(json.dumps(q))
+        afile = tmp_path / "raw_a.json"
+        afile.write_text(json.dumps({"x": 1}))
+        out = tmp_path / "signed.json"
+
+        rc = cmd_sign_answer(argparse.Namespace(
+            project_path=str(tmp_path),
+            question_file=str(qfile),
+            answer_file=str(afile),
+            output=str(out),
+        ))
+        assert rc == 0
+        signed = json.loads(out.read_text())
+        assert signed["question_id"] == q["question_id"]
+
+    def test_rejects_missing_files(self, tmp_path, capsys):
+        from src.lib.cli import cmd_sign_answer
+        rc = cmd_sign_answer(argparse.Namespace(
+            project_path=str(tmp_path),
+            question_file=str(tmp_path / "nope.json"),
+            answer_file=str(tmp_path / "nope2.json"),
+            output=None,
+        ))
+        assert rc == 1
+        assert "not found" in capsys.readouterr().err
+
+
+class TestPerFileCursorE2E:
+    """P1.A — pause on file N, resume must skip files < N."""
+
+    async def _setup_gaps_3_files(self, project_path):
+        """Generate a 3-file gap list."""
+        from src.lib.cli import _cmd_analyze_async, _cmd_gaps_async
+        mock_context = json.dumps({
+            "success": True, "project_type": "spring-boot", "build_system": "maven",
+            "java_version": "17", "frameworks": [], "test_frameworks": [],
+            "source_structure": {"class_count": 3, "packages": []},
+            "test_structure": {"test_count": 0}, "dependencies": [],
+        })
+        mock_files = [
+            "src/main/java/com/example/service/OrderService.java",
+            "src/main/java/com/example/web/UserController.java",
+            "src/main/java/com/example/service/PaymentService.java",
+        ]
+        args = argparse.Namespace(project_path=str(project_path), verbose=False)
+        with patch("src.lib.bridge.analyze_project_context", new_callable=AsyncMock, return_value=mock_context), \
+             patch("src.lib.bridge.detect_test_conventions", new_callable=AsyncMock, return_value=json.dumps({"success": False})), \
+             patch("src.lib.bridge.find_source_files", return_value=mock_files), \
+             patch("src.lib.bridge.build_class_index", return_value={}), \
+             patch("src.lib.bridge.extract_test_examples", return_value=[]):
+            await _cmd_analyze_async(args)
+        await _cmd_gaps_async(args)
+
+    def _gen_result(self, class_name="OrderService", pkg="com.example"):
+        return json.dumps({
+            "success": True,
+            "test_code": "package com.example;\nimport org.junit.jupiter.api.Test;\nclass T {\n  @Test void t() {}\n}",
+            "test_file": f"src/test/java/com/example/{class_name}Test.java",
+            "test_count": 1,
+            "context": {"class_name": class_name, "package": pkg},
+        })
+
+    @pytest.mark.asyncio
+    async def test_cursor_advances_per_file_success(self, initialized_project):
+        from src.lib.cli import _cmd_generate_async
+        from src.lib.session_tracker import load_generation_cursor
+        await self._setup_gaps_3_files(initialized_project)
+
+        gen_args = argparse.Namespace(
+            project_path=str(initialized_project),
+            verbose=False, files=None,
+            fail_on_uncertainty=False, answer_file=None,
+        )
+        mock_compile = MagicMock(returncode=0, stdout="", stderr="")
+        with patch("src.lib.startup_checks.check_llm_connection", new_callable=AsyncMock), \
+             patch("src.lib.bridge.analyze_edge_cases",
+                   new_callable=AsyncMock, return_value=[{"scenario": "x", "expected": "y"}]), \
+             patch("src.lib.bridge.generate_adaptive_tests",
+                   new_callable=AsyncMock, return_value=self._gen_result()), \
+             patch("subprocess.run", return_value=mock_compile):
+            rc = await _cmd_generate_async(gen_args)
+
+        assert rc == 0
+        # On full success, the cursor is cleared
+        session = get_current_session(str(initialized_project))
+        assert load_generation_cursor(session["session_dir"]) is None
+
+    @pytest.mark.asyncio
+    async def test_pause_persists_cursor_at_paused_file(self, initialized_project):
+        """P1.A first half: pause on file index 1 → cursor at 1, file 0 completed."""
+        from src.lib.cli import _cmd_generate_async
+        from src.lib.session_tracker import load_generation_cursor
+        await self._setup_gaps_3_files(initialized_project)
+
+        # Return edge_cases for files 0 and 2, empty for file 1
+        edge_calls = [
+            [{"scenario": "ok", "expected": "ok"}],  # file 0
+            [],                                       # file 1 -> pause
+            [{"scenario": "ok", "expected": "ok"}],  # file 2
+        ]
+        edge_iter = iter(edge_calls)
+
+        async def fake_edge(*a, **k):
+            try:
+                return next(edge_iter)
+            except StopIteration:
+                return []
+
+        gen_args = argparse.Namespace(
+            project_path=str(initialized_project),
+            verbose=False, files=None,
+            fail_on_uncertainty=True, answer_file=None,
+        )
+        mock_compile = MagicMock(returncode=0, stdout="", stderr="")
+        with patch("src.lib.startup_checks.check_llm_connection", new_callable=AsyncMock), \
+             patch("src.lib.bridge.analyze_edge_cases", new=AsyncMock(side_effect=fake_edge)), \
+             patch("src.lib.bridge.generate_adaptive_tests",
+                   new_callable=AsyncMock, return_value=self._gen_result()), \
+             patch("subprocess.run", return_value=mock_compile):
+            rc = await _cmd_generate_async(gen_args)
+
+        from src.lib.session_tracker import EXIT_AWAITING_INPUT
+        assert rc == EXIT_AWAITING_INPUT
+
+        session = get_current_session(str(initialized_project))
+        cursor = load_generation_cursor(session["session_dir"])
+        assert cursor is not None
+        assert cursor["current_index"] == 1
+        assert len(cursor["completed_files"]) == 1
+        assert "OrderService.java" in cursor["completed_files"][0]
+
+    @pytest.mark.asyncio
+    async def test_resume_skips_completed_files(self, initialized_project, tmp_path):
+        """P1.A second half: after pause at 1, resume must regenerate only files 1 and 2."""
+        from src.lib.cli import _cmd_generate_async
+        from src.lib.integrity import sign_answer
+        from src.lib.session_tracker import load_generation_cursor
+        await self._setup_gaps_3_files(initialized_project)
+
+        # First run: pause at index 1
+        edge_calls = [
+            [{"scenario": "ok", "expected": "ok"}],
+            [],
+            [{"scenario": "ok", "expected": "ok"}],
+        ]
+        edge_iter = iter(edge_calls)
+        async def fake_edge_1(*a, **k):
+            try:
+                return next(edge_iter)
+            except StopIteration:
+                return []
+
+        gen_args = argparse.Namespace(
+            project_path=str(initialized_project),
+            verbose=False, files=None,
+            fail_on_uncertainty=True, answer_file=None,
+        )
+        mock_compile = MagicMock(returncode=0, stdout="", stderr="")
+        with patch("src.lib.startup_checks.check_llm_connection", new_callable=AsyncMock), \
+             patch("src.lib.bridge.analyze_edge_cases", new=AsyncMock(side_effect=fake_edge_1)), \
+             patch("src.lib.bridge.generate_adaptive_tests",
+                   new_callable=AsyncMock, return_value=self._gen_result()), \
+             patch("subprocess.run", return_value=mock_compile):
+            await _cmd_generate_async(gen_args)
+
+        # Second run: build a signed answer for the pending question, resume
+        session = get_current_session(str(initialized_project))
+        session_dir = Path(session["session_dir"])
+        question = json.loads((session_dir / "question.json").read_text())
+
+        signed_answer = sign_answer(
+            {"test_requirements": [{"scenario": "from dev", "expected": "ok"}]},
+            question,
+            str(initialized_project),
+        )
+        answer = tmp_path / "answer.json"
+        answer.write_text(json.dumps(signed_answer))
+
+        gen_calls: list[str] = []
+        async def track_gen(**kwargs):
+            gen_calls.append(kwargs.get("source_file", ""))
+            return self._gen_result()
+
+        gen_args_2 = argparse.Namespace(
+            project_path=str(initialized_project),
+            verbose=False, files=None,
+            fail_on_uncertainty=True, answer_file=str(answer),
+        )
+        with patch("src.lib.startup_checks.check_llm_connection", new_callable=AsyncMock), \
+             patch("src.lib.bridge.analyze_edge_cases",
+                   new_callable=AsyncMock, return_value=[]), \
+             patch("src.lib.bridge.generate_adaptive_tests",
+                   new=AsyncMock(side_effect=track_gen)), \
+             patch("subprocess.run", return_value=mock_compile):
+            rc = await _cmd_generate_async(gen_args_2)
+
+        assert rc == 0
+        # generate_adaptive_tests must have been called only for files 1 and 2
+        assert len(gen_calls) == 2, f"expected 2 LLM calls (files 1,2), got {len(gen_calls)}"
+        assert all("OrderService" not in f for f in gen_calls), \
+            f"file 0 (OrderService) should have been skipped, got {gen_calls}"
+        # Cursor cleared on completion
+        assert load_generation_cursor(session_dir) is None
+
+    @pytest.mark.asyncio
+    async def test_resume_rejects_unsigned_answer(self, initialized_project, tmp_path, capsys):
+        """P1.B — unsigned answer must be rejected, no LLM call."""
+        from src.lib.cli import _cmd_generate_async
+        from src.lib.session_tracker import emit_question
+        await self._setup_gaps_3_files(initialized_project)
+
+        # Plant a pending question
+        session = get_current_session(str(initialized_project))
+        session_dir = Path(session["session_dir"])
+        emit_question(
+            session_dir, "generation",
+            {"kind": "missing_business_context", "question": "?"},
+            project_path=str(initialized_project),
+            session_id=session["session_id"],
+        )
+
+        # Unsigned answer
+        answer = tmp_path / "answer.json"
+        answer.write_text(json.dumps({"test_requirements": [{"scenario": "x"}]}))
+
+        gen_args = argparse.Namespace(
+            project_path=str(initialized_project),
+            verbose=False, files=None,
+            fail_on_uncertainty=False, answer_file=str(answer),
+        )
+        with patch("src.lib.startup_checks.check_llm_connection", new_callable=AsyncMock), \
+             patch("src.lib.bridge.generate_adaptive_tests",
+                   new_callable=AsyncMock) as mock_gen:
+            rc = await _cmd_generate_async(gen_args)
+
+        assert rc == 1
+        assert "signature" in capsys.readouterr().err.lower()
+        mock_gen.assert_not_called()

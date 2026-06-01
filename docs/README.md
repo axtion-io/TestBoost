@@ -10,6 +10,7 @@
 | [Configuration](./configuration.md) | Project settings (`config.yaml`) and environment variables |
 | [Session Format](./session-format.md) | Structure of `.testboost/` session files |
 | [Async CI Integration](./ci-async-integration.md) | Pause/resume pattern for GitLab/GitHub MR-comment bots (spike) |
+| [MVP Plan](./mvp-plan.md) | Roadmap to production-grade async CI integration (4 phases) |
 
 ## Technical Reference
 

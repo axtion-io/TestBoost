@@ -9,8 +9,8 @@
 |-------|------|--------|--------|-----------|
 | Spike | Prove pause/resume primitives | 2 j/h | ✅ done | 2026-06-01 |
 | 1 | Security & state foundations | 5 j/h | ✅ done | 2026-06-02 |
-| 2 | UX extension (hints, more triggers) | 5 j/h | ⏳ in progress | — |
-| 3 | Operability (cleanup, doctor, metrics) | 3 j/h | 🔒 blocked on P2 | — |
+| 2 | UX extension (hints, more triggers) | 5 j/h | ✅ done | 2026-06-02 |
+| 3 | Operability (cleanup, doctor, metrics) | 3 j/h | ⏳ in progress | — |
 | 4 | GitLab integration layer | 5 j/h | 🔒 blocked on P3 | — |
 | Cross-cutting | E2E tests, changelog, security review | 2 j/h | rolling | — |
 | Buffer | Reviews, integration bugs | 4-5 j/h | rolling | — |
@@ -257,6 +257,27 @@ at the file level.
   - P1.D ✅ `test_show_pending_prints_markdown_preview` covers show-pending mode
 - **Tests**: 28 new (12 cursor/integrity primitives + 11 CLI E2E + 5 spike
   tests updated to use signed flow). Total 290 unit tests, lint clean.
-### Phase 2 — TBD
+### Phase 2 — 2026-06-02
+
+- **Hints mode** (2.1): when `compile_fixes.<class>.hints` is provided,
+  `_attempt_compile_fix` caps to a single LLM retry with the hint
+  prepended to the error context (acceptance P2.A).
+- **Validate pause** (2.2): added `--fail-on-uncertainty` and
+  `--answer-file` to `validate`. On runtime test failure, emits a
+  `tests_failed_at_runtime` question with the failing test classes and
+  trimmed stack trace, status `awaiting_input` (acceptance P2.B).
+  `validate_fixes` from the answer payload are written to disk before
+  re-running.
+- **Killer pause** (2.3): minimal wiring — pauses when the LLM yields
+  0 killer tests for surviving mutants. Answer accepts `killer_hints`
+  for future iterations (full retry loop with hint injection is a
+  Phase 3+ refinement).
+- **Markdown preview** (2.4): the `question_id` is pre-allocated before
+  rendering so it's included in the MR-pasteable preview. Tampering the
+  preview after signing is detected (snapshot tested).
+- **Tests**: 12 new (2 hints + 2 markdown + 3 validate + 3 helper + 2
+  killer). Total 302 unit tests pass, lint clean.
+- **Acceptance criteria met**: P2.A ✅, P2.B ✅, P2.C ✅ (partial — minimal
+  wiring), P2.D ✅.
 ### Phase 3 — TBD
 ### Phase 4 — TBD

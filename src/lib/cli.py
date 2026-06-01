@@ -741,14 +741,18 @@ async def _cmd_generate_async(args: argparse.Namespace) -> int:
                     test_path = result.get("test_file", "")
                     cls = result.get("context", {}).get("class_name", "") or class_name
 
-                    # Developer-provided fix overrides LLM output before compile-fix
+                    # Developer-provided fix (fixed_code wins over hints if both)
                     dev_fix = (
                         compile_fixes.get(cls)
                         if isinstance(compile_fixes, dict) else None
                     )
-                    if dev_fix and isinstance(dev_fix, dict) and "fixed_code" in dev_fix:
-                        test_code = dev_fix["fixed_code"]
-                        logger.info(f"Applied developer-provided fixed_code for {cls}")
+                    dev_hints: list[str] | None = None
+                    if isinstance(dev_fix, dict):
+                        if "fixed_code" in dev_fix:
+                            test_code = dev_fix["fixed_code"]
+                            logger.info(f"Applied developer-provided fixed_code for {cls}")
+                        elif "hints" in dev_fix and isinstance(dev_fix["hints"], list):
+                            dev_hints = [str(h) for h in dev_fix["hints"]]
 
                     full_path = Path(project_path) / test_path
                     full_path.parent.mkdir(parents=True, exist_ok=True)
@@ -761,6 +765,7 @@ async def _cmd_generate_async(args: argparse.Namespace) -> int:
                         cls, logger, session_dir, maven_compile_cmd,
                         fail_on_uncertainty=fail_on_uncertainty,
                         session_id=session["session_id"],
+                        hints=dev_hints,
                     )
                     if fixed != test_code:
                         test_code = fixed
@@ -849,6 +854,17 @@ async def _cmd_generate_async(args: argparse.Namespace) -> int:
 _MAX_COMPILE_FIX_ATTEMPTS = 3
 
 
+def _guess_failing_class(line: str) -> str | None:
+    """Best-effort extraction of a test class name from a JUnit/Maven failure line.
+
+    Handles patterns like 'OrderServiceTest.someMethod', 'FAILED ... OrderServiceTest',
+    and 'at com.example.OrderServiceTest.someMethod(...)'. Returns None if no
+    Test/Tests suffix is recognised.
+    """
+    m = re.search(r"([A-Z][A-Za-z0-9_]*Tests?)\b", line)
+    return m.group(1) if m else None
+
+
 async def _attempt_compile_fix(
     project_path: str,
     test_file: Path,
@@ -859,6 +875,7 @@ async def _attempt_compile_fix(
     maven_compile_cmd: str | None = None,
     fail_on_uncertainty: bool = False,
     session_id: str | None = None,
+    hints: list[str] | None = None,
 ) -> str:
     """Run mvn test-compile and use LLM to fix compilation errors, retrying up to N times.
 
@@ -881,7 +898,12 @@ async def _attempt_compile_fix(
 
     current_code = test_code
 
-    for attempt in range(1, _MAX_COMPILE_FIX_ATTEMPTS + 1):
+    # When the developer provides natural-language hints, cap to a single
+    # LLM retry so we don't burn budget on hint-guided iterations.
+    max_attempts = 2 if hints else _MAX_COMPILE_FIX_ATTEMPTS
+    hint_text = "\n".join(f"- {h}" for h in hints) if hints else ""
+
+    for attempt in range(1, max_attempts + 1):
         # --- compile ---
         try:
             result = subprocess.run(cmd, cwd=project_path, capture_output=True, text=True, timeout=120)
@@ -911,11 +933,11 @@ async def _attempt_compile_fix(
         # Log compilation errors at INFO so they appear in generation.md
         logger.info(
             f"Compilation errors in {class_name} "
-            f"(attempt {attempt}/{_MAX_COMPILE_FIX_ATTEMPTS}):\n"
+            f"(attempt {attempt}/{max_attempts}):\n"
             + "\n".join(file_error_lines[:15])
         )
 
-        if attempt == _MAX_COMPILE_FIX_ATTEMPTS:
+        if attempt == max_attempts:
             if fail_on_uncertainty and session_dir:
                 qpath = emit_question(
                     session_dir,
@@ -951,7 +973,14 @@ async def _attempt_compile_fix(
         # --- ask LLM to fix ---
         try:
             from src.lib.bridge import fix_compilation_errors
-            fixed = await fix_compilation_errors(current_code, relevant_errors, class_name)
+            errors_with_hints = relevant_errors
+            if hint_text:
+                errors_with_hints = (
+                    f"{relevant_errors}\n\n"
+                    f"Developer hints (please follow):\n{hint_text}"
+                )
+                logger.info(f"Applying {len(hints)} developer hint(s) to LLM fix")
+            fixed = await fix_compilation_errors(current_code, errors_with_hints, class_name)
             if fixed == current_code:
                 logger.info(f"LLM returned identical code for {class_name} — stopping retries")
                 return current_code
@@ -971,11 +1000,16 @@ def cmd_validate(args: argparse.Namespace) -> int:
 
 
 async def _cmd_validate_async(args: argparse.Namespace) -> int:
+    from src.lib.integrity import ExpiredQuestionError, SignatureError
     from src.lib.md_logger import MdLogger
     from src.lib.session_tracker import (
+        EXIT_AWAITING_INPUT,
         STATUS_COMPLETED,
         STATUS_FAILED,
         STATUS_IN_PROGRESS,
+        AwaitingInputError,
+        consume_answer,
+        emit_question,
         get_current_session,
         update_step_file,
     )
@@ -997,6 +1031,33 @@ async def _cmd_validate_async(args: argparse.Namespace) -> int:
         return 1
 
     update_step_file(session_dir, "validation", STATUS_IN_PROGRESS, "# Validation\n\nCompiling and testing...")
+
+    # --- Human-in-the-loop: load answer file if provided ---
+    answer_payload: dict | None = None
+    answer_file = getattr(args, "answer_file", None)
+    if answer_file:
+        try:
+            answer_payload = consume_answer(
+                session_dir, answer_file, project_path=project_path
+            )
+            logger.info(f"Loaded and verified answer payload from {answer_file}")
+        except (FileNotFoundError, ValueError) as e:
+            logger.error(f"Cannot consume answer file: {e}")
+            return 1
+        except SignatureError as e:
+            logger.error(f"Answer signature invalid: {e}")
+            print(f"\nERROR: answer file rejected — {e}", file=sys.stderr)
+            return 1
+        except ExpiredQuestionError as e:
+            logger.error(f"Answer expired: {e}")
+            print(f"\nERROR: answer rejected — {e}", file=sys.stderr)
+            return 1
+
+    fail_on_uncertainty = bool(getattr(args, "fail_on_uncertainty", False))
+    validate_fixes = (
+        answer_payload.get("validate_fixes", {})
+        if isinstance(answer_payload, dict) else {}
+    )
 
     try:
         # Resolve plugin for this session's technology
@@ -1025,6 +1086,17 @@ async def _cmd_validate_async(args: argparse.Namespace) -> int:
         gen_content = gen_file.read_text(encoding="utf-8")
         generated_files = _extract_json_field(gen_content, "generated") or []
         test_file_paths = [g["path"] for g in generated_files if g.get("path")]
+
+        # Apply developer-provided test fixes from the answer payload
+        if isinstance(validate_fixes, dict) and validate_fixes:
+            for g in generated_files:
+                cls = g.get("class_name") or Path(g.get("path", "")).stem
+                fix = validate_fixes.get(cls)
+                if isinstance(fix, dict) and "fixed_code" in fix:
+                    target = Path(project_path) / g["path"]
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    target.write_text(fix["fixed_code"], encoding="utf-8")
+                    logger.info(f"Applied developer-provided validate fix for {cls}")
 
         # Helper: substitute {test_file} placeholder or run as-is
         def _expand_cmd(cmd_tpl: list[str], test_file: str) -> list[str]:
@@ -1142,6 +1214,42 @@ async def _cmd_validate_async(args: argparse.Namespace) -> int:
             content += f"```\n{test_output[-3000:]}\n```\n"
 
             logger.error("Some tests failed")
+
+            # --- HITL trigger: pause if asked, instead of marking failed ---
+            if fail_on_uncertainty:
+                failing_classes = sorted({
+                    _guess_failing_class(ln) for ln in failure_lines
+                    if _guess_failing_class(ln)
+                })
+                stack_trace = "\n".join(failure_lines[-30:])
+                qpath = emit_question(
+                    session_dir,
+                    "validation",
+                    {
+                        "kind": "tests_failed_at_runtime",
+                        "subject": {
+                            "failing_classes": failing_classes,
+                            "command": " ".join(test_run_cmd_tpl),
+                        },
+                        "question": (
+                            f"{len(failing_classes) or '?'} test class(es) failed at runtime. "
+                            f"Review the stack trace and provide fixed code or hints."
+                        ),
+                        "stack_trace": stack_trace,
+                        "answer_schema": {
+                            "validate_fixes": {
+                                "<TestClassName>": {
+                                    "fixed_code": "string (full test file content)",
+                                    "hints": ["natural-language hint for the LLM"],
+                                }
+                            }
+                        },
+                    },
+                    project_path=project_path,
+                    session_id=session["session_id"],
+                )
+                raise AwaitingInputError(qpath, "validation")
+
             status = STATUS_FAILED
 
         update_step_file(
@@ -1160,6 +1268,10 @@ async def _cmd_validate_async(args: argparse.Namespace) -> int:
             emit_token(project_path, "validation", session["session_id"])
         return 0 if test_returncode == 0 else 1
 
+    except AwaitingInputError as wait:
+        logger.info(f"Validation paused — awaiting human input ({wait.question_path})")
+        print(f"[TESTBOOST_AWAITING_INPUT:step=validation:question={wait.question_path}]")
+        return EXIT_AWAITING_INPUT
     except subprocess.TimeoutExpired:
         logger.error(f"Maven timed out after {test_timeout}s")
         update_step_file(
@@ -1352,11 +1464,16 @@ def cmd_killer(args: argparse.Namespace) -> int:
 
 
 async def _cmd_killer_async(args: argparse.Namespace) -> int:
+    from src.lib.integrity import ExpiredQuestionError, SignatureError
     from src.lib.md_logger import MdLogger
     from src.lib.session_tracker import (
+        EXIT_AWAITING_INPUT,
         STATUS_COMPLETED,
         STATUS_FAILED,
         STATUS_IN_PROGRESS,
+        AwaitingInputError,
+        consume_answer,
+        emit_question,
         get_current_session,
         update_step_file,
     )
@@ -1370,6 +1487,33 @@ async def _cmd_killer_async(args: argparse.Namespace) -> int:
 
     session_dir = session["session_dir"]
     logger = MdLogger(session_dir, "killer-tests", verbose=getattr(args, "verbose", False))
+
+    # --- HITL: load and verify answer file if provided ---
+    answer_payload: dict | None = None
+    answer_file = getattr(args, "answer_file", None)
+    if answer_file:
+        try:
+            answer_payload = consume_answer(
+                session_dir, answer_file, project_path=project_path
+            )
+            logger.info(f"Loaded and verified answer payload from {answer_file}")
+        except (FileNotFoundError, ValueError) as e:
+            logger.error(f"Cannot consume answer file: {e}")
+            return 1
+        except SignatureError as e:
+            logger.error(f"Answer signature invalid: {e}")
+            print(f"\nERROR: answer file rejected — {e}", file=sys.stderr)
+            return 1
+        except ExpiredQuestionError as e:
+            logger.error(f"Answer expired: {e}")
+            print(f"\nERROR: answer rejected — {e}", file=sys.stderr)
+            return 1
+
+    fail_on_uncertainty = bool(getattr(args, "fail_on_uncertainty", False))
+    killer_hints = (
+        answer_payload.get("killer_hints", {})
+        if isinstance(answer_payload, dict) else {}
+    )
 
     # Check prerequisites: mutation step must have passed
     mutation_file = Path(session_dir) / "mutation.md"
@@ -1447,6 +1591,33 @@ async def _cmd_killer_async(args: argparse.Namespace) -> int:
 
         generated_tests = result.get("generated_tests", [])
 
+        # --- HITL trigger: no killer tests produced + flag on → pause ---
+        if not generated_tests and fail_on_uncertainty and not killer_hints:
+            top_survivors = surviving_mutants[:10]
+            qpath = emit_question(
+                session_dir, "killer-tests",
+                {
+                    "kind": "killer_generation_yielded_nothing",
+                    "subject": {
+                        "surviving_mutant_count": len(surviving_mutants),
+                        "top_survivors": top_survivors,
+                    },
+                    "question": (
+                        f"Killer-test generation produced 0 tests for "
+                        f"{len(surviving_mutants)} surviving mutants. "
+                        f"Provide hints about what these mutants represent or how to kill them."
+                    ),
+                    "answer_schema": {
+                        "killer_hints": {
+                            "<ClassName.methodName>": "natural-language hint for the LLM"
+                        }
+                    },
+                },
+                project_path=project_path,
+                session_id=session["session_id"],
+            )
+            raise AwaitingInputError(qpath, "killer-tests")
+
         # Write killer test files
         content = "# Killer Test Generation Results\n\n"
         content += f"**Surviving mutants targeted**: {result.get('total_mutants_targeted', 0)}\n"
@@ -1515,6 +1686,10 @@ async def _cmd_killer_async(args: argparse.Namespace) -> int:
         emit_token(project_path, "killer-tests", session["session_id"])
         return 0
 
+    except AwaitingInputError as wait:
+        logger.info(f"Killer-tests paused — awaiting human input ({wait.question_path})")
+        print(f"[TESTBOOST_AWAITING_INPUT:step=killer-tests:question={wait.question_path}]")
+        return EXIT_AWAITING_INPUT
     except Exception as e:
         logger.error(f"Killer test generation failed: {e}")
         update_step_file(
@@ -1639,6 +1814,25 @@ def cmd_resume(args: argparse.Namespace) -> int:
             answer_file=answer_file,
         )
         return cmd_generate(gen_args)
+
+    if step == "validation":
+        val_args = argparse.Namespace(
+            project_path=project_path,
+            verbose=getattr(args, "verbose", False),
+            fail_on_uncertainty=True,
+            answer_file=answer_file,
+        )
+        return cmd_validate(val_args)
+
+    if step == "killer-tests":
+        k_args = argparse.Namespace(
+            project_path=project_path,
+            verbose=getattr(args, "verbose", False),
+            max_tests=10,
+            fail_on_uncertainty=True,
+            answer_file=answer_file,
+        )
+        return cmd_killer(k_args)
 
     print(f"Error: resume is not yet wired for step '{step}'.", file=sys.stderr)
     return 1
@@ -1831,6 +2025,14 @@ def main() -> int:
     p_val = subparsers.add_parser("validate", help="Compile and run tests")
     p_val.add_argument("project_path", help="Path to the Java project")
     p_val.add_argument("--verbose", "-v", action="store_true")
+    p_val.add_argument(
+        "--fail-on-uncertainty", action="store_true",
+        help="Pause with exit 78 and emit question.json when tests fail at runtime",
+    )
+    p_val.add_argument(
+        "--answer-file", type=str, default=None,
+        help="Signed JSON answer file (validate_fixes are applied before re-running)",
+    )
 
     # mutate
     p_mutate = subparsers.add_parser("mutate", help="Run mutation testing with PIT")
@@ -1845,6 +2047,14 @@ def main() -> int:
     p_killer.add_argument("project_path", help="Path to the Java project")
     p_killer.add_argument("--max-tests", type=int, default=10, help="Maximum killer tests to generate")
     p_killer.add_argument("--verbose", "-v", action="store_true")
+    p_killer.add_argument(
+        "--fail-on-uncertainty", action="store_true",
+        help="Pause with exit 78 when no killer tests can be generated",
+    )
+    p_killer.add_argument(
+        "--answer-file", type=str, default=None,
+        help="Signed JSON answer file (killer_hints injected into LLM context)",
+    )
 
     # verify
     p_verify = subparsers.add_parser("verify", help="Verify an integrity token")

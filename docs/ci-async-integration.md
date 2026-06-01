@@ -211,15 +211,45 @@ python -m testboost resume ./my-project --answer-file /tmp/signed_answer.json
 `resume` exits 0 if the answer is accepted, 1 on signature/TTL failure,
 or 2 if no question is pending.
 
+## Pause triggers — supported steps (Phase 2)
+
+The HITL pattern is now wired to three steps:
+
+| Step | `--fail-on-uncertainty` triggers a pause when… | Answer key |
+|------|-----------------------------------------------|-----------|
+| `generate` | edge_case analysis yields nothing for a source file | `test_requirements` |
+| `generate` | compile-fix exhausts its retry budget | `compile_fixes` |
+| `validate` | tests fail at runtime | `validate_fixes` |
+| `killer` | killer-test LLM call yields 0 tests | `killer_hints` |
+
+## Hints mode (Phase 2.1)
+
+For `compile_fixes`, the developer can choose between:
+
+- **`fixed_code`** — paste the full corrected test file
+- **`hints`** — write natural-language guidance (the LLM gets exactly **one**
+  more retry with the hints appended to the error context)
+
+If both are provided, `fixed_code` wins.
+
+```json
+{
+  "compile_fixes": {
+    "OrderServiceTest": {
+      "hints": [
+        "use Mockito.mock(...) instead of @Mock",
+        "the constructor expects an OrderRepository, not a UserRepository"
+      ]
+    }
+  }
+}
+```
+
+The same pattern applies to `validate_fixes.<class>.hints` and to
+`killer_hints` (natural-language per surviving mutant).
+
 ## What's *not* done (still open)
 
-These remain on the roadmap (see `docs/mvp-plan.md`):
-
-- **Hints (vs full `fixed_code`) for compile-fix.** Developers will more
-  often write natural-language hints than paste full Java in an MR
-  comment. (Phase 2)
-- **Pause triggers on `validate`, `mutate`, `killer`.** Today only
-  `generate` pauses. (Phase 2)
 - **Session TTL cleanup.** Abandoned `awaiting_input` sessions linger
   forever. (Phase 3)
 - **GitLab automation layer.** Scripts to post questions and harvest

@@ -1796,3 +1796,460 @@ class TestPerFileCursorE2E:
         assert rc == 1
         assert "signature" in capsys.readouterr().err.lower()
         mock_gen.assert_not_called()
+
+
+# ============================================================================
+# Phase 2 — Hints mode for compile-fix (2.1) + markdown_preview snapshot (2.4)
+# ============================================================================
+
+
+class TestHintsMode:
+    """P2.A — exactly one LLM retry with hint injected when answer has hints."""
+
+    async def _setup_gaps(self, project_path):
+        from src.lib.cli import _cmd_analyze_async, _cmd_gaps_async
+        mock_context = json.dumps({
+            "success": True, "project_type": "spring-boot", "build_system": "maven",
+            "java_version": "17", "frameworks": [], "test_frameworks": [],
+            "source_structure": {"class_count": 1, "packages": []},
+            "test_structure": {"test_count": 0}, "dependencies": [],
+        })
+        mock_files = ["src/main/java/com/example/service/OrderService.java"]
+        args = argparse.Namespace(project_path=str(project_path), verbose=False)
+        with patch("src.lib.bridge.analyze_project_context", new_callable=AsyncMock, return_value=mock_context), \
+             patch("src.lib.bridge.detect_test_conventions", new_callable=AsyncMock, return_value=json.dumps({"success": False})), \
+             patch("src.lib.bridge.find_source_files", return_value=mock_files), \
+             patch("src.lib.bridge.build_class_index", return_value={}), \
+             patch("src.lib.bridge.extract_test_examples", return_value=[]):
+            await _cmd_analyze_async(args)
+        await _cmd_gaps_async(args)
+
+    def _gen_result(self):
+        return json.dumps({
+            "success": True,
+            "test_code": "package c;\nimport org.junit.jupiter.api.Test;\nclass T {\n  @Test void t() {}\n}",
+            "test_file": "src/test/java/com/example/OrderServiceTest.java",
+            "test_count": 1,
+            "context": {"class_name": "OrderService", "package": "c"},
+        })
+
+    @pytest.mark.asyncio
+    async def test_hint_is_injected_into_llm_fix(self, initialized_project, tmp_path):
+        """When answer has hints, fix_compilation_errors is called with hint in errors."""
+        from src.lib.cli import _cmd_generate_async
+        from src.lib.integrity import sign_answer
+        from src.lib.session_tracker import emit_question
+        await self._setup_gaps(initialized_project)
+
+        session = get_current_session(str(initialized_project))
+        emit_question(
+            str(Path(session["session_dir"])), "generation",
+            {"kind": "compilation_fix_exhausted", "question": "?"},
+            project_path=str(initialized_project),
+            session_id=session["session_id"],
+        )
+        question = json.loads((Path(session["session_dir"]) / "question.json").read_text())
+
+        signed = sign_answer(
+            {"compile_fixes": {"OrderService": {"hints": ["use Mockito.mock instead of @Mock"]}}},
+            question,
+            str(initialized_project),
+        )
+        answer = tmp_path / "answer.json"
+        answer.write_text(json.dumps(signed))
+
+        # Compile fails first time, succeeds after LLM fix
+        compile_responses = [
+            MagicMock(returncode=1, stdout="",
+                      stderr="[ERROR] OrderServiceTest.java:[5,12] cannot find symbol\n"),
+            MagicMock(returncode=0, stdout="", stderr=""),
+        ]
+        compile_iter = iter(compile_responses)
+
+        def fake_compile(*a, **k):
+            return next(compile_iter)
+
+        fix_calls: list[tuple] = []
+        async def fake_fix(code, errors, class_name):
+            fix_calls.append((code, errors, class_name))
+            return code + "\n// fixed by hint"
+
+        gen_args = argparse.Namespace(
+            project_path=str(initialized_project),
+            verbose=False, files=None,
+            fail_on_uncertainty=True, answer_file=str(answer),
+        )
+        with patch("src.lib.startup_checks.check_llm_connection", new_callable=AsyncMock), \
+             patch("src.lib.bridge.analyze_edge_cases",
+                   new_callable=AsyncMock, return_value=[{"scenario": "x", "expected": "y"}]), \
+             patch("src.lib.bridge.generate_adaptive_tests",
+                   new_callable=AsyncMock, return_value=self._gen_result()), \
+             patch("src.lib.bridge.fix_compilation_errors", new=AsyncMock(side_effect=fake_fix)), \
+             patch("subprocess.run", side_effect=fake_compile):
+            rc = await _cmd_generate_async(gen_args)
+
+        assert rc == 0
+        # Exactly ONE LLM fix call, and it contained the hint
+        assert len(fix_calls) == 1, f"expected 1 LLM fix call, got {len(fix_calls)}"
+        _, errors_passed, _ = fix_calls[0]
+        assert "use Mockito.mock" in errors_passed
+        assert "Developer hints" in errors_passed
+
+    @pytest.mark.asyncio
+    async def test_fixed_code_wins_over_hints(self, initialized_project, tmp_path):
+        """If both fixed_code and hints are provided, fixed_code wins; no LLM fix needed."""
+        from src.lib.cli import _cmd_generate_async
+        from src.lib.integrity import sign_answer
+        from src.lib.session_tracker import emit_question
+        await self._setup_gaps(initialized_project)
+
+        session = get_current_session(str(initialized_project))
+        emit_question(
+            str(Path(session["session_dir"])), "generation",
+            {"kind": "compilation_fix_exhausted", "question": "?"},
+            project_path=str(initialized_project),
+            session_id=session["session_id"],
+        )
+        question = json.loads((Path(session["session_dir"]) / "question.json").read_text())
+
+        signed = sign_answer(
+            {"compile_fixes": {"OrderService": {
+                "fixed_code": "package c;\nimport org.junit.jupiter.api.Test;\nclass OrderServiceTest {\n  @Test void winner() {}\n}",
+                "hints": ["this hint should be ignored"],
+            }}},
+            question,
+            str(initialized_project),
+        )
+        answer = tmp_path / "answer.json"
+        answer.write_text(json.dumps(signed))
+
+        mock_compile = MagicMock(returncode=0, stdout="", stderr="")
+        fix_mock = AsyncMock(return_value="never-called")
+        gen_args = argparse.Namespace(
+            project_path=str(initialized_project),
+            verbose=False, files=None,
+            fail_on_uncertainty=True, answer_file=str(answer),
+        )
+        with patch("src.lib.startup_checks.check_llm_connection", new_callable=AsyncMock), \
+             patch("src.lib.bridge.analyze_edge_cases",
+                   new_callable=AsyncMock, return_value=[{"scenario": "x", "expected": "y"}]), \
+             patch("src.lib.bridge.generate_adaptive_tests",
+                   new_callable=AsyncMock, return_value=self._gen_result()), \
+             patch("src.lib.bridge.fix_compilation_errors", new=fix_mock), \
+             patch("subprocess.run", return_value=mock_compile):
+            rc = await _cmd_generate_async(gen_args)
+
+        assert rc == 0
+        # No LLM fix call: fixed_code was applied directly and compiled clean
+        fix_mock.assert_not_called()
+        # On-disk file contains the winner code
+        test_file = (initialized_project / "src" / "test" / "java" / "com" / "example"
+                     / "OrderServiceTest.java")
+        assert "winner" in test_file.read_text()
+
+
+class TestMarkdownPreview:
+    """P2.D — question.json must carry an MR-ready markdown_preview."""
+
+    def test_emit_question_includes_preview(self, tmp_path):
+        from src.lib.session_tracker import create_session, emit_question, init_project
+        init_project(str(tmp_path))
+        session = create_session(str(tmp_path), name="prev")
+        emit_question(
+            session["session_dir"],
+            "generation",
+            {
+                "kind": "missing_business_context",
+                "subject": {"class_name": "Foo"},
+                "question": "Provide the rules.",
+                "answer_schema": {"test_requirements": []},
+            },
+            project_path=str(tmp_path),
+            session_id=session["session_id"],
+        )
+        payload = json.loads(
+            (Path(session["session_dir"]) / "question.json").read_text()
+        )
+        preview = payload["markdown_preview"]
+        # Heading present
+        assert "TestBoost needs input" in preview
+        assert "missing_business_context" in preview
+        # Question text present
+        assert "Provide the rules" in preview
+        # Subject section present and JSON-fenced
+        assert "**Subject**" in preview
+        assert '"class_name": "Foo"' in preview
+        # Answer schema section present
+        assert "Reply with this shape" in preview
+        # Question ID present
+        assert payload["question_id"] in preview
+
+    def test_preview_is_part_of_signed_content(self, tmp_path):
+        """The markdown_preview field must be covered by the HMAC so tampering is detected."""
+        from src.lib.integrity import verify_question
+        from src.lib.session_tracker import create_session, emit_question, init_project
+        init_project(str(tmp_path))
+        session = create_session(str(tmp_path), name="prev-sign")
+        emit_question(
+            session["session_dir"],
+            "generation",
+            {"kind": "x", "question": "?"},
+            project_path=str(tmp_path),
+            session_id=session["session_id"],
+        )
+        payload = json.loads(
+            (Path(session["session_dir"]) / "question.json").read_text()
+        )
+        assert verify_question(payload, str(tmp_path)) is True
+        # Tamper the preview only
+        payload["markdown_preview"] = "evil"
+        assert verify_question(payload, str(tmp_path)) is False
+
+
+# ============================================================================
+# Phase 2 — Validate pause + resume (2.2)
+# ============================================================================
+
+
+class TestValidatePause:
+    """P2.B — validate pauses on runtime test failure with stack trace in question."""
+
+    def _prepare_generation(self, project_path):
+        from src.lib.session_tracker import update_step_file
+        session = get_current_session(str(project_path))
+        update_step_file(
+            session["session_dir"], "generation", STATUS_COMPLETED,
+            "# Generation\n\nDone.",
+            data={"generated": [{
+                "path": "src/test/java/com/example/OrderServiceTest.java",
+                "class_name": "OrderServiceTest",
+            }]},
+        )
+        return session
+
+    @pytest.mark.asyncio
+    async def test_pauses_on_runtime_failure_with_stack_trace(self, initialized_project):
+        from src.lib.cli import _cmd_validate_async
+        from src.lib.session_tracker import (
+            EXIT_AWAITING_INPUT,
+            STATUS_AWAITING_INPUT,
+            _parse_frontmatter,
+        )
+        session = self._prepare_generation(initialized_project)
+
+        # Compile passes, test run fails
+        mock_compile = MagicMock(returncode=0, stdout="BUILD SUCCESS", stderr="")
+        mock_test = MagicMock(
+            returncode=1,
+            stdout=(
+                "[INFO] Tests run: 3, Failures: 1, Errors: 0\n"
+                "[ERROR] OrderServiceTest.testOrderTotal:42 expected:<100> but was:<99>\n"
+                "FAILED: OrderServiceTest.testOrderTotal\n"
+            ),
+            stderr="",
+        )
+
+        args = argparse.Namespace(
+            project_path=str(initialized_project), verbose=False,
+            fail_on_uncertainty=True, answer_file=None,
+        )
+        with patch("subprocess.run", side_effect=[mock_compile, mock_test]):
+            rc = await _cmd_validate_async(args)
+
+        assert rc == EXIT_AWAITING_INPUT
+
+        session_dir = Path(session["session_dir"])
+        qpath = session_dir / "question.json"
+        assert qpath.exists()
+        payload = json.loads(qpath.read_text())
+        assert payload["kind"] == "tests_failed_at_runtime"
+        assert "OrderServiceTest" in payload["subject"]["failing_classes"]
+        # Stack trace included but bounded
+        assert "expected:<100>" in payload["stack_trace"]
+        # The validation step status is awaiting_input, not failed
+        fm = _parse_frontmatter((session_dir / "validation.md").read_text())
+        assert fm["status"] == STATUS_AWAITING_INPUT
+
+    @pytest.mark.asyncio
+    async def test_no_pause_when_flag_off(self, initialized_project):
+        """Regression guard: existing behaviour preserved when flag is off."""
+        from src.lib.cli import _cmd_validate_async
+        from src.lib.session_tracker import STATUS_FAILED, _parse_frontmatter
+        session = self._prepare_generation(initialized_project)
+
+        mock_compile = MagicMock(returncode=0, stdout="BUILD SUCCESS", stderr="")
+        mock_test = MagicMock(
+            returncode=1,
+            stdout="[INFO] Tests run: 1, Failures: 1\nFAILED: Foo.bar\n", stderr="",
+        )
+
+        args = argparse.Namespace(
+            project_path=str(initialized_project), verbose=False,
+            fail_on_uncertainty=False, answer_file=None,
+        )
+        with patch("subprocess.run", side_effect=[mock_compile, mock_test]):
+            rc = await _cmd_validate_async(args)
+
+        assert rc == 1
+        session_dir = Path(session["session_dir"])
+        assert not (session_dir / "question.json").exists()
+        fm = _parse_frontmatter((session_dir / "validation.md").read_text())
+        assert fm["status"] == STATUS_FAILED
+
+    @pytest.mark.asyncio
+    async def test_resume_applies_validate_fixes(self, initialized_project, tmp_path):
+        """Developer-provided fixed_code is written before re-running tests."""
+        from src.lib.cli import _cmd_validate_async
+        from src.lib.integrity import sign_answer
+        from src.lib.session_tracker import emit_question
+        session = self._prepare_generation(initialized_project)
+        session_dir = Path(session["session_dir"])
+
+        emit_question(
+            str(session_dir), "validation",
+            {"kind": "tests_failed_at_runtime", "question": "fix"},
+            project_path=str(initialized_project),
+            session_id=session["session_id"],
+        )
+        question = json.loads((session_dir / "question.json").read_text())
+
+        fixed = (
+            "package com.example;\n"
+            "import org.junit.jupiter.api.Test;\n"
+            "class OrderServiceTest {\n"
+            "  @Test void developer_test() {}\n"
+            "}\n"
+        )
+        signed = sign_answer(
+            {"validate_fixes": {"OrderServiceTest": {"fixed_code": fixed}}},
+            question,
+            str(initialized_project),
+        )
+        answer = tmp_path / "answer.json"
+        answer.write_text(json.dumps(signed))
+
+        # Compile + test both pass on the second attempt
+        mock_compile = MagicMock(returncode=0, stdout="BUILD SUCCESS", stderr="")
+        mock_test = MagicMock(returncode=0, stdout="Tests run: 1, Failures: 0", stderr="")
+
+        args = argparse.Namespace(
+            project_path=str(initialized_project), verbose=False,
+            fail_on_uncertainty=True, answer_file=str(answer),
+        )
+        with patch("subprocess.run", side_effect=[mock_compile, mock_test]):
+            rc = await _cmd_validate_async(args)
+
+        assert rc == 0
+        test_file = (initialized_project / "src" / "test" / "java" / "com" / "example"
+                     / "OrderServiceTest.java")
+        assert test_file.exists()
+        assert "developer_test" in test_file.read_text()
+
+
+class TestGuessFailingClass:
+    def test_extracts_test_class_from_failure_line(self):
+        from src.lib.cli import _guess_failing_class
+        assert _guess_failing_class(
+            "[ERROR] OrderServiceTest.testFoo:42 expected:<1>"
+        ) == "OrderServiceTest"
+
+    def test_extracts_from_at_stack_frame(self):
+        from src.lib.cli import _guess_failing_class
+        assert _guess_failing_class(
+            "  at com.example.UserControllerTests.doStuff(UserControllerTests.java:99)"
+        ) == "UserControllerTests"
+
+    def test_returns_none_when_no_match(self):
+        from src.lib.cli import _guess_failing_class
+        assert _guess_failing_class("nothing relevant here") is None
+
+
+# ============================================================================
+# Phase 2 — Killer pause (2.3, minimal wiring)
+# ============================================================================
+
+
+class TestKillerPause:
+    """P2.C — killer pauses when no killer tests are generated."""
+
+    def _prepare_mutation(self, project_path, surviving=None):
+        from src.lib.session_tracker import update_step_file
+        if surviving is None:
+            surviving = [
+                {
+                    "class": "com.example.OrderService",
+                    "method": "calculateTotal",
+                    "mutator": "MATH",
+                    "line": 42,
+                    "description": "Replaced + with -",
+                },
+            ]
+        session = get_current_session(str(project_path))
+        update_step_file(
+            session["session_dir"], "mutation", STATUS_COMPLETED,
+            "# Mutation\n\nDone.",
+            data={"surviving_mutants": surviving},
+        )
+        return session
+
+    @pytest.mark.asyncio
+    async def test_pauses_when_no_killer_tests_generated(self, initialized_project):
+        from src.lib.cli import _cmd_killer_async
+        from src.lib.session_tracker import EXIT_AWAITING_INPUT
+        session = self._prepare_mutation(initialized_project)
+
+        # generate_killer_tests returns success with 0 tests
+        mock_result = json.dumps({
+            "success": True,
+            "generated_tests": [],
+            "total_mutants_targeted": 0,
+            "total_tests": 0,
+        })
+
+        args = argparse.Namespace(
+            project_path=str(initialized_project), verbose=False,
+            max_tests=10,
+            fail_on_uncertainty=True, answer_file=None,
+        )
+        with patch("src.lib.startup_checks.check_llm_connection", new_callable=AsyncMock), \
+             patch("src.lib.bridge.generate_killer_tests",
+                   new_callable=AsyncMock, return_value=mock_result):
+            rc = await _cmd_killer_async(args)
+
+        assert rc == EXIT_AWAITING_INPUT
+        session_dir = Path(session["session_dir"])
+        qpath = session_dir / "question.json"
+        assert qpath.exists()
+        payload = json.loads(qpath.read_text())
+        assert payload["kind"] == "killer_generation_yielded_nothing"
+        assert payload["subject"]["surviving_mutant_count"] == 1
+        # Question payload contains the top-priority survivor
+        assert payload["subject"]["top_survivors"][0]["class"] == "com.example.OrderService"
+
+    @pytest.mark.asyncio
+    async def test_no_pause_when_flag_off(self, initialized_project):
+        """Regression: existing behaviour preserved when flag off."""
+        from src.lib.cli import _cmd_killer_async
+        session = self._prepare_mutation(initialized_project)
+
+        mock_result = json.dumps({
+            "success": True,
+            "generated_tests": [],
+            "total_mutants_targeted": 0,
+            "total_tests": 0,
+        })
+
+        args = argparse.Namespace(
+            project_path=str(initialized_project), verbose=False,
+            max_tests=10,
+            fail_on_uncertainty=False, answer_file=None,
+        )
+        with patch("src.lib.startup_checks.check_llm_connection", new_callable=AsyncMock), \
+             patch("src.lib.bridge.generate_killer_tests",
+                   new_callable=AsyncMock, return_value=mock_result):
+            rc = await _cmd_killer_async(args)
+
+        # Existing behaviour: status completed (or failed, depending on flow),
+        # but NO question.json
+        assert not (Path(session["session_dir"]) / "question.json").exists()
+        assert rc in (0, 1)

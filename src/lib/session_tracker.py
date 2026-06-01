@@ -391,11 +391,15 @@ def emit_question(
     session_path = Path(session_dir)
     question_path = session_path / QUESTION_FILENAME
 
+    import secrets
+
     enriched = dict(payload)
     enriched.setdefault("step", step_name)
     if session_id:
         enriched.setdefault("session_id", session_id)
     enriched.setdefault("created_at", _now_iso())
+    # Pre-allocate the question_id so it shows up in markdown_preview
+    enriched.setdefault("question_id", secrets.token_hex(16))
 
     # markdown_preview must be added BEFORE signing so it is included in
     # the HMAC and survives round-trip verification

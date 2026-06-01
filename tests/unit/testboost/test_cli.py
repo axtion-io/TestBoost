@@ -1234,3 +1234,191 @@ class TestCmdGenerateInterruption:
         # Question file must be cleared, consumed marker present
         assert not (session_dir / "question.json").exists()
         assert (session_dir / "answer.json.consumed").exists()
+
+
+# ============================================================================
+# cmd_generate — compile-fix interruption (spike continuation)
+# ============================================================================
+
+
+class TestCompileFixInterruption:
+    """Pause / resume around the compile-fix retry budget."""
+
+    async def _setup_gaps(self, project_path):
+        from src.lib.cli import _cmd_analyze_async, _cmd_gaps_async
+        mock_context = json.dumps({
+            "success": True, "project_type": "spring-boot", "build_system": "maven",
+            "java_version": "17", "frameworks": [], "test_frameworks": [],
+            "source_structure": {"class_count": 1, "packages": []},
+            "test_structure": {"test_count": 0}, "dependencies": [],
+        })
+        mock_files = ["src/main/java/com/example/service/OrderService.java"]
+        args = argparse.Namespace(project_path=str(project_path), verbose=False)
+        with patch("src.lib.bridge.analyze_project_context", new_callable=AsyncMock, return_value=mock_context), \
+             patch("src.lib.bridge.detect_test_conventions", new_callable=AsyncMock, return_value=json.dumps({"success": False})), \
+             patch("src.lib.bridge.find_source_files", return_value=mock_files), \
+             patch("src.lib.bridge.build_class_index", return_value={}), \
+             patch("src.lib.bridge.extract_test_examples", return_value=[]):
+            await _cmd_analyze_async(args)
+        await _cmd_gaps_async(args)
+
+    def _gen_result(self):
+        return json.dumps({
+            "success": True,
+            "test_code": "package com.example;\nimport org.junit.jupiter.api.Test;\nclass OrderServiceTest {\n  @Test\n  void t() {}\n}",
+            "test_file": "src/test/java/com/example/OrderServiceTest.java",
+            "test_count": 1,
+            "context": {"class_name": "OrderService", "package": "com.example"},
+        })
+
+    def _failing_compile(self):
+        # Compile always fails; stderr names the test file so the parser keeps it
+        return MagicMock(
+            returncode=1,
+            stdout="",
+            stderr="[ERROR] /tmp/OrderServiceTest.java:[5,12] cannot find symbol\n",
+        )
+
+    @pytest.mark.asyncio
+    async def test_pauses_when_compile_fix_exhausted(self, initialized_project):
+        """3 retries fail → fail_on_uncertainty=True → exit 78, question with compile errors."""
+        from src.lib.cli import _cmd_generate_async
+        from src.lib.session_tracker import (
+            EXIT_AWAITING_INPUT,
+            STATUS_AWAITING_INPUT,
+            _parse_frontmatter,
+        )
+        await self._setup_gaps(initialized_project)
+
+        gen_args = argparse.Namespace(
+            project_path=str(initialized_project),
+            verbose=False, files=None,
+            fail_on_uncertainty=True, answer_file=None,
+        )
+
+        # LLM fix returns a slightly different code each time so the
+        # "identical code → stop" guard doesn't short-circuit retries
+        fix_outputs = iter([
+            "package com.example;\n// fix 1\nclass OrderServiceTest {}",
+            "package com.example;\n// fix 2\nclass OrderServiceTest {}",
+        ])
+
+        async def fake_fix(code, errors, name):
+            try:
+                return next(fix_outputs)
+            except StopIteration:
+                return code + "\n// final"
+
+        with patch("src.lib.startup_checks.check_llm_connection", new_callable=AsyncMock), \
+             patch("src.lib.bridge.analyze_edge_cases",
+                   new_callable=AsyncMock, return_value=[{"scenario": "x", "expected": "y"}]), \
+             patch("src.lib.bridge.generate_adaptive_tests",
+                   new_callable=AsyncMock, return_value=self._gen_result()), \
+             patch("src.lib.bridge.fix_compilation_errors",
+                   new=AsyncMock(side_effect=fake_fix)), \
+             patch("subprocess.run", return_value=self._failing_compile()):
+            result = await _cmd_generate_async(gen_args)
+
+        assert result == EXIT_AWAITING_INPUT, f"expected exit 78, got {result}"
+
+        session = get_current_session(str(initialized_project))
+        session_dir = Path(session["session_dir"])
+        qpath = session_dir / "question.json"
+        assert qpath.exists()
+        payload = json.loads(qpath.read_text())
+        assert payload["kind"] == "compilation_fix_exhausted"
+        assert payload["subject"]["class_name"] == "OrderService"
+        assert payload["subject"]["attempts"] == 3
+        assert "cannot find symbol" in payload["compile_errors"]
+        assert "answer_schema" in payload
+
+        fm = _parse_frontmatter((session_dir / "generation.md").read_text())
+        assert fm["status"] == STATUS_AWAITING_INPUT
+
+    @pytest.mark.asyncio
+    async def test_silent_giveup_when_flag_off(self, initialized_project):
+        """fail_on_uncertainty=False → existing behaviour preserved (no pause, exit 0)."""
+        from src.lib.cli import _cmd_generate_async
+        from src.lib.session_tracker import STATUS_COMPLETED, _parse_frontmatter
+        await self._setup_gaps(initialized_project)
+
+        gen_args = argparse.Namespace(
+            project_path=str(initialized_project),
+            verbose=False, files=None,
+            fail_on_uncertainty=False, answer_file=None,
+        )
+
+        fix_outputs = iter([
+            "package com.example;\n// fix 1\nclass OrderServiceTest {}",
+            "package com.example;\n// fix 2\nclass OrderServiceTest {}",
+        ])
+
+        async def fake_fix(code, errors, name):
+            try:
+                return next(fix_outputs)
+            except StopIteration:
+                return code + "\n// final"
+
+        with patch("src.lib.startup_checks.check_llm_connection", new_callable=AsyncMock), \
+             patch("src.lib.bridge.analyze_edge_cases",
+                   new_callable=AsyncMock, return_value=[{"scenario": "x", "expected": "y"}]), \
+             patch("src.lib.bridge.generate_adaptive_tests",
+                   new_callable=AsyncMock, return_value=self._gen_result()), \
+             patch("src.lib.bridge.fix_compilation_errors",
+                   new=AsyncMock(side_effect=fake_fix)), \
+             patch("subprocess.run", return_value=self._failing_compile()):
+            result = await _cmd_generate_async(gen_args)
+
+        assert result == 0
+        session = get_current_session(str(initialized_project))
+        session_dir = Path(session["session_dir"])
+        assert not (session_dir / "question.json").exists()
+        fm = _parse_frontmatter((session_dir / "generation.md").read_text())
+        assert fm["status"] == STATUS_COMPLETED
+
+    @pytest.mark.asyncio
+    async def test_resume_applies_developer_fix(self, initialized_project, tmp_path):
+        """answer-file with compile_fixes[class].fixed_code → applied, compile passes, exit 0."""
+        from src.lib.cli import _cmd_generate_async
+        await self._setup_gaps(initialized_project)
+
+        dev_code = (
+            "package com.example;\n"
+            "import org.junit.jupiter.api.Test;\n"
+            "class OrderServiceTest {\n"
+            "  @Test\n"
+            "  void developer_fixed_test() {}\n"
+            "}\n"
+        )
+        answer = tmp_path / "answer.json"
+        answer.write_text(json.dumps({
+            "compile_fixes": {
+                "OrderService": {"fixed_code": dev_code}
+            }
+        }))
+
+        gen_args = argparse.Namespace(
+            project_path=str(initialized_project),
+            verbose=False, files=None,
+            fail_on_uncertainty=True, answer_file=str(answer),
+        )
+
+        # Compile passes immediately once dev's code is in place
+        mock_compile = MagicMock(returncode=0, stdout="", stderr="")
+        with patch("src.lib.startup_checks.check_llm_connection", new_callable=AsyncMock), \
+             patch("src.lib.bridge.analyze_edge_cases",
+                   new_callable=AsyncMock, return_value=[{"scenario": "x", "expected": "y"}]), \
+             patch("src.lib.bridge.generate_adaptive_tests",
+                   new_callable=AsyncMock, return_value=self._gen_result()), \
+             patch("subprocess.run", return_value=mock_compile):
+            result = await _cmd_generate_async(gen_args)
+
+        assert result == 0
+        # The on-disk file must contain the dev's code, not the LLM-generated one
+        test_file = (initialized_project / "src" / "test" / "java" / "com" / "example"
+                     / "OrderServiceTest.java")
+        assert test_file.exists()
+        assert "developer_fixed_test" in test_file.read_text()
+        # Answer must be marked consumed
+        session = get_current_session(str(initialized_project))
+        assert (Path(session["session_dir"]) / "answer.json.consumed").exists()

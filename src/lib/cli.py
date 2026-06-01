@@ -725,11 +725,21 @@ async def _cmd_generate_async(args: argparse.Namespace) -> int:
                     written_files.append((full_path, test))
 
             # Compile-and-fix: one mvn test-compile for all files, fix per-file errors
+            compile_fixes = (answer_payload or {}).get("compile_fixes", {}) if answer_payload else {}
             for full_path, test in written_files:
                 class_name = test.get("class_name", full_path.stem)
+                candidate_code = test.get("content", "")
+                # Developer-provided fix from answer-file overrides LLM output before retry
+                dev_fix = compile_fixes.get(class_name) if isinstance(compile_fixes, dict) else None
+                if dev_fix and isinstance(dev_fix, dict) and "fixed_code" in dev_fix:
+                    candidate_code = dev_fix["fixed_code"]
+                    full_path.write_text(candidate_code, encoding="utf-8")
+                    logger.info(f"Applied developer-provided fixed_code for {class_name}")
+                    test["content"] = candidate_code
                 fixed = await _attempt_compile_fix(
-                    project_path, full_path, test.get("content", ""),
+                    project_path, full_path, candidate_code,
                     class_name, logger, session_dir, maven_compile_cmd,
+                    fail_on_uncertainty=fail_on_uncertainty,
                 )
                 if fixed != test.get("content", ""):
                     test["content"] = fixed
@@ -782,13 +792,19 @@ async def _attempt_compile_fix(
     logger,
     session_dir: str | None = None,
     maven_compile_cmd: str | None = None,
+    fail_on_uncertainty: bool = False,
 ) -> str:
     """Run mvn test-compile and use LLM to fix compilation errors, retrying up to N times.
 
     Uses maven_compile_cmd from analysis.md if available, so profiles and
     custom properties set there are respected.
+
+    When fail_on_uncertainty=True and the max retry budget is exhausted,
+    raises AwaitingInputError so the caller can return EXIT_AWAITING_INPUT
+    and a CI bot can post the compile errors to the MR for the developer.
     """
     from src.lib.plugins.java_spring import _parse_maven_cmd as _java_parse_maven_cmd
+    from src.lib.session_tracker import AwaitingInputError, emit_question
     try:
         cmd = _java_parse_maven_cmd(maven_compile_cmd) if maven_compile_cmd else None
     except ValueError as e:
@@ -834,6 +850,33 @@ async def _attempt_compile_fix(
         )
 
         if attempt == _MAX_COMPILE_FIX_ATTEMPTS:
+            if fail_on_uncertainty and session_dir:
+                qpath = emit_question(
+                    session_dir,
+                    "generation",
+                    {
+                        "kind": "compilation_fix_exhausted",
+                        "subject": {
+                            "class_name": class_name,
+                            "test_file": str(test_file),
+                            "attempts": _MAX_COMPILE_FIX_ATTEMPTS,
+                        },
+                        "question": (
+                            f"Could not fix compilation of `{class_name}` after "
+                            f"{_MAX_COMPILE_FIX_ATTEMPTS} LLM attempts. Please review the "
+                            f"errors and provide either the corrected test code or hints."
+                        ),
+                        "compile_errors": relevant_errors,
+                        "current_test_code": current_code[:8000],
+                        "answer_schema": {
+                            "compile_fixes": {
+                                class_name: {"fixed_code": "string (full test file content)"}
+                            }
+                        },
+                    },
+                )
+                logger.info(f"Compile-fix exhausted for {class_name} — paused, question at {qpath}")
+                raise AwaitingInputError(qpath, "generation")
             logger.info(f"Max fix attempts reached for {class_name} — leaving for manual correction")
             return current_code
 

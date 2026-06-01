@@ -1880,6 +1880,94 @@ def cmd_sign_answer(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_cleanup(args: argparse.Namespace) -> int:
+    """Mark abandoned (awaiting_input + age > TTL) sessions.
+
+    With --dry-run: list candidates and exit 0 without touching them.
+    Otherwise: flip their spec.md status to 'abandoned' (audit-preserving).
+    """
+    from src.lib.session_tracker import find_abandoned_sessions, mark_abandoned
+
+    project_path = args.project_path
+    ttl_hours = getattr(args, "ttl_hours", 24)
+    dry_run = bool(getattr(args, "dry_run", False))
+
+    candidates = find_abandoned_sessions(project_path, ttl_hours=ttl_hours)
+    if not candidates:
+        print(f"No abandoned sessions found (TTL {ttl_hours}h).")
+        return 0
+
+    print(f"{'Would mark' if dry_run else 'Marking'} {len(candidates)} session(s) as abandoned:")
+    for s in candidates:
+        print(f"  - {s['session_id']:30}  age={s['age_hours']:.1f}h  step={s['step']}")
+        if not dry_run:
+            mark_abandoned(s["session_dir"])
+    return 0
+
+
+def cmd_doctor(args: argparse.Namespace) -> int:
+    """Health-check: LLM, .tb_secret, write perms, Maven.
+
+    Exit 0 if all green; 1 if any issue. Prints a per-check status line.
+    """
+    import os as _os
+    import shutil as _sh
+
+    from src.lib.integrity import SECRET_FILE
+    from src.lib.session_tracker import get_testboost_dir
+
+    project_path = args.project_path
+    issues: list[str] = []
+    checks: list[tuple[str, bool, str]] = []
+
+    # 1. .testboost dir + .tb_secret
+    tb_dir = get_testboost_dir(project_path)
+    secret_path = tb_dir / SECRET_FILE
+    secret_ok = secret_path.exists() and secret_path.read_text().strip() != ""
+    checks.append((
+        "tb_secret",
+        secret_ok,
+        f"{secret_path} {'present' if secret_ok else 'missing or empty'}",
+    ))
+    if not secret_ok:
+        issues.append("tb_secret missing — run any TestBoost command on this project to create it")
+
+    # 2. Write permissions on the project dir
+    writable = _os.access(project_path, _os.W_OK)
+    checks.append(("write_perms", writable, f"{project_path} {'writable' if writable else 'not writable'}"))
+    if not writable:
+        issues.append("project directory is not writable")
+
+    # 3. Maven available
+    mvn = _sh.which("mvn") or _sh.which("mvn.cmd")
+    checks.append(("maven", mvn is not None, f"mvn {'found at ' + mvn if mvn else 'not on PATH'}"))
+    if mvn is None:
+        issues.append("Maven not on PATH (only blocks Java projects)")
+
+    # 4. LLM reachable (best effort, async)
+    llm_ok = True
+    llm_msg = "LLM ping OK"
+    try:
+        from src.lib.startup_checks import check_llm_connection
+        asyncio.run(check_llm_connection())
+    except Exception as e:
+        llm_ok = False
+        llm_msg = f"LLM ping failed: {e}"
+        issues.append(f"LLM unreachable: {e}")
+    checks.append(("llm", llm_ok, llm_msg))
+
+    # Render
+    print("TestBoost doctor:")
+    for name, ok, msg in checks:
+        marker = "OK " if ok else "KO"
+        print(f"  [{marker}] {name:14}  {msg}")
+    if issues:
+        print(f"\n{len(issues)} issue(s) detected.")
+        return 1
+    print("\nAll checks passed.")
+    return 0
+
+
 def cmd_status(args: argparse.Namespace) -> int:
     """Show current session status."""
     from pathlib import Path as _Path
@@ -2097,6 +2185,22 @@ def main() -> int:
     p_sign.add_argument("--answer-file", required=True, help="Path to raw answer JSON")
     p_sign.add_argument("--output", "-o", default=None, help="Write signed answer here (default: stdout)")
 
+    # cleanup — mark abandoned sessions past TTL
+    p_cleanup = subparsers.add_parser(
+        "cleanup",
+        help="Mark sessions in awaiting_input past TTL as abandoned",
+    )
+    p_cleanup.add_argument("project_path", help="Path to the project")
+    p_cleanup.add_argument("--ttl-hours", type=int, default=24, help="Abandon threshold (default 24)")
+    p_cleanup.add_argument("--dry-run", action="store_true", help="Just list, don't modify")
+
+    # doctor — health check
+    p_doctor = subparsers.add_parser(
+        "doctor",
+        help="Run health checks (LLM, .tb_secret, write perms, Maven)",
+    )
+    p_doctor.add_argument("project_path", help="Path to the project")
+
     args = parser.parse_args()
 
     # T020: --list-plugins exits before any subcommand is required
@@ -2126,9 +2230,23 @@ def main() -> int:
         "status": cmd_status,
         "resume": cmd_resume,
         "sign-answer": cmd_sign_answer,
+        "cleanup": cmd_cleanup,
+        "doctor": cmd_doctor,
     }
 
-    return commands[args.command](args)
+    # --- Run with metrics ---
+    import time
+    start = time.monotonic()
+    exit_code = commands[args.command](args)
+    duration_ms = int((time.monotonic() - start) * 1000)
+    metrics = {
+        "command": args.command,
+        "exit_code": exit_code,
+        "duration_ms": duration_ms,
+        "project_path": getattr(args, "project_path", None),
+    }
+    print(f"[TESTBOOST_METRICS:{json.dumps(metrics, separators=(',', ':'))}]")
+    return exit_code
 
 
 if __name__ == "__main__":

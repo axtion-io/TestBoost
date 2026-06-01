@@ -248,10 +248,40 @@ If both are provided, `fixed_code` wins.
 The same pattern applies to `validate_fixes.<class>.hints` and to
 `killer_hints` (natural-language per surviving mutant).
 
+## Operations (Phase 3)
+
+### Session cleanup
+
+```bash
+python -m testboost cleanup ./my-project --ttl-hours 24 --dry-run
+python -m testboost cleanup ./my-project --ttl-hours 24
+```
+
+Sessions in `awaiting_input` older than the TTL are flipped to status
+`abandoned`. The files are **preserved** (audit trail). Run periodically
+from a scheduled CI job, or manually.
+
+### Health check
+
+```bash
+python -m testboost doctor ./my-project
+```
+
+Verifies: `.tb_secret` present, project dir writable, `mvn` on PATH, LLM
+reachable. Exit 0 if all green, 1 if any issue.
+
+### Metrics
+
+Every command emits a single JSON line to stdout on exit:
+
+```
+[TESTBOOST_METRICS:{"command":"generate","exit_code":0,"duration_ms":12345,"project_path":"/..."}]
+```
+
+Parseable by CI dashboards (Datadog, Prometheus push-gateway, etc.).
+
 ## What's *not* done (still open)
 
-- **Session TTL cleanup.** Abandoned `awaiting_input` sessions linger
-  forever. (Phase 3)
 - **GitLab automation layer.** Scripts to post questions and harvest
   answers from MR comments. (Phase 4)
 

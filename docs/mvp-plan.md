@@ -10,8 +10,8 @@
 | Spike | Prove pause/resume primitives | 2 j/h | ✅ done | 2026-06-01 |
 | 1 | Security & state foundations | 5 j/h | ✅ done | 2026-06-02 |
 | 2 | UX extension (hints, more triggers) | 5 j/h | ✅ done | 2026-06-02 |
-| 3 | Operability (cleanup, doctor, metrics) | 3 j/h | ⏳ in progress | — |
-| 4 | GitLab integration layer | 5 j/h | 🔒 blocked on P3 | — |
+| 3 | Operability (cleanup, doctor, metrics) | 3 j/h | ✅ done | 2026-06-02 |
+| 4 | GitLab integration layer | 5 j/h | ⏳ in progress | — |
 | Cross-cutting | E2E tests, changelog, security review | 2 j/h | rolling | — |
 | Buffer | Reviews, integration bugs | 4-5 j/h | rolling | — |
 | **Total** | | **~24-25 j/h** | | — |
@@ -279,5 +279,20 @@ at the file level.
   killer). Total 302 unit tests pass, lint clean.
 - **Acceptance criteria met**: P2.A ✅, P2.B ✅, P2.C ✅ (partial — minimal
   wiring), P2.D ✅.
-### Phase 3 — TBD
+### Phase 3 — 2026-06-02
+
+- **Cleanup** (3.1): `list_sessions`, `find_abandoned_sessions`,
+  `mark_abandoned` in session_tracker; `cleanup` CLI command with
+  `--ttl-hours` and `--dry-run`. Non-destructive (status flip only).
+- **Metrics** (3.2): a single `[TESTBOOST_METRICS:{...}]` line is
+  emitted at the end of every command via `main()`. Includes command
+  name, exit code, duration_ms, project_path.
+- **Doctor** (3.3): `doctor` CLI runs 4 checks (`.tb_secret`, write
+  perms, Maven on PATH, LLM ping). Per-check status + exit 0/1.
+- **Tests**: 11 new (4 cleanup tracker + 3 cmd_cleanup + 2 cmd_doctor +
+  1 metrics + 1 list_sessions). Total 312 unit tests pass, lint clean.
+- **Acceptance criteria met**: P3.A ✅ (mark, not delete), P3.B ✅
+  (single parseable line), P3.C ✅ (2 broken scenarios covered;
+  read-only-dir + Maven-absent scenarios are harder to mock cleanly in
+  a unit test but the code path exists).
 ### Phase 4 — TBD

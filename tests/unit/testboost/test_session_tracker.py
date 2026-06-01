@@ -600,3 +600,69 @@ class TestFileCursor:
         assert load_generation_cursor(session["session_dir"]) is None
         # idempotent: clearing again is fine
         clear_generation_cursor(session["session_dir"])
+
+
+# ============================================================================
+# Cleanup helpers (P3.1)
+# ============================================================================
+
+
+class TestSessionCleanup:
+    def test_list_sessions_empty(self, tmp_path):
+        from src.lib.session_tracker import init_project, list_sessions
+        init_project(str(tmp_path))
+        assert list_sessions(str(tmp_path)) == []
+
+    def test_list_sessions_returns_meta(self, tmp_path):
+        from src.lib.session_tracker import create_session, init_project, list_sessions
+        init_project(str(tmp_path))
+        create_session(str(tmp_path), name="first")
+        sessions = list_sessions(str(tmp_path))
+        assert len(sessions) == 1
+        assert sessions[0]["session_id"] == "001-first"
+        assert sessions[0]["status"] in ("in_progress", "pending")
+
+    def test_find_abandoned_returns_only_old_awaiting(self, tmp_path):
+        from src.lib.session_tracker import (
+            STATUS_AWAITING_INPUT,
+            create_session,
+            find_abandoned_sessions,
+            init_project,
+        )
+        init_project(str(tmp_path))
+        s1 = create_session(str(tmp_path), name="recent")
+        s2 = create_session(str(tmp_path), name="old")
+
+        # Both flipped to awaiting_input; backdate s2 in the spec
+        for sid in (s1["session_id"], s2["session_id"]):
+            spec = tmp_path / ".testboost" / "sessions" / sid / "spec.md"
+            content = spec.read_text()
+            content = content.replace("status: in_progress", f"status: {STATUS_AWAITING_INPUT}")
+            spec.write_text(content)
+        # Backdate s2 to 48h ago
+        old_spec = tmp_path / ".testboost" / "sessions" / s2["session_id"] / "spec.md"
+        c = old_spec.read_text()
+        import re
+        c = re.sub(
+            r"started_at:.*", "started_at: 2020-01-01T00:00:00Z", c, count=1,
+        )
+        old_spec.write_text(c)
+
+        found = find_abandoned_sessions(str(tmp_path), ttl_hours=24)
+        ids = [s["session_id"] for s in found]
+        assert s2["session_id"] in ids
+        assert s1["session_id"] not in ids
+
+    def test_mark_abandoned_flips_status(self, tmp_path):
+        from src.lib.session_tracker import (
+            STATUS_ABANDONED,
+            _parse_frontmatter,
+            create_session,
+            init_project,
+            mark_abandoned,
+        )
+        init_project(str(tmp_path))
+        s = create_session(str(tmp_path), name="x")
+        mark_abandoned(s["session_dir"])
+        fm = _parse_frontmatter((tmp_path / ".testboost" / "sessions" / s["session_id"] / "spec.md").read_text())
+        assert fm["status"] == STATUS_ABANDONED

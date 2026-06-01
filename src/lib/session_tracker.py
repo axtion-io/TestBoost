@@ -32,6 +32,7 @@ STATUS_IN_PROGRESS = "in_progress"
 STATUS_COMPLETED = "completed"
 STATUS_FAILED = "failed"
 STATUS_AWAITING_INPUT = "awaiting_input"
+STATUS_ABANDONED = "abandoned"
 
 # Exit code used when a step pauses waiting for human input (sysexits-style).
 # 78 maps to EX_CONFIG; we reuse it to signal "human action required" so a CI
@@ -519,6 +520,77 @@ def _render_question_markdown(payload: dict[str, Any]) -> str:
     if qid:
         lines.append(f"_Question ID: `{qid}`_")
     return "\n".join(lines)
+
+
+# --- session cleanup helpers (Phase 3) ---
+
+
+def list_sessions(project_path: str) -> list[dict[str, Any]]:
+    """Return all sessions with id, dir, status, awaiting age (hours).
+
+    Used by `cleanup` and `doctor` to enumerate state without loading
+    individual session content.
+    """
+    sessions_dir = get_sessions_dir(project_path)
+    if not sessions_dir.exists():
+        return []
+    out: list[dict[str, Any]] = []
+    for sdir in sorted(sessions_dir.iterdir()):
+        if not sdir.is_dir():
+            continue
+        spec = sdir / "spec.md"
+        if not spec.exists():
+            continue
+        fm = _parse_frontmatter(spec.read_text(encoding="utf-8"))
+        info: dict[str, Any] = {
+            "session_id": sdir.name,
+            "session_dir": str(sdir),
+            "status": fm.get("status", STATUS_PENDING),
+            "step": fm.get("step", ""),
+            "started_at": fm.get("started_at", ""),
+            "updated_at": fm.get("updated_at", ""),
+        }
+        # Age (hours) since updated_at, or started_at if no update yet
+        ts = info["updated_at"] or info["started_at"]
+        if ts:
+            try:
+                t = datetime.strptime(ts, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=UTC)
+                info["age_hours"] = (datetime.now(UTC) - t).total_seconds() / 3600
+            except ValueError:
+                info["age_hours"] = None
+        else:
+            info["age_hours"] = None
+        out.append(info)
+    return out
+
+
+def mark_abandoned(session_dir: str) -> None:
+    """Flip a session's spec.md status to 'abandoned'.
+
+    Used by cleanup() to mark sessions stuck in awaiting_input past TTL.
+    Not destructive: files are preserved for audit, only frontmatter changes.
+    """
+    spec = Path(session_dir) / "spec.md"
+    if not spec.exists():
+        return
+    content = spec.read_text(encoding="utf-8")
+    content = re.sub(
+        r"(?m)^status:.*$", f"status: {STATUS_ABANDONED}", content, count=1
+    )
+    spec.write_text(content, encoding="utf-8")
+
+
+def find_abandoned_sessions(
+    project_path: str, ttl_hours: int = 24
+) -> list[dict[str, Any]]:
+    """Return sessions in awaiting_input older than ttl_hours."""
+    sessions = list_sessions(project_path)
+    return [
+        s for s in sessions
+        if s["status"] == STATUS_AWAITING_INPUT
+        and s["age_hours"] is not None
+        and s["age_hours"] > ttl_hours
+    ]
 
 
 # --- generation cursor helpers (per-file resumability) ---

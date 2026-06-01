@@ -9,7 +9,8 @@
 | [LLM Providers](./llm-providers.md) | Provider configuration, comparison, and cost estimates |
 | [Configuration](./configuration.md) | Project settings (`config.yaml`) and environment variables |
 | [Session Format](./session-format.md) | Structure of `.testboost/` session files |
-| [Async CI Integration](./ci-async-integration.md) | Pause/resume pattern for GitLab/GitHub MR-comment bots (spike) |
+| [Async CI Integration](./ci-async-integration.md) | Pause/resume pattern for GitLab/GitHub MR-comment bots |
+| [GitLab Integration Guide](./gitlab-integration.md) | Step-by-step GitLab CI setup with webhook bot |
 | [MVP Plan](./mvp-plan.md) | Roadmap to production-grade async CI integration (4 phases) |
 
 ## Technical Reference

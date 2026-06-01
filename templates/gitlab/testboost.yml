@@ -1,0 +1,82 @@
+# TestBoost GitLab CI template (Phase 4 — MVP)
+#
+# include in your .gitlab-ci.yml:
+#
+#   include:
+#     - project: 'axtion-io/testboost'
+#       ref: 'main'
+#       file: 'templates/gitlab/testboost.yml'
+#
+# Required CI/CD variables (group or project):
+#   GITLAB_TOKEN          — Project Access Token with `api` scope (masked!)
+#   TESTBOOST_TB_SECRET   — value to seed .testboost/.tb_secret on each run
+#                           (masked, protected). Must be stable so signatures
+#                           are verifiable across pipelines.
+#   Optional:
+#   ANTHROPIC_API_KEY / GOOGLE_API_KEY / OPENAI_API_KEY (depending on
+#     LLM_PROVIDER you set in your project)
+
+.testboost:base:
+  image: python:3.11-slim
+  variables:
+    TESTBOOST_PROJECT: "$CI_PROJECT_DIR"
+    PIP_DISABLE_PIP_VERSION_CHECK: "1"
+  before_script:
+    - apt-get update -qq && apt-get install -qq --no-install-recommends curl jq git
+    - pip install --quiet poetry==2.3.3
+    - poetry install --no-root --without dev
+    # Seed .tb_secret so HMAC is stable across jobs (must be a masked,
+    # protected CI variable; never write it to logs).
+    - mkdir -p .testboost
+    - echo -n "$TESTBOOST_TB_SECRET" > .testboost/.tb_secret
+    - chmod 600 .testboost/.tb_secret
+  artifacts:
+    when: always
+    paths:
+      - .testboost/
+    expire_in: 1 week
+
+# Stage 1: project analysis + gap identification
+testboost:analyze:
+  extends: .testboost:base
+  stage: test
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+  script:
+    - poetry run python -m testboost init "$TESTBOOST_PROJECT" --tech "${TESTBOOST_TECH:-java-spring}" --name "mr-$CI_MERGE_REQUEST_IID" || true
+    - poetry run python -m testboost analyze "$TESTBOOST_PROJECT"
+    - poetry run python -m testboost gaps "$TESTBOOST_PROJECT"
+
+# Stage 2: generate tests, pause if uncertain, post question to MR on pause
+testboost:generate:
+  extends: .testboost:base
+  stage: test
+  needs: ["testboost:analyze"]
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+  script:
+    - |
+      set +e
+      if [ -n "${TESTBOOST_ANSWER_FILE:-}" ] && [ -f "$TESTBOOST_ANSWER_FILE" ]; then
+        poetry run python -m testboost generate "$TESTBOOST_PROJECT" \
+          --fail-on-uncertainty \
+          --answer-file "$TESTBOOST_ANSWER_FILE"
+      else
+        poetry run python -m testboost generate "$TESTBOOST_PROJECT" --fail-on-uncertainty
+      fi
+      rc=$?
+      if [ "$rc" = "78" ]; then
+        echo "TestBoost paused — posting question to MR #$CI_MERGE_REQUEST_IID"
+        bash "$CI_PROJECT_DIR/scripts/gitlab/post_question_to_mr.sh"
+        exit 0   # green job; the webhook will trigger the resume pipeline
+      fi
+      exit $rc
+
+# Periodic cleanup of abandoned awaiting_input sessions (run on schedule)
+testboost:cleanup:
+  extends: .testboost:base
+  stage: test
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "schedule"
+  script:
+    - poetry run python -m testboost cleanup "$TESTBOOST_PROJECT" --ttl-hours 72

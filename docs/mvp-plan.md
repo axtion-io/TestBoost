@@ -11,7 +11,7 @@
 | 1 | Security & state foundations | 5 j/h | ✅ done | 2026-06-02 |
 | 2 | UX extension (hints, more triggers) | 5 j/h | ✅ done | 2026-06-02 |
 | 3 | Operability (cleanup, doctor, metrics) | 3 j/h | ✅ done | 2026-06-02 |
-| 4 | GitLab integration layer | 5 j/h | ⏳ in progress | — |
+| 4 | GitLab integration layer | 5 j/h | ✅ done (awaiting P4-USR) | 2026-06-02 |
 | Cross-cutting | E2E tests, changelog, security review | 2 j/h | rolling | — |
 | Buffer | Reviews, integration bugs | 4-5 j/h | rolling | — |
 | **Total** | | **~24-25 j/h** | | — |
@@ -295,4 +295,25 @@ at the file level.
   (single parseable line), P3.C ✅ (2 broken scenarios covered;
   read-only-dir + Maven-absent scenarios are harder to mock cleanly in
   a unit test but the code path exists).
-### Phase 4 — TBD
+### Phase 4 — 2026-06-02 (artefacts ready, awaiting real-world P4-USR)
+
+- **GitLab CI template** (4.1): `templates/gitlab/testboost.yml` with
+  3 jobs (analyze, generate, cleanup). `include:` ready.
+- **post_question_to_mr.sh** (4.2): reads pending question.json,
+  extracts markdown_preview, POSTs as MR note with `question_id` marker.
+- **fetch_answer_from_mr.sh** (4.3): parses MR notes, filters by author
+  + question_id, extracts the fenced JSON, calls `testboost sign-answer`.
+- **Webhook** (4.4): FastAPI app under `tools/gitlab-webhook/` with its
+  own requirements.txt. Validates `X-Gitlab-Token`, restricts to MR
+  author comments, triggers resume pipeline via GitLab API.
+- **Tests**: 4 shell-script tests (with mocked curl) + 5 webhook tests
+  (skip-if-fastapi-absent). Total 316 unit tests in main suite.
+- **Doc**: full step-by-step guide `docs/gitlab-integration.md`.
+- **Acceptance criteria**:
+  - P4.A ✅ post script call traced to correct API endpoint (test)
+  - P4.B ✅ webhook ignores stranger comments (test)
+  - P4.C ⏳ **PENDING REAL DEMO** — needs P4-USR with a real GitLab repo
+  - P4.D ⏳ **PENDING REAL DEMO** — needs both GitLab.com + self-managed
+    instances to validate
+- **Next step**: identify a real external developer to run P4-USR. The
+  protocol is in `docs/gitlab-integration.md` under "User test".

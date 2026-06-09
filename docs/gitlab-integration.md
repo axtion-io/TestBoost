@@ -1,5 +1,10 @@
 # GitLab CI Integration (Phase 4)
 
+> Status (review 2026-06-09): the components below (template, scripts,
+> webhook) work individually, but the loop does **not** yet close
+> end-to-end — the resume pipeline cannot see the paused session's state,
+> among other gaps. See `docs/mvp-plan.md` Phase 5 before deploying.
+
 Step-by-step guide to enable TestBoost on a GitLab project so that
 merge requests trigger automatic test generation, pausing in the MR
 comments when the developer's input is needed.
@@ -43,6 +48,14 @@ In your project → Settings → CI/CD → Variables, add:
 | `ANTHROPIC_API_KEY` (or equivalent) | masked | Your LLM provider's API key. |
 | `TESTBOOST_TECH` | (optional) | `java-spring`, `python-pytest`, etc. Default `java-spring`. |
 
+> ⚠️ **Protected variables and MR pipelines**: GitLab only injects
+> *protected* variables into pipelines running on protected branches or
+> tags. MR pipelines on feature branches will see them **empty** — with
+> the current code, `.tb_secret` is then seeded empty and HMAC runs with
+> an empty key. Either protect your branch naming pattern, or leave
+> `TESTBOOST_TB_SECRET` unprotected (masked only) and rely on masking +
+> repository access control.
+
 ## Step 2 — Include the template in your `.gitlab-ci.yml`
 
 ```yaml
@@ -53,6 +66,15 @@ include:
 
 stages: [test]
 ```
+
+> ℹ️ `include: project:` resolves on **your GitLab instance**: since the
+> TestBoost source of truth lives on GitHub, this requires a GitLab
+> mirror of the repo reachable by your project (adjust the `project:`
+> path to wherever your mirror lives). Note also that `include:` only
+> imports the YAML — the shell scripts referenced by the jobs are *not*
+> distributed this way (fix planned: `testboost gitlab …` subcommands,
+> mvp-plan Phase 5.4; in the meantime, vendor `scripts/gitlab/` into
+> your repo).
 
 Three jobs are now defined:
 
@@ -135,16 +157,29 @@ testboost:resume:
 
 ## Security notes
 
-- The webhook only triggers if the comment is from the **MR author**.
-  Other identities (project maintainers, etc.) are rejected by default.
-  Extend the author check in `webhook.py` if you want a broader allow-list.
-- All answers go through `verify_answer()` before being applied. An
-  attacker who can post comments but doesn't have the `.tb_secret`
-  **cannot** forge a valid `answer.json`.
-- The TTL (24h default) prevents replay attacks where an old answer is
-  re-submitted on a new question.
-- `.tb_secret` is provisioned from a masked, protected CI variable. It
-  is **never** logged.
+Be clear about what protects what in the CI flow:
+
+- **The actual access control is the author check**: the webhook and
+  `fetch_answer_from_mr.sh` only accept comments from the **MR author**
+  (other identities, including maintainers, are rejected by default —
+  extend the check in `webhook.py` for a broader allow-list), combined
+  with the scoping of the Project Access Token.
+- **The HMAC signature is NOT an authentication of the commenter** in
+  this flow: the CI itself signs whatever JSON the accepted comment
+  contains (`sign-answer` runs in the pipeline with the project secret).
+  It guarantees integrity between signing and consumption, binds the
+  answer to one specific `question_id` (an answer cannot be replayed
+  against a different question), and protects the *local* workflow where
+  a developer signs answers on their own machine.
+- **The TTL** (24h default) bounds how long a pending question stays
+  answerable. Replay of an old answer on a *new* question is prevented
+  by the `question_id` binding, not by the TTL.
+- `.tb_secret` is provisioned from a masked CI variable and is never
+  logged. ⚠️ Until mvp-plan Phase 5.2 lands, the template's artifacts
+  include `.testboost/` **with the secret inside** — anyone who can
+  download job artifacts can read it. Add
+  `artifacts:exclude: [.testboost/.tb_secret]` if you deploy before that
+  fix.
 
 ## User test ("P4-USR" from the MVP plan)
 
@@ -163,12 +198,29 @@ Iterate on UX issues:
 - Does the resume pipeline succeed without further help?
 - How long does the round-trip take? (Acceptance target: < 5 min)
 
-> **Open call**: this is the next thing to validate. The MVP code +
-> infrastructure are ready. We need a volunteer dev with a real GitLab
-> project to run P4-USR end-to-end. See `docs/mvp-plan.md` Phase 4 for
-> the exact protocol.
+> **Open call**: P4-USR is on hold until mvp-plan Phase 5 closes the
+> loop end-to-end (see Known limitations below). Once Phase 5 lands, we
+> need a volunteer dev with a real GitLab project to run P4-USR. See
+> `docs/mvp-plan.md` Phase 4 for the exact protocol.
 
 ## Known limitations
+
+**Blocking — the loop does not close yet** (fixes planned, see
+`docs/mvp-plan.md` Phase 5):
+
+- **No session state hand-off**: the paused session
+  (`.testboost/sessions/`, `question.json`, cursor) lives in the paused
+  job's workspace; the webhook-triggered resume pipeline starts from a
+  fresh checkout and finds no session. Decision: the pause job will
+  commit the session state to the MR branch (Phase 5.1).
+- **Resume pipeline context**: API-triggered branch pipelines have no
+  `CI_MERGE_REQUEST_IID`; the scripts don't yet fall back to the
+  `TESTBOOST_MR_IID` variable the webhook sends (Phase 5.3).
+- **Script distribution**: `include:` only imports YAML; the
+  `scripts/gitlab/*.sh` files and a TestBoost installation must be
+  present in the consumer repo (Phase 5.4).
+
+**Non-blocking**:
 
 - The `fetch_answer_from_mr.sh` script parses the *first* matching JSON
   block from the *first* matching note. Multiple-answer flows aren't
@@ -176,4 +228,7 @@ Iterate on UX issues:
 - The webhook triggers one pipeline per comment, with no debouncing. If
   the dev edits their comment, multiple pipelines may run. (Tolerable
   for the MVP; add a 30s debouncer in production.)
+- A paused `testboost:generate` job currently exits 0 (green). It will
+  switch to GitLab's orange "warning" status via
+  `allow_failure: exit_codes: [78]` (Phase 6.5).
 - Self-managed GitLab instances older than 14.x have not been tested.

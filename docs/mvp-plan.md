@@ -11,10 +11,12 @@
 | 1 | Security & state foundations | 5 j/h | ✅ done | 2026-06-02 |
 | 2 | UX extension (hints, more triggers) | 5 j/h | ✅ done | 2026-06-02 |
 | 3 | Operability (cleanup, doctor, metrics) | 3 j/h | ✅ done | 2026-06-02 |
-| 4 | GitLab integration layer | 5 j/h | ✅ done (awaiting P4-USR) | 2026-06-02 |
+| 4 | GitLab integration layer | 5 j/h | ⚠️ rework needed (review 2026-06-09) | 2026-06-02 |
+| 5 | Hardening — review fixes (state hand-off, secret leak, dead features) | 6 j/h | planned | — |
+| 6 | Grouped questions & resume UX | 4.5 j/h | planned | — |
 | Cross-cutting | E2E tests, changelog, security review | 2 j/h | rolling | — |
 | Buffer | Reviews, integration bugs | 4-5 j/h | rolling | — |
-| **Total** | | **~24-25 j/h** | | — |
+| **Total** | | **~35 j/h** | | — |
 
 **Calendar**: 5-6 weeks with 80% dev allocation.
 
@@ -213,6 +215,92 @@ at the file level.
 
 ---
 
+## Phase 5 — Hardening: review fixes (6 j/h)
+
+**Goal**: make the GitLab loop actually work end-to-end and remove every
+bug found in the 2026-06-09 deep review. No new UX — strictly fixes.
+
+> **Decisions taken with the user (2026-06-09)**:
+> - State hand-off between pipelines: **commit `.testboost/sessions/` to
+>   the MR branch** (pause job pushes; resume pipeline reads from a normal
+>   checkout). Consistent with the markdown-in-repo design; no artifact
+>   plumbing.
+> - Paused pipelines must show GitLab's **orange "warning" status**, not
+>   green (moved to Phase 6 with the template rework).
+> - `validate_fixes.<class>.hints`: not implemented today although
+>   documented — **drop from schema + doc for now** (only `fixed_code`),
+>   re-introduce with the grouped-question redesign if needed.
+
+### Tasks
+
+| # | Task | Effort | Files |
+|---|------|--------|-------|
+| 5.1 | **Session state hand-off**: on pause (exit 78), the CI job commits `.testboost/sessions/` + cursor to the MR branch with `-o ci.skip`; the resume pipeline finds the paused session in its checkout. Requires `GITLAB_TOKEN` with `write_repository` scope. | 1.5 j | `templates/gitlab/testboost.yml`, `docs/gitlab-integration.md` |
+| 5.2 | **Stop leaking `.tb_secret` in CI artifacts**: `artifacts:exclude: [.testboost/.tb_secret]` (artifacts ignore `.gitignore` and `chmod`) | 0.25 j | `templates/gitlab/testboost.yml:33-37` |
+| 5.3 | **Resume pipeline context**: webhook-triggered branch pipelines have no `CI_MERGE_REQUEST_IID`; scripts must fall back to `TESTBOOST_MR_IID` (already sent by the webhook, currently unused) | 0.25 j | `scripts/gitlab/*.sh:12-18`, `tools/gitlab-webhook/webhook.py:54` |
+| 5.4 | **Ship the MR scripts with the package**: convert `post_question_to_mr.sh` / `fetch_answer_from_mr.sh` into `testboost gitlab post-question` / `fetch-answer` subcommands so `pip install testboost` is enough in a consumer repo (`include:` only brings YAML, not scripts). Also kills the bash `set -e` dead-error-path bug in `fetch_answer_from_mr.sh:55-84`. Template installs TestBoost via pip instead of assuming TestBoost's own `pyproject.toml` (`poetry install` fails on a Java repo). Fallback if rejected: template `curl`s the scripts from the testboost repo at a pinned ref. | 1.5 j | `src/lib/cli.py`, `templates/gitlab/testboost.yml:24-32`, delete `scripts/gitlab/` |
+| 5.5 | **`cleanup` actually finds paused sessions**: `emit_question` must flip `status: awaiting_input` in `spec.md` frontmatter (today only the step file is flipped, so `find_abandoned_sessions` never matches; the existing test masks this by editing `spec.md` manually). Add an integration test `emit_question` → `find_abandoned_sessions`. | 0.5 j | `src/lib/session_tracker.py:416,672-699` |
+| 5.6 | **Wire `killer_hints` into the LLM call**: the payload is parsed (`cli.py:1513`) but never passed to `generate_killer_tests` (`cli.py:1578`), so killer resume silently re-runs the identical generation. Inject hints into the killer prompt context; assert via mock that they reach the prompt. | 1 j | `src/lib/cli.py`, `src/lib/bridge.py`, `src/test_generation/killer_tests.py` |
+| 5.7 | **Drop `validate_fixes.<class>.hints`** from the question's `answer_schema` (`cli.py:1240`) and from `docs/ci-async-integration.md` — only `fixed_code` is implemented (`cli.py:1091-1098`) | 0.25 j | `src/lib/cli.py`, docs |
+| 5.8 | **Metrics line to stderr**: `[TESTBOOST_METRICS:…]` on stdout (`cli.py:2248`) corrupts the JSON output of `sign-answer` and the markdown of `resume` for anyone piping them | 0.25 j | `src/lib/cli.py` |
+| 5.9 | **Webhook hardening**: constant-time token compare (`hmac.compare_digest`, `webhook.py:69`); ignore notes authored by the bot's own identity (loop guard when the MR author is the bot account — the question comment itself contains the marker the webhook greps) | 0.5 j | `tools/gitlab-webhook/webhook.py` |
+
+### Acceptance criteria
+
+- 🚦 **P5.A** — E2E (local git fixture): pause → state committed → fresh clone → webhook-style resume pipeline finds the session and resumes. No artifact dependency.
+- 🚦 **P5.B** — No job artifact may contain `.tb_secret` (assert on rendered CI config + e2e artifact listing).
+- 🚦 **P5.C** — A session paused via `emit_question` and aged past TTL is returned by `find_abandoned_sessions` **without any manual `spec.md` edit** in the test.
+- 🚦 **P5.D** — `killer` resumed with `killer_hints` → hints provably present in the LLM prompt (mocked assert), and a second pause is not suppressed silently.
+- 🚦 **P5.E** — `testboost sign-answer` stdout is `json.loads`-parseable end-to-end; same for `resume` show-pending markdown.
+- 🚦 **P5.F** — `testboost gitlab post-question` / `fetch-answer` run on a repo where TestBoost is only pip-installed (no checkout of the TestBoost repo).
+
+### Risks / trade-offs accepted
+
+- Committing `.testboost/sessions/` to the MR branch pollutes the MR diff
+  with session markdown. Accepted for the MVP (it is the audit trail by
+  design); mitigations if it annoys users: collapse via `.gitattributes`
+  `linguist-generated`, or move to a dedicated ref later.
+- The state-commit push must use `-o ci.skip` to avoid recursive pipeline
+  triggers.
+
+---
+
+## Phase 6 — Grouped questions & resume UX (4.5 j/h)
+
+**Goal**: one MR comment per run instead of one pause per uncertain file,
+and a resume that never loses or wastes work.
+
+> **Decisions taken with the user (2026-06-09)**: group the questions;
+> orange CI status on pause; cursor must memorize the run scope and the
+> generated output; answers consumed only after the answered file succeeds.
+
+### Tasks
+
+| # | Task | Effort | Files |
+|---|------|--------|-------|
+| 6.1 | **Batch questions**: `generate` no longer raises on the first uncertain file. It generates everything it can, collects every uncertainty (missing edge cases, compile-fix exhaustion) into ONE `question.json` with an `items[]` array (one entry per file/class, each with its own `answer_schema`), then exits 78 once at the end. `markdown_preview` renders the items as a checklist in a single MR comment. | 2 j | `src/lib/session_tracker.py::emit_question`, `src/lib/cli.py::_cmd_generate_async` |
+| 6.2 | **Scope answers per item**: injected `test_requirements` currently apply to every remaining file (`cli.py:685-731`); key the answer payload by `source_file`/`class_name` so requirements for `OrderService` never leak into other prompts | 0.5 j | `src/lib/cli.py` |
+| 6.3 | **Cursor memorizes the run**: persist the `--files` filter and per-file generation outputs in the cursor. `resume` replays the exact original scope (today it hardcodes `files=None` → cursor mismatch → "starting fresh", `cli.py:1812`) and skips LLM regeneration entirely for files where the developer supplied `fixed_code` (today the file is regenerated then overwritten — one wasted LLM call). | 1 j | `src/lib/session_tracker.py`, `src/lib/cli.py::cmd_resume` |
+| 6.4 | **Consume-on-success**: `consume_answer` currently deletes `question.json` at the start of the resume run (`session_tracker.py:483-488`); if the run crashes, both question and verified answer are lost. Verify at start, but mark consumed / delete only once the answered item(s) complete. | 0.5 j | `src/lib/session_tracker.py`, `src/lib/cli.py` |
+| 6.5 | **Orange pipeline status**: replace the `set +e … exit 0` wrapper with `allow_failure: exit_codes: [78]` so a paused job shows as "warning" instead of a misleading green; move the question-posting call to `after_script` (runs on failure too) | 0.25 j | `templates/gitlab/testboost.yml:58-73` |
+
+### Acceptance criteria
+
+- 🚦 **P6.A** — A 5-file run with 3 uncertain files produces exactly **one** question/MR comment listing the 3 items, and the 2 certain files ARE generated in that same run.
+- 🚦 **P6.B** — Answering the item for class X injects requirements into X's prompt only (mock assert on the other files' prompts).
+- 🚦 **P6.C** — A resume run that crashes mid-way can be re-run with the same answer file (answer not consumed by the failed attempt); the cursor resumes at the right file with the original `--files` scope.
+- 🚦 **P6.D** — A paused pipeline shows GitLab's *warning* status; a resumed-and-completed one shows green.
+- 🚦 **P6.E** — `resume` with a `fixed_code` answer performs **zero** generation LLM calls for that file (mocked `call_count == 0`).
+
+### User test 🧑
+
+**Scenario P6-USR** (15 min, 1 human): re-run P4-USR's flow on a project
+with 3+ uncertain classes. Success: the developer answers **one** comment,
+one resume pipeline completes everything, the pipeline history reads
+honestly (warning → green).
+
+---
+
 ## Cross-cutting (continuous through phases)
 
 | Topic | Action |
@@ -317,3 +405,39 @@ at the file level.
     instances to validate
 - **Next step**: identify a real external developer to run P4-USR. The
   protocol is in `docs/gitlab-integration.md` under "User test".
+
+### Deep review — 2026-06-09
+
+A full branch review invalidated Phase 4's "done" status: the components
+work in isolation (316 unit tests green) but **the loop does not close
+end-to-end**. Root causes and decisions:
+
+- **Blocker**: session state lives in the paused job's workspace and is
+  never handed to the webhook-triggered resume pipeline (fresh checkout,
+  no cross-pipeline artifacts). P4.A/P4.B tests passed because they test
+  each side in isolation. → Decision: commit `.testboost/sessions/` to
+  the MR branch (Phase 5.1).
+- **Blockers**: resume pipeline lacks `CI_MERGE_REQUEST_IID` (webhook's
+  `TESTBOOST_MR_IID` was never consumed); `include:` does not ship the
+  shell scripts to consumer repos; `poetry install` presumes TestBoost's
+  own repo (fails on a Java project). → Phase 5.3 / 5.4.
+- **Security**: `.tb_secret` was uploaded in CI artifacts (artifacts
+  ignore `.gitignore`); doc overstated what the HMAC chain proves in the
+  CI flow (CI signs the developer's comment itself — the real control is
+  the author check + token scoping) and mislabeled the TTL as replay
+  protection (replay across questions is prevented by `question_id`
+  binding). → Phase 5.2 + doc truth pass (done 2026-06-09).
+- **Dead features shipped as done**: `killer_hints` parsed but never
+  injected into the LLM call; `validate_fixes.hints` documented but
+  ignored; `cleanup` can never find a real paused session because
+  `emit_question` doesn't flip `spec.md`'s frontmatter status (the unit
+  test edited `spec.md` manually, masking it). → Phase 5.5-5.7.
+- **UX decisions** (user, 2026-06-09): group all uncertainties of a run
+  into one question/MR comment instead of per-file ping-pong; paused jobs
+  show orange (warning), not green; cursor memorizes run scope and
+  generated output; answers consumed only after the answered file
+  succeeds. → Phase 6.
+- **Lesson**: "tests green" ≠ "feature works" — every P4 test mocked the
+  seam where the integration actually broke (cross-pipeline state, GitLab
+  variable availability, script distribution). Phase 5/6 acceptance
+  criteria therefore require E2E fixtures that cross those seams.

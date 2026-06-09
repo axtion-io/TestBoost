@@ -245,8 +245,12 @@ If both are provided, `fixed_code` wins.
 }
 ```
 
-The same pattern applies to `validate_fixes.<class>.hints` and to
-`killer_hints` (natural-language per surviving mutant).
+> **Honesty note (review 2026-06-09)**: hints are only implemented for
+> `compile_fixes` today. `validate_fixes.<class>.hints` is accepted but
+> silently ignored (only `fixed_code` is applied — the key will be removed
+> from the schema, see mvp-plan Phase 5.7). `killer_hints` is parsed and
+> suppresses re-pausing, but is **not yet injected** into the killer LLM
+> call (wiring planned, Phase 5.6).
 
 ## Operations (Phase 3)
 
@@ -260,6 +264,11 @@ python -m testboost cleanup ./my-project --ttl-hours 24
 Sessions in `awaiting_input` older than the TTL are flipped to status
 `abandoned`. The files are **preserved** (audit trail). Run periodically
 from a scheduled CI job, or manually.
+
+> **Known issue (review 2026-06-09)**: `emit_question` currently flips the
+> *step* file's status but not `spec.md`'s frontmatter, which is what
+> `cleanup` scans — so real paused sessions are never detected. Fix
+> planned in mvp-plan Phase 5.5.
 
 ### Health check
 
@@ -280,10 +289,27 @@ Every command emits a single JSON line to stdout on exit:
 
 Parseable by CI dashboards (Datadog, Prometheus push-gateway, etc.).
 
+> Note: this line will move to **stderr** (mvp-plan Phase 5.8) — on stdout
+> it corrupts the output of `sign-answer` and `resume` when piped.
+
 ## What's *not* done (still open)
 
-- **GitLab automation layer.** Scripts to post questions and harvest
-  answers from MR comments. (Phase 4)
+The Phase 4 GitLab layer ships its components (template, scripts,
+webhook) but the loop does not yet close end-to-end. Tracked in
+`docs/mvp-plan.md` Phases 5-6:
+
+- **Session state hand-off between pipelines** — the resume pipeline
+  starts from a fresh checkout and cannot see the paused session.
+  Decision: commit `.testboost/sessions/` to the MR branch (Phase 5.1).
+- **Resume pipeline context** — `CI_MERGE_REQUEST_IID` is unset in
+  webhook-triggered branch pipelines; scripts must fall back to
+  `TESTBOOST_MR_IID` (Phase 5.3).
+- **Script distribution** — `include:` does not ship the shell scripts
+  to consumer repos; they will become `testboost gitlab …` subcommands
+  (Phase 5.4).
+- **Grouped questions** — today the run pauses at the first uncertain
+  file (one MR round-trip per file). Will batch all uncertainties of a
+  run into a single question (Phase 6.1).
 
 ## Primitives reference
 

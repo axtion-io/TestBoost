@@ -1602,6 +1602,13 @@ class TestPerFileCursorE2E:
             "src/main/java/com/example/web/UserController.java",
             "src/main/java/com/example/service/PaymentService.java",
         ]
+        # The source files must exist on disk, otherwise edge-case analysis
+        # is skipped entirely for them (and they'd be deferred, not generated)
+        for rel in mock_files:
+            f = Path(project_path) / rel
+            f.parent.mkdir(parents=True, exist_ok=True)
+            if not f.exists():
+                f.write_text(f"public class {Path(rel).stem} {{}}", encoding="utf-8")
         args = argparse.Namespace(project_path=str(project_path), verbose=False)
         with patch("src.lib.bridge.analyze_project_context", new_callable=AsyncMock, return_value=mock_context), \
              patch("src.lib.bridge.detect_test_conventions", new_callable=AsyncMock, return_value=json.dumps({"success": False})), \
@@ -1647,7 +1654,8 @@ class TestPerFileCursorE2E:
 
     @pytest.mark.asyncio
     async def test_pause_persists_cursor_at_paused_file(self, initialized_project):
-        """P1.A first half: pause on file index 1 → cursor at 1, file 0 completed."""
+        """Batched pause: files 0 and 2 are generated in the same run; only
+        file 1 (no edge cases) is deferred, recorded in the cursor."""
         from src.lib.cli import _cmd_generate_async
         from src.lib.session_tracker import load_generation_cursor
         await self._setup_gaps_3_files(initialized_project)
@@ -1655,7 +1663,7 @@ class TestPerFileCursorE2E:
         # Return edge_cases for files 0 and 2, empty for file 1
         edge_calls = [
             [{"scenario": "ok", "expected": "ok"}],  # file 0
-            [],                                       # file 1 -> pause
+            [],                                       # file 1 -> deferred
             [{"scenario": "ok", "expected": "ok"}],  # file 2
         ]
         edge_iter = iter(edge_calls)
@@ -1685,13 +1693,20 @@ class TestPerFileCursorE2E:
         session = get_current_session(str(initialized_project))
         cursor = load_generation_cursor(session["session_dir"])
         assert cursor is not None
-        assert cursor["current_index"] == 1
-        assert len(cursor["completed_files"]) == 1
+        # Files 0 and 2 completed in the same run (no per-file ping-pong)
+        assert len(cursor["completed_files"]) == 2
         assert "OrderService.java" in cursor["completed_files"][0]
+        assert "PaymentService.java" in cursor["completed_files"][1]
+        # File 1 deferred, awaiting the answer
+        deferred = cursor.get("deferred", [])
+        assert len(deferred) == 1
+        assert "UserController.java" in deferred[0]["source_file"]
+        assert deferred[0]["reason"] == "missing_business_context"
 
     @pytest.mark.asyncio
     async def test_resume_skips_completed_files(self, initialized_project, tmp_path):
-        """P1.A second half: after pause at 1, resume must regenerate only files 1 and 2."""
+        """After a batched pause (files 0+2 done, file 1 deferred), resume
+        must regenerate only the deferred file 1."""
         from src.lib.cli import _cmd_generate_async
         from src.lib.integrity import sign_answer
         from src.lib.session_tracker import load_generation_cursor
@@ -1755,10 +1770,10 @@ class TestPerFileCursorE2E:
             rc = await _cmd_generate_async(gen_args_2)
 
         assert rc == 0
-        # generate_adaptive_tests must have been called only for files 1 and 2
-        assert len(gen_calls) == 2, f"expected 2 LLM calls (files 1,2), got {len(gen_calls)}"
-        assert all("OrderService" not in f for f in gen_calls), \
-            f"file 0 (OrderService) should have been skipped, got {gen_calls}"
+        # Only the deferred file 1 is regenerated; files 0 and 2 were already
+        # completed in the first (batched) run
+        assert len(gen_calls) == 1, f"expected 1 LLM call (file 1 only), got {gen_calls}"
+        assert "UserController" in gen_calls[0]
         # Cursor cleared on completion
         assert load_generation_cursor(session_dir) is None
 
@@ -2367,9 +2382,11 @@ class TestMetricsEmission:
         capsys.readouterr()
         rc = main()
         assert rc == 0
-        out = capsys.readouterr().out
-        # Exactly one metrics line containing the parseable JSON
-        metric_lines = [ln for ln in out.splitlines() if ln.startswith("[TESTBOOST_METRICS:")]
+        captured = capsys.readouterr()
+        # Metrics go to stderr so stdout consumers (sign-answer JSON,
+        # resume markdown) stay parseable
+        assert "[TESTBOOST_METRICS:" not in captured.out
+        metric_lines = [ln for ln in captured.err.splitlines() if ln.startswith("[TESTBOOST_METRICS:")]
         assert len(metric_lines) == 1
         payload_str = metric_lines[0][len("[TESTBOOST_METRICS:"):-1]
         payload = json.loads(payload_str)
@@ -2377,3 +2394,407 @@ class TestMetricsEmission:
         assert payload["exit_code"] == 0
         assert "duration_ms" in payload
         assert payload["project_path"] == str(tmp_path)
+
+
+# ============================================================================
+# Phase 6 — batched questions, scoped answers, no-regeneration resume
+# ============================================================================
+
+
+class TestBatchedQuestions:
+    """P6.A/P6.B — one question per run, answers scoped per class."""
+
+    async def _setup_gaps_3_files(self, project_path):
+        from src.lib.cli import _cmd_analyze_async, _cmd_gaps_async
+        mock_context = json.dumps({
+            "success": True, "project_type": "spring-boot", "build_system": "maven",
+            "java_version": "17", "frameworks": [], "test_frameworks": [],
+            "source_structure": {"class_count": 3, "packages": []},
+            "test_structure": {"test_count": 0}, "dependencies": [],
+        })
+        mock_files = [
+            "src/main/java/com/example/service/OrderService.java",
+            "src/main/java/com/example/web/UserController.java",
+            "src/main/java/com/example/service/PaymentService.java",
+        ]
+        for rel in mock_files:
+            f = Path(project_path) / rel
+            f.parent.mkdir(parents=True, exist_ok=True)
+            if not f.exists():
+                f.write_text(f"public class {Path(rel).stem} {{}}", encoding="utf-8")
+        args = argparse.Namespace(project_path=str(project_path), verbose=False)
+        with patch("src.lib.bridge.analyze_project_context", new_callable=AsyncMock, return_value=mock_context), \
+             patch("src.lib.bridge.detect_test_conventions", new_callable=AsyncMock, return_value=json.dumps({"success": False})), \
+             patch("src.lib.bridge.find_source_files", return_value=mock_files), \
+             patch("src.lib.bridge.build_class_index", return_value={}), \
+             patch("src.lib.bridge.extract_test_examples", return_value=[]):
+            await _cmd_analyze_async(args)
+        await _cmd_gaps_async(args)
+
+    def _gen_result(self, class_name="OrderService"):
+        return json.dumps({
+            "success": True,
+            "test_code": "package c;\nimport org.junit.jupiter.api.Test;\nclass T {\n  @Test void t() {}\n}",
+            "test_file": f"src/test/java/com/example/{class_name}Test.java",
+            "test_count": 1,
+            "context": {"class_name": class_name, "package": "c"},
+        })
+
+    @pytest.mark.asyncio
+    async def test_one_question_for_multiple_uncertain_files(self, initialized_project):
+        """P6.A — 3 files, 2 uncertain → ONE question.json with 2 items;
+        the certain file IS generated in the same run."""
+        from src.lib.cli import _cmd_generate_async
+        from src.lib.session_tracker import EXIT_AWAITING_INPUT
+        await self._setup_gaps_3_files(initialized_project)
+
+        # Edge cases only for file 2 (PaymentService); files 0 and 1 uncertain
+        async def fake_edge(source_code, class_name, class_type):
+            if class_name == "PaymentService":
+                return [{"scenario": "ok", "expected": "ok"}]
+            return []
+
+        gen_calls: list[str] = []
+        async def track_gen(**kwargs):
+            gen_calls.append(kwargs.get("source_file", ""))
+            return self._gen_result("PaymentService")
+
+        gen_args = argparse.Namespace(
+            project_path=str(initialized_project),
+            verbose=False, files=None,
+            fail_on_uncertainty=True, answer_file=None,
+        )
+        mock_compile = MagicMock(returncode=0, stdout="", stderr="")
+        with patch("src.lib.startup_checks.check_llm_connection", new_callable=AsyncMock), \
+             patch("src.lib.bridge.analyze_edge_cases", new=AsyncMock(side_effect=fake_edge)), \
+             patch("src.lib.bridge.generate_adaptive_tests", new=AsyncMock(side_effect=track_gen)), \
+             patch("subprocess.run", return_value=mock_compile):
+            rc = await _cmd_generate_async(gen_args)
+
+        assert rc == EXIT_AWAITING_INPUT
+        # The certain file was generated in the same run
+        assert len(gen_calls) == 1 and "PaymentService" in gen_calls[0]
+
+        session = get_current_session(str(initialized_project))
+        question = json.loads(
+            (Path(session["session_dir"]) / "question.json").read_text()
+        )
+        assert question["kind"] == "batch"
+        assert len(question["items"]) == 2
+        classes = {it["subject"]["class_name"] for it in question["items"]}
+        assert classes == {"OrderService", "UserController"}
+        # Combined schema keyed per class
+        assert set(question["answer_schema"]["test_requirements"].keys()) == classes
+
+    @pytest.mark.asyncio
+    async def test_answers_are_scoped_per_class(self, initialized_project, tmp_path):
+        """P6.B — requirements answered for class X only reach X's prompt."""
+        from src.lib.cli import _cmd_generate_async
+        from src.lib.integrity import sign_answer
+        await self._setup_gaps_3_files(initialized_project)
+
+        # First run: everything uncertain → batch question
+        gen_args = argparse.Namespace(
+            project_path=str(initialized_project),
+            verbose=False, files=None,
+            fail_on_uncertainty=True, answer_file=None,
+        )
+        with patch("src.lib.startup_checks.check_llm_connection", new_callable=AsyncMock), \
+             patch("src.lib.bridge.analyze_edge_cases", new_callable=AsyncMock, return_value=[]), \
+             patch("src.lib.bridge.generate_adaptive_tests", new_callable=AsyncMock):
+            await _cmd_generate_async(gen_args)
+
+        session = get_current_session(str(initialized_project))
+        session_dir = Path(session["session_dir"])
+        question = json.loads((session_dir / "question.json").read_text())
+
+        # Answer ALL classes (so the run completes), with distinct scenarios
+        signed = sign_answer(
+            {"test_requirements": {
+                "OrderService": [{"scenario": "order-specific rule", "expected": "x"}],
+                "UserController": [{"scenario": "controller-specific rule", "expected": "y"}],
+                "PaymentService": [{"scenario": "payment-specific rule", "expected": "z"}],
+            }},
+            question,
+            str(initialized_project),
+        )
+        answer = tmp_path / "answer.json"
+        answer.write_text(json.dumps(signed))
+
+        prompts_by_file: dict[str, list] = {}
+        async def track_gen(**kwargs):
+            src = kwargs.get("source_file", "")
+            prompts_by_file[Path(src).stem] = kwargs.get("test_requirements") or []
+            return self._gen_result(Path(src).stem)
+
+        gen_args2 = argparse.Namespace(
+            project_path=str(initialized_project),
+            verbose=False, files=None,
+            fail_on_uncertainty=True, answer_file=str(answer),
+        )
+        mock_compile = MagicMock(returncode=0, stdout="", stderr="")
+        with patch("src.lib.startup_checks.check_llm_connection", new_callable=AsyncMock), \
+             patch("src.lib.bridge.analyze_edge_cases", new_callable=AsyncMock, return_value=[]), \
+             patch("src.lib.bridge.generate_adaptive_tests", new=AsyncMock(side_effect=track_gen)), \
+             patch("subprocess.run", return_value=mock_compile):
+            rc = await _cmd_generate_async(gen_args2)
+
+        assert rc == 0
+        order_reqs = [r["scenario"] for r in prompts_by_file["OrderService"]]
+        assert order_reqs == ["order-specific rule"]
+        controller_reqs = [r["scenario"] for r in prompts_by_file["UserController"]]
+        assert controller_reqs == ["controller-specific rule"]
+
+    @pytest.mark.asyncio
+    async def test_crashed_resume_is_retryable(self, initialized_project, tmp_path):
+        """P6.C — if the resume run crashes, question.json survives and the
+        same answer file can be replayed."""
+        from src.lib.cli import _cmd_generate_async
+        from src.lib.integrity import sign_answer
+        await self._setup_gaps_3_files(initialized_project)
+
+        gen_args = argparse.Namespace(
+            project_path=str(initialized_project),
+            verbose=False, files=None,
+            fail_on_uncertainty=True, answer_file=None,
+        )
+        with patch("src.lib.startup_checks.check_llm_connection", new_callable=AsyncMock), \
+             patch("src.lib.bridge.analyze_edge_cases", new_callable=AsyncMock, return_value=[]), \
+             patch("src.lib.bridge.generate_adaptive_tests", new_callable=AsyncMock):
+            await _cmd_generate_async(gen_args)
+
+        session = get_current_session(str(initialized_project))
+        session_dir = Path(session["session_dir"])
+        question = json.loads((session_dir / "question.json").read_text())
+        signed = sign_answer(
+            {"test_requirements": {
+                "OrderService": [{"scenario": "s", "expected": "e"}],
+                "UserController": [{"scenario": "s", "expected": "e"}],
+                "PaymentService": [{"scenario": "s", "expected": "e"}],
+            }},
+            question, str(initialized_project),
+        )
+        answer = tmp_path / "answer.json"
+        answer.write_text(json.dumps(signed))
+
+        # Resume crashes mid-run (LLM blows up)
+        gen_args2 = argparse.Namespace(
+            project_path=str(initialized_project),
+            verbose=False, files=None,
+            fail_on_uncertainty=True, answer_file=str(answer),
+        )
+        with patch("src.lib.startup_checks.check_llm_connection", new_callable=AsyncMock), \
+             patch("src.lib.bridge.analyze_edge_cases", new_callable=AsyncMock, return_value=[]), \
+             patch("src.lib.bridge.generate_adaptive_tests",
+                   new=AsyncMock(side_effect=RuntimeError("LLM exploded"))):
+            rc = await _cmd_generate_async(gen_args2)
+
+        assert rc == 1
+        # The question is still pending, the answer was NOT consumed
+        assert (session_dir / "question.json").exists()
+        assert not (session_dir / "answer.json.consumed").exists()
+
+        # Replay the SAME answer file → completes
+        mock_compile = MagicMock(returncode=0, stdout="", stderr="")
+        async def ok_gen(**kwargs):
+            return self._gen_result(Path(kwargs.get("source_file", "")).stem)
+        with patch("src.lib.startup_checks.check_llm_connection", new_callable=AsyncMock), \
+             patch("src.lib.bridge.analyze_edge_cases", new_callable=AsyncMock, return_value=[]), \
+             patch("src.lib.bridge.generate_adaptive_tests", new=AsyncMock(side_effect=ok_gen)), \
+             patch("subprocess.run", return_value=mock_compile):
+            rc = await _cmd_generate_async(gen_args2)
+
+        assert rc == 0
+        assert not (session_dir / "question.json").exists()
+        assert (session_dir / "answer.json.consumed").exists()
+
+    @pytest.mark.asyncio
+    async def test_fixed_code_skips_regeneration(self, initialized_project, tmp_path):
+        """P6.E — a deferred compile-fix answered with fixed_code is applied
+        with ZERO generation LLM calls for that file."""
+        from src.lib.cli import _cmd_generate_async
+        from src.lib.integrity import sign_answer
+        from src.lib.session_tracker import EXIT_AWAITING_INPUT
+        await self._setup_gaps_3_files(initialized_project)
+
+        # First run: only OrderService targeted (files filter), compile-fix
+        # exhausts → deferred with its test_path recorded in the cursor
+        gen_args = argparse.Namespace(
+            project_path=str(initialized_project),
+            verbose=False, files=["OrderService.java"],
+            fail_on_uncertainty=True, answer_file=None,
+        )
+        failing_compile = MagicMock(
+            returncode=1, stdout="",
+            stderr="[ERROR] OrderServiceTest.java:[5,12] cannot find symbol\n",
+        )
+        fix_outputs = iter([
+            "package c;\n// fix 1\nclass OrderServiceTest {}",
+            "package c;\n// fix 2\nclass OrderServiceTest {}",
+        ])
+        async def fake_fix(code, errors, name):
+            try:
+                return next(fix_outputs)
+            except StopIteration:
+                return code + "\n// final"
+
+        with patch("src.lib.startup_checks.check_llm_connection", new_callable=AsyncMock), \
+             patch("src.lib.bridge.analyze_edge_cases",
+                   new_callable=AsyncMock, return_value=[{"scenario": "x", "expected": "y"}]), \
+             patch("src.lib.bridge.generate_adaptive_tests",
+                   new_callable=AsyncMock, return_value=self._gen_result("OrderService")), \
+             patch("src.lib.bridge.fix_compilation_errors", new=AsyncMock(side_effect=fake_fix)), \
+             patch("subprocess.run", return_value=failing_compile):
+            rc = await _cmd_generate_async(gen_args)
+        assert rc == EXIT_AWAITING_INPUT
+
+        session = get_current_session(str(initialized_project))
+        session_dir = Path(session["session_dir"])
+        question = json.loads((session_dir / "question.json").read_text())
+        assert question["kind"] == "compilation_fix_exhausted"
+
+        dev_code = (
+            "package c;\nimport org.junit.jupiter.api.Test;\n"
+            "class OrderServiceTest {\n  @Test void developer_fix() {}\n}\n"
+        )
+        signed = sign_answer(
+            {"compile_fixes": {"OrderService": {"fixed_code": dev_code}}},
+            question, str(initialized_project),
+        )
+        answer = tmp_path / "answer.json"
+        answer.write_text(json.dumps(signed))
+
+        # Resume via cmd_resume (also exercises the files_filter replay).
+        # cmd_resume is sync and calls asyncio.run internally → run it in a
+        # thread since this test already sits inside an event loop.
+        import asyncio as _asyncio
+
+        from src.lib.cli import cmd_resume
+        mock_compile = MagicMock(returncode=0, stdout="", stderr="")
+        with patch("src.lib.startup_checks.check_llm_connection", new_callable=AsyncMock), \
+             patch("src.lib.bridge.analyze_edge_cases",
+                   new_callable=AsyncMock, return_value=[]) as mock_edge, \
+             patch("src.lib.bridge.generate_adaptive_tests",
+                   new_callable=AsyncMock) as mock_gen, \
+             patch("subprocess.run", return_value=mock_compile):
+            rc = await _asyncio.to_thread(cmd_resume, argparse.Namespace(
+                project_path=str(initialized_project),
+                answer_file=str(answer), verbose=False,
+            ))
+
+        assert rc == 0
+        # ZERO generation LLM calls: the dev's code was applied directly
+        mock_gen.assert_not_called()
+        mock_edge.assert_not_called()
+        test_file = (initialized_project / "src" / "test" / "java" / "com"
+                     / "example" / "OrderServiceTest.java")
+        assert "developer_fix" in test_file.read_text()
+
+
+class TestKillerHintsWiring:
+    """P5.D — killer_hints reach the LLM call and a fruitless retry re-pauses."""
+
+    def _prepare_mutation(self, project_path):
+        from src.lib.session_tracker import update_step_file
+        session = get_current_session(str(project_path))
+        update_step_file(
+            session["session_dir"], "mutation", "completed",
+            "# Mutation\n\nDone.",
+            data={"surviving_mutants": [
+                {"class": "com.example.OrderService", "method": "calculateTotal",
+                 "mutator": "MATH", "line": 42, "description": "Replaced + with -"},
+            ]},
+        )
+        return session
+
+    @pytest.mark.asyncio
+    async def test_hints_are_passed_to_generation(self, initialized_project, tmp_path):
+        from src.lib.cli import _cmd_killer_async
+        from src.lib.integrity import sign_answer
+        from src.lib.session_tracker import emit_question
+        session = self._prepare_mutation(initialized_project)
+        session_dir = Path(session["session_dir"])
+
+        emit_question(
+            str(session_dir), "killer-tests",
+            {"kind": "killer_generation_yielded_nothing", "question": "?"},
+            project_path=str(initialized_project),
+            session_id=session["session_id"],
+        )
+        question = json.loads((session_dir / "question.json").read_text())
+        signed = sign_answer(
+            {"killer_hints": {"OrderService.calculateTotal": "totals must round half-up"}},
+            question, str(initialized_project),
+        )
+        answer = tmp_path / "answer.json"
+        answer.write_text(json.dumps(signed))
+
+        mock_result = json.dumps({
+            "success": True,
+            "generated_tests": [{
+                "class": "com.example.OrderService",
+                "test_file": "src/test/java/com/example/OrderServiceKillerTest.java",
+                "test_code": "import org.junit.jupiter.api.Test;\nclass K { @Test void k() {} }",
+                "mutants_targeted": 1,
+            }],
+            "total_mutants_targeted": 1, "total_tests": 1,
+        })
+        mock_compile = MagicMock(returncode=0, stdout="", stderr="")
+        args = argparse.Namespace(
+            project_path=str(initialized_project), verbose=False, max_tests=10,
+            fail_on_uncertainty=True, answer_file=str(answer),
+        )
+        with patch("src.lib.startup_checks.check_llm_connection", new_callable=AsyncMock), \
+             patch("src.lib.bridge.generate_killer_tests",
+                   new_callable=AsyncMock, return_value=mock_result) as mock_killer, \
+             patch("subprocess.run", return_value=mock_compile):
+            rc = await _cmd_killer_async(args)
+
+        assert rc == 0
+        hints_passed = mock_killer.call_args.kwargs.get("hints")
+        assert hints_passed == {"OrderService.calculateTotal": "totals must round half-up"}
+        # Answer consumed on success
+        assert not (session_dir / "question.json").exists()
+        assert (session_dir / "answer.json.consumed").exists()
+
+    @pytest.mark.asyncio
+    async def test_fruitless_hints_pause_again(self, initialized_project, tmp_path):
+        """Hints applied but still 0 tests → pause again (not silent success),
+        with the previous hints echoed in the new question."""
+        from src.lib.cli import _cmd_killer_async
+        from src.lib.integrity import sign_answer
+        from src.lib.session_tracker import EXIT_AWAITING_INPUT, emit_question
+        session = self._prepare_mutation(initialized_project)
+        session_dir = Path(session["session_dir"])
+
+        emit_question(
+            str(session_dir), "killer-tests",
+            {"kind": "killer_generation_yielded_nothing", "question": "?"},
+            project_path=str(initialized_project),
+            session_id=session["session_id"],
+        )
+        question = json.loads((session_dir / "question.json").read_text())
+        signed = sign_answer(
+            {"killer_hints": {"OrderService": "vague hint"}},
+            question, str(initialized_project),
+        )
+        answer = tmp_path / "answer.json"
+        answer.write_text(json.dumps(signed))
+
+        empty_result = json.dumps({
+            "success": True, "generated_tests": [],
+            "total_mutants_targeted": 0, "total_tests": 0,
+        })
+        args = argparse.Namespace(
+            project_path=str(initialized_project), verbose=False, max_tests=10,
+            fail_on_uncertainty=True, answer_file=str(answer),
+        )
+        with patch("src.lib.startup_checks.check_llm_connection", new_callable=AsyncMock), \
+             patch("src.lib.bridge.generate_killer_tests",
+                   new_callable=AsyncMock, return_value=empty_result):
+            rc = await _cmd_killer_async(args)
+
+        assert rc == EXIT_AWAITING_INPUT
+        new_question = json.loads((session_dir / "question.json").read_text())
+        assert new_question["kind"] == "killer_generation_yielded_nothing"
+        assert new_question["subject"]["previous_hints"] == {"OrderService": "vague hint"}

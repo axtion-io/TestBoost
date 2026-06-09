@@ -1,6 +1,7 @@
-# TestBoost GitLab CI template (Phase 4 — MVP)
+# TestBoost GitLab CI template (Phase 4-6 — MVP)
 #
-# include in your .gitlab-ci.yml:
+# include in your .gitlab-ci.yml (requires a GitLab mirror of the TestBoost
+# repo reachable by your instance; adjust the project path to your mirror):
 #
 #   include:
 #     - project: 'axtion-io/testboost'
@@ -8,25 +9,45 @@
 #       file: 'templates/gitlab/testboost.yml'
 #
 # Required CI/CD variables (group or project):
-#   GITLAB_TOKEN          — Project Access Token with `api` scope (masked!)
+#   GITLAB_TOKEN          — Project Access Token, scopes: api + write_repository
+#                           (masked!). write_repository is needed to commit the
+#                           paused session state back to the MR branch.
 #   TESTBOOST_TB_SECRET   — value to seed .testboost/.tb_secret on each run
-#                           (masked, protected). Must be stable so signatures
-#                           are verifiable across pipelines.
+#                           (masked). Must be stable so signatures are
+#                           verifiable across pipelines. ⚠️ Only mark it
+#                           "protected" if your MR source branches are
+#                           protected — protected variables are NOT injected
+#                           into pipelines on unprotected branches.
 #   Optional:
+#   TESTBOOST_PACKAGE     — pip requirement for TestBoost (defaults to the
+#                           GitHub repo at main; pin a tag in production)
+#   TESTBOOST_BOT_USERNAME — username of the GITLAB_TOKEN identity (loop guard)
 #   ANTHROPIC_API_KEY / GOOGLE_API_KEY / OPENAI_API_KEY (depending on
 #     LLM_PROVIDER you set in your project)
+#
+# How the pause/resume loop works:
+#   1. testboost:generate runs with --fail-on-uncertainty. On uncertainty it
+#      exits 78 → the job shows as an orange "warning" (allow_failure), not
+#      green: the pipeline is usable but a human is needed.
+#   2. after_script detects the pause, commits .testboost/ (minus the secret,
+#      see .testboost/.gitignore) to the MR branch with `-o ci.skip`, and
+#      posts the question as an MR comment.
+#   3. The developer replies; the webhook (tools/gitlab-webhook/) triggers a
+#      branch pipeline with TESTBOOST_RESUME=true + TESTBOOST_MR_IID.
+#   4. testboost:resume finds the session state in its checkout (committed at
+#      step 2), fetches + signs the answer from the MR notes, and resumes.
 
 .testboost:base:
   image: python:3.11-slim
   variables:
     TESTBOOST_PROJECT: "$CI_PROJECT_DIR"
+    TESTBOOST_PACKAGE: "git+https://github.com/axtion-io/TestBoost.git@main"
     PIP_DISABLE_PIP_VERSION_CHECK: "1"
   before_script:
-    - apt-get update -qq && apt-get install -qq --no-install-recommends curl jq git
-    - pip install --quiet poetry==2.3.3
-    - poetry install --no-root --without dev
-    # Seed .tb_secret so HMAC is stable across jobs (must be a masked,
-    # protected CI variable; never write it to logs).
+    - apt-get update -qq && apt-get install -qq --no-install-recommends git
+    - pip install --quiet "$TESTBOOST_PACKAGE"
+    # Seed .tb_secret so HMAC is stable across jobs and pipelines
+    # (masked CI variable; never write it to logs).
     - mkdir -p .testboost
     - echo -n "$TESTBOOST_TB_SECRET" > .testboost/.tb_secret
     - chmod 600 .testboost/.tb_secret
@@ -34,7 +55,31 @@
     when: always
     paths:
       - .testboost/
+    exclude:
+      # artifacts ignore .gitignore — never upload the HMAC secret
+      - .testboost/.tb_secret
     expire_in: 1 week
+
+# Jobs that may pause (exit 78): orange status + state commit + MR comment
+.testboost:pause-aware:
+  extends: .testboost:base
+  allow_failure:
+    exit_codes: [78]
+  after_script:
+    - |
+      QFILE=$(ls -t .testboost/sessions/*/question.json 2>/dev/null | head -1 || true)
+      if [ "$CI_JOB_STATUS" = "failed" ] && [ -n "$QFILE" ]; then
+        echo "TestBoost paused — committing session state and posting the question"
+        git config user.email "${TESTBOOST_BOT_EMAIL:-testboost-bot@invalid}"
+        git config user.name "${TESTBOOST_BOT_USERNAME:-TestBoost Bot}"
+        git add .testboost
+        git -c commit.gpgsign=false commit -m "chore(testboost): pause state [skip ci]" || true
+        git push "https://oauth2:${GITLAB_TOKEN}@${CI_SERVER_HOST}/${CI_PROJECT_PATH}.git" \
+          "HEAD:${CI_COMMIT_REF_NAME}" -o ci.skip \
+          || echo "WARNING: could not push session state (resume will not work)"
+        python -m testboost gitlab post-question "$TESTBOOST_PROJECT" \
+          || echo "WARNING: could not post the question to the MR"
+      fi
 
 # Stage 1: project analysis + gap identification
 testboost:analyze:
@@ -43,34 +88,31 @@ testboost:analyze:
   rules:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
   script:
-    - poetry run python -m testboost init "$TESTBOOST_PROJECT" --tech "${TESTBOOST_TECH:-java-spring}" --name "mr-$CI_MERGE_REQUEST_IID" || true
-    - poetry run python -m testboost analyze "$TESTBOOST_PROJECT"
-    - poetry run python -m testboost gaps "$TESTBOOST_PROJECT"
+    - python -m testboost init "$TESTBOOST_PROJECT" --tech "${TESTBOOST_TECH:-java-spring}" --name "mr-$CI_MERGE_REQUEST_IID" || true
+    - python -m testboost analyze "$TESTBOOST_PROJECT"
+    - python -m testboost gaps "$TESTBOOST_PROJECT"
 
-# Stage 2: generate tests, pause if uncertain, post question to MR on pause
+# Stage 2: generate tests; exit 78 (orange) pauses and posts the question
 testboost:generate:
-  extends: .testboost:base
+  extends: .testboost:pause-aware
   stage: test
   needs: ["testboost:analyze"]
   rules:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
   script:
-    - |
-      set +e
-      if [ -n "${TESTBOOST_ANSWER_FILE:-}" ] && [ -f "$TESTBOOST_ANSWER_FILE" ]; then
-        poetry run python -m testboost generate "$TESTBOOST_PROJECT" \
-          --fail-on-uncertainty \
-          --answer-file "$TESTBOOST_ANSWER_FILE"
-      else
-        poetry run python -m testboost generate "$TESTBOOST_PROJECT" --fail-on-uncertainty
-      fi
-      rc=$?
-      if [ "$rc" = "78" ]; then
-        echo "TestBoost paused — posting question to MR #$CI_MERGE_REQUEST_IID"
-        bash "$CI_PROJECT_DIR/scripts/gitlab/post_question_to_mr.sh"
-        exit 0   # green job; the webhook will trigger the resume pipeline
-      fi
-      exit $rc
+    - python -m testboost generate "$TESTBOOST_PROJECT" --fail-on-uncertainty
+
+# Resume: triggered by the webhook (branch pipeline with TESTBOOST_RESUME=true
+# and TESTBOOST_MR_IID set). Session state comes from the checkout — it was
+# committed to the branch when the previous pipeline paused.
+testboost:resume:
+  extends: .testboost:pause-aware
+  stage: test
+  rules:
+    - if: $TESTBOOST_RESUME == "true"
+  script:
+    - python -m testboost gitlab fetch-answer "$TESTBOOST_PROJECT" --output ./answer.json
+    - python -m testboost resume "$TESTBOOST_PROJECT" --answer-file ./answer.json
 
 # Periodic cleanup of abandoned awaiting_input sessions (run on schedule)
 testboost:cleanup:
@@ -79,4 +121,4 @@ testboost:cleanup:
   rules:
     - if: $CI_PIPELINE_SOURCE == "schedule"
   script:
-    - poetry run python -m testboost cleanup "$TESTBOOST_PROJECT" --ttl-hours 72
+    - python -m testboost cleanup "$TESTBOOST_PROJECT" --ttl-hours 72

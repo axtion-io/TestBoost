@@ -24,6 +24,7 @@ async def generate_killer_tests(
     surviving_mutants: list[dict[str, Any]],
     source_file: str | None = None,
     max_tests: int = 10,
+    hints: dict[str, str] | None = None,
 ) -> str:
     """
     Generate tests to kill surviving mutants.
@@ -33,6 +34,9 @@ async def generate_killer_tests(
         surviving_mutants: List of surviving mutants to target
         source_file: Path to the source file with surviving mutants
         max_tests: Maximum number of killer tests to generate
+        hints: Developer-provided guidance keyed by "ClassName.methodName"
+            (or just "ClassName"); matching hints are appended to the LLM
+            prompt for that class
 
     Returns:
         JSON string with generated killer test code
@@ -71,9 +75,20 @@ async def generate_killer_tests(
         else:
             source_code = None
 
+        # Hints matching this class (keys are "ClassName.methodName" or
+        # "ClassName", with either the simple or fully-qualified name)
+        simple_name = class_name.rsplit(".", 1)[-1]
+        class_hints = {
+            k: v for k, v in (hints or {}).items()
+            if k in (class_name, simple_name)
+            or k.startswith((f"{class_name}.", f"{simple_name}."))
+        }
+
         # Generate test code — use LLM when source is available, else fall back to template
         if source_code:
-            test_code = await _generate_killer_tests_llm(class_name, mutants, source_code)
+            test_code = await _generate_killer_tests_llm(
+                class_name, mutants, source_code, hints=class_hints or None
+            )
         else:
             test_code = _generate_killer_test_class(class_name, mutants, source_code)
 
@@ -99,7 +114,10 @@ async def generate_killer_tests(
 
 
 async def _generate_killer_tests_llm(
-    class_name: str, mutants: list[dict[str, Any]], source_code: str
+    class_name: str,
+    mutants: list[dict[str, Any]],
+    source_code: str,
+    hints: dict[str, str] | None = None,
 ) -> str:
     """Use LLM with mutation_killer prompt to generate targeted killer tests."""
     parts = class_name.rsplit(".", 1)
@@ -114,6 +132,12 @@ async def _generate_killer_tests_llm(
         class_name=simple_name,
         package=package,
     )
+
+    if hints:
+        prompt += (
+            "\n\n## Developer hints about these mutants (follow them)\n\n"
+            + "\n".join(f"- `{key}`: {text}" for key, text in hints.items())
+        )
 
     llm = get_llm()
     response = await llm.ainvoke(prompt)

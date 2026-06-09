@@ -11,9 +11,9 @@
 | 1 | Security & state foundations | 5 j/h | ✅ done | 2026-06-02 |
 | 2 | UX extension (hints, more triggers) | 5 j/h | ✅ done | 2026-06-02 |
 | 3 | Operability (cleanup, doctor, metrics) | 3 j/h | ✅ done | 2026-06-02 |
-| 4 | GitLab integration layer | 5 j/h | ⚠️ rework needed (review 2026-06-09) | 2026-06-02 |
-| 5 | Hardening — review fixes (state hand-off, secret leak, dead features) | 6 j/h | planned | — |
-| 6 | Grouped questions & resume UX | 4.5 j/h | planned | — |
+| 4 | GitLab integration layer | 5 j/h | ✅ done (reworked in P5-P6) | 2026-06-02 |
+| 5 | Hardening — review fixes (state hand-off, secret leak, dead features) | 6 j/h | ✅ done | 2026-06-09 |
+| 6 | Grouped questions & resume UX | 4.5 j/h | ✅ done (awaiting P4-USR/P6-USR) | 2026-06-09 |
 | Cross-cutting | E2E tests, changelog, security review | 2 j/h | rolling | — |
 | Buffer | Reviews, integration bugs | 4-5 j/h | rolling | — |
 | **Total** | | **~35 j/h** | | — |
@@ -441,3 +441,55 @@ end-to-end**. Root causes and decisions:
   seam where the integration actually broke (cross-pipeline state, GitLab
   variable availability, script distribution). Phase 5/6 acceptance
   criteria therefore require E2E fixtures that cross those seams.
+
+### Phase 5 — 2026-06-09
+
+- **State hand-off** (5.1): the template's `.testboost:pause-aware` base
+  commits `.testboost/` to the MR branch on pause (`[skip ci]`,
+  `-o ci.skip`, secret excluded by `.testboost/.gitignore`); the
+  `testboost:resume` job (now part of the template) reads it from a
+  normal checkout.
+- **Secret leak** (5.2): `artifacts:exclude: [.testboost/.tb_secret]`.
+- **MR iid fallback** (5.3): `testboost gitlab …` resolves
+  `CI_MERGE_REQUEST_IID` → `TESTBOOST_MR_IID` (covered by test).
+- **Scripts → subcommands** (5.4): `scripts/gitlab/*.sh` deleted, replaced
+  by `src/lib/gitlab_mr.py` + `testboost gitlab post-question|fetch-answer`
+  (httpx, MockTransport-tested). Template installs TestBoost via
+  `pip install $TESTBOOST_PACKAGE` instead of assuming the TestBoost repo.
+  The bash `set -e` dead-error-path bug disappeared with the scripts.
+- **Cleanup detection** (5.5): `emit_question` flips `spec.md`'s
+  session-level status to `awaiting_input` (and a resumed step flips it
+  back); integration test runs emit_question → find_abandoned_sessions
+  with no manual status edit (P5.C ✅).
+- **killer_hints wired** (5.6): hints reach the killer LLM prompt
+  (per-class matching, simple or FQN keys); a fruitless retry pauses
+  again with `subject.previous_hints` echoed (P5.D ✅).
+- **validate hints dropped** (5.7): `validate_fixes` advertises
+  `fixed_code` only — matching what the code does.
+- **Metrics → stderr** (5.8): `sign-answer` stdout is parseable JSON
+  again (P5.E ✅).
+- **Webhook hardening** (5.9): constant-time token compare; bot-identity
+  and question-shaped comments ignored (loop guards, tested).
+- **Tests**: 340 unit tests pass (was 316), lint clean.
+
+### Phase 6 — 2026-06-09
+
+- **Batched questions** (6.1): `generate` no longer stops at the first
+  uncertain file — it generates everything it can, then emits ONE
+  question (flat payload for a single item, `items[]` + combined
+  `answer_schema` otherwise; `markdown_preview` renders one MR comment).
+  P6.A ✅ (`test_one_question_for_multiple_uncertain_files`).
+- **Scoped answers** (6.2): `test_requirements` is keyed per class; a
+  legacy bare list still applies globally. P6.B ✅.
+- **Cursor remembers the run** (6.3): `files_filter` + `deferred` (with
+  per-file `test_path`) persisted; `resume` replays the original scope
+  and applies `fixed_code` with **zero** generation LLM calls. P6.E ✅.
+- **Consume-on-success** (6.4): answers are verified at startup
+  (`load_and_verify_answer`) but only finalized (`finalize_answer`) when
+  the answered work succeeds or a new question supersedes it; a crashed
+  resume is retryable with the same answer file. P6.C ✅.
+- **Orange pause status** (6.5): `allow_failure: exit_codes: [78]` in the
+  template; posting + state-commit moved to `after_script` keyed on
+  `CI_JOB_STATUS`. P6.D: by construction (template), to confirm in P6-USR.
+- **Next step**: run P4-USR/P6-USR on a real GitLab project (webhook
+  deployed, GitLab mirror for `include:`).

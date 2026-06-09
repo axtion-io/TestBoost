@@ -117,3 +117,39 @@ class TestWebhook:
         assert r.status_code == 200
         assert r.json()["pipeline_id"] == 999
         mock_trigger.assert_called_once_with(100, 7, "feature/x")
+
+
+class TestWebhookLoopGuards:
+    """P5.9 — the bot's own comments must never trigger resume pipelines."""
+
+    def test_ignores_bot_identity_comment(self, webhook_app, monkeypatch):
+        from starlette.testclient import TestClient
+        monkeypatch.setenv("TESTBOOST_BOT_USERNAME", "tb-bot")
+        client = TestClient(webhook_app)
+        marker = "testboost:question_id=" + "a" * 32
+        r = client.post(
+            "/gitlab/note",
+            headers={"X-Gitlab-Token": "test-secret", "X-Gitlab-Event": "Note Hook"},
+            json=_note_payload(commenter="tb-bot", author="tb-bot",
+                               body=f"```json\n{{}}\n```\n<!-- {marker} -->"),
+        )
+        assert r.status_code == 200
+        assert "bot identity" in r.json()["ignored"]
+
+    def test_ignores_question_comment_shape(self, webhook_app):
+        """Even without TESTBOOST_BOT_USERNAME, a comment that IS the
+        question (bot author == MR author) must not trigger a pipeline."""
+        from starlette.testclient import TestClient
+        client = TestClient(webhook_app)
+        marker = "testboost:question_id=" + "b" * 32
+        body = (
+            "### 🤖 TestBoost needs input (missing_business_context)\n\n"
+            f"**Question**: …\n\n<!-- {marker} -->"
+        )
+        r = client.post(
+            "/gitlab/note",
+            headers={"X-Gitlab-Token": "test-secret", "X-Gitlab-Event": "Note Hook"},
+            json=_note_payload(commenter="alice", author="alice", body=body),
+        )
+        assert r.status_code == 200
+        assert "question comment" in r.json()["ignored"]

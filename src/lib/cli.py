@@ -491,9 +491,10 @@ async def _cmd_generate_async(args: argparse.Namespace) -> int:
         STATUS_IN_PROGRESS,
         AwaitingInputError,
         clear_generation_cursor,
-        consume_answer,
         emit_question,
+        finalize_answer,
         get_current_session,
+        load_and_verify_answer,
         load_generation_cursor,
         save_generation_cursor,
         update_step_file,
@@ -517,12 +518,15 @@ async def _cmd_generate_async(args: argparse.Namespace) -> int:
 
     update_step_file(session_dir, "generation", STATUS_IN_PROGRESS, "# Test Generation\n\nGenerating...")
 
-    # --- Human-in-the-loop: load and verify answer file if provided ---
+    # --- Human-in-the-loop: verify answer file if provided ---
+    # Verified here, but only finalized (question cleared, consumed marker
+    # written) once the answered work has succeeded, so a crashed resume
+    # can be retried with the same answer file.
     answer_payload: dict | None = None
     answer_file = getattr(args, "answer_file", None)
     if answer_file:
         try:
-            answer_payload = consume_answer(
+            answer_payload = load_and_verify_answer(
                 session_dir, answer_file, project_path=project_path
             )
             logger.info(f"Loaded and verified answer payload from {answer_file}")
@@ -622,33 +626,50 @@ async def _cmd_generate_async(args: argparse.Namespace) -> int:
         # --- Per-file cursor: resume from where a previous run paused ---
         cursor = load_generation_cursor(session_dir)
         if cursor and cursor.get("target_files") == target_files:
-            start_index = int(cursor.get("current_index", 0))
             completed_files = list(cursor.get("completed_files", []))
-            if start_index > 0:
+            prior_deferred = {
+                d.get("source_file"): d for d in cursor.get("deferred", [])
+                if isinstance(d, dict)
+            }
+            if completed_files or prior_deferred:
                 logger.info(
-                    f"Resuming from file index {start_index} "
-                    f"({len(completed_files)} files already completed)"
+                    f"Resuming: {len(completed_files)} file(s) already completed, "
+                    f"{len(prior_deferred)} deferred"
                 )
         else:
             if cursor:
                 logger.warn("Cursor target_files mismatch — starting fresh")
-            start_index = 0
             completed_files = []
+            prior_deferred = {}
+        files_filter = list(args.files) if getattr(args, "files", None) else None
         save_generation_cursor(
             session_dir,
             target_files=target_files,
-            current_index=start_index,
+            current_index=len(completed_files),
             completed_files=completed_files,
+            files_filter=files_filter,
         )
 
         compile_fixes = (
             answer_payload.get("compile_fixes", {})
             if isinstance(answer_payload, dict) else {}
         )
+        if not isinstance(compile_fixes, dict):
+            compile_fixes = {}
+        answered_requirements = (
+            answer_payload.get("test_requirements", {})
+            if isinstance(answer_payload, dict) else {}
+        )
+
+        # Uncertainties are collected across the whole run and emitted as ONE
+        # question at the end, so the developer answers a single MR comment
+        # instead of one round-trip per file.
+        uncertainties: list[dict] = []
+        deferred_out: list[dict] = []
 
         generated: list[dict] = []
         for i, source_file in enumerate(target_files):
-            if i < start_index:
+            if source_file in completed_files:
                 continue
 
             logger.info(
@@ -656,7 +677,66 @@ async def _cmd_generate_async(args: argparse.Namespace) -> int:
             )
             class_name = Path(source_file).stem
             class_type = "service"
+
+            # Requirements answered for this class. A dict is keyed per class;
+            # a bare list is the legacy global form (applies to every file).
+            if isinstance(answered_requirements, dict):
+                injected = list(answered_requirements.get(class_name, []))
+            elif isinstance(answered_requirements, list):
+                injected = list(answered_requirements)
+            else:
+                injected = []
+
             try:
+                # --- Fast path: a deferred compile-fix answered with full
+                # fixed_code — write it directly, no generation LLM call.
+                prior = prior_deferred.get(source_file)
+                if prior and prior.get("reason") == "compilation_fix_exhausted" and prior.get("test_path"):
+                    fix_key = prior.get("class_name") or class_name
+                    dev_fix = compile_fixes.get(fix_key)
+                    if isinstance(dev_fix, dict) and dev_fix.get("fixed_code"):
+                        test_path = prior["test_path"]
+                        test_code = str(dev_fix["fixed_code"])
+                        full_path = Path(project_path) / test_path
+                        full_path.parent.mkdir(parents=True, exist_ok=True)
+                        full_path.write_text(test_code, encoding="utf-8")
+                        logger.info(
+                            f"Applied developer fixed_code for {fix_key} — skipping regeneration"
+                        )
+                        test_code, exhausted = await _attempt_compile_fix(
+                            project_path, full_path, test_code,
+                            fix_key, logger, session_dir, maven_compile_cmd,
+                        )
+                        if exhausted and fail_on_uncertainty:
+                            uncertainties.append(
+                                _compile_fix_item(fix_key, str(full_path), exhausted, test_code)
+                            )
+                            deferred_out.append({
+                                "source_file": source_file,
+                                "class_name": fix_key,
+                                "test_path": test_path,
+                                "reason": "compilation_fix_exhausted",
+                            })
+                            continue
+                        generated.append({
+                            "path": test_path,
+                            "content": test_code,
+                            "class_name": fix_key,
+                            "package": prior.get("package", ""),
+                            "source_file": source_file,
+                            "test_count": test_code.count("@Test") + test_code.count("def test_"),
+                        })
+                        completed_files.append(source_file)
+                        save_generation_cursor(
+                            session_dir,
+                            target_files=target_files,
+                            current_index=len(completed_files),
+                            completed_files=completed_files,
+                            files_filter=files_filter,
+                            deferred=deferred_out,
+                        )
+                        continue
+
                 # --- Edge case analysis ---
                 edge_cases: list[dict] = []
                 try:
@@ -681,44 +761,34 @@ async def _cmd_generate_async(args: argparse.Namespace) -> int:
                 except Exception as ec_err:
                     logger.warn(f"Edge case analysis skipped for {source_file}: {ec_err}")
 
-                # --- HITL trigger: empty edge cases + no injected requirements ---
-                injected = (
-                    answer_payload.get("test_requirements", [])
-                    if isinstance(answer_payload, dict) else []
-                )
+                # --- HITL trigger: no edge cases + no answered requirements
+                # → defer this file (question batched at end of run)
                 if not edge_cases and not injected and fail_on_uncertainty:
-                    save_generation_cursor(
-                        session_dir,
-                        target_files=target_files,
-                        current_index=i,
-                        completed_files=completed_files,
-                    )
-                    qpath = emit_question(
-                        session_dir,
-                        "generation",
-                        {
-                            "kind": "missing_business_context",
-                            "subject": {
-                                "source_file": source_file,
-                                "class_name": class_name,
-                                "class_type": class_type,
-                            },
-                            "question": (
-                                f"No edge cases were derived for `{class_name}`. "
-                                f"Please provide business rules, invariants, or specific "
-                                f"scenarios that the generated tests must cover."
-                            ),
-                            "answer_schema": {
-                                "test_requirements": [
-                                    {"scenario": "string", "expected": "string"}
-                                ]
-                            },
+                    logger.info(f"Deferred {class_name}: missing business context")
+                    uncertainties.append({
+                        "kind": "missing_business_context",
+                        "subject": {
+                            "source_file": source_file,
+                            "class_name": class_name,
+                            "class_type": class_type,
                         },
-                        project_path=project_path,
-                        session_id=session["session_id"],
-                    )
-                    logger.info(f"Paused: question written to {qpath}")
-                    raise AwaitingInputError(qpath, "generation")
+                        "question": (
+                            f"No edge cases were derived for `{class_name}`. "
+                            f"Please provide business rules, invariants, or specific "
+                            f"scenarios that the generated tests must cover."
+                        ),
+                        "answer_schema": {
+                            "test_requirements": {
+                                class_name: [{"scenario": "string", "expected": "string"}]
+                            }
+                        },
+                    })
+                    deferred_out.append({
+                        "source_file": source_file,
+                        "class_name": class_name,
+                        "reason": "missing_business_context",
+                    })
+                    continue
 
                 merged_requirements = list(edge_cases or []) + list(injected or [])
 
@@ -742,10 +812,7 @@ async def _cmd_generate_async(args: argparse.Namespace) -> int:
                     cls = result.get("context", {}).get("class_name", "") or class_name
 
                     # Developer-provided fix (fixed_code wins over hints if both)
-                    dev_fix = (
-                        compile_fixes.get(cls)
-                        if isinstance(compile_fixes, dict) else None
-                    )
+                    dev_fix = compile_fixes.get(cls)
                     dev_hints: list[str] | None = None
                     if isinstance(dev_fix, dict):
                         if "fixed_code" in dev_fix:
@@ -759,16 +826,23 @@ async def _cmd_generate_async(args: argparse.Namespace) -> int:
                     full_path.write_text(test_code, encoding="utf-8")
                     logger.info(f"Wrote test file: {test_path}")
 
-                    # Compile-fix (may raise AwaitingInputError)
-                    fixed = await _attempt_compile_fix(
+                    test_code, exhausted = await _attempt_compile_fix(
                         project_path, full_path, test_code,
                         cls, logger, session_dir, maven_compile_cmd,
-                        fail_on_uncertainty=fail_on_uncertainty,
-                        session_id=session["session_id"],
                         hints=dev_hints,
                     )
-                    if fixed != test_code:
-                        test_code = fixed
+                    if exhausted and fail_on_uncertainty:
+                        uncertainties.append(
+                            _compile_fix_item(cls, str(full_path), exhausted, test_code)
+                        )
+                        deferred_out.append({
+                            "source_file": source_file,
+                            "class_name": cls,
+                            "test_path": test_path,
+                            "package": result.get("context", {}).get("package", ""),
+                            "reason": "compilation_fix_exhausted",
+                        })
+                        continue
 
                     generated.append({
                         "path": test_path,
@@ -779,14 +853,6 @@ async def _cmd_generate_async(args: argparse.Namespace) -> int:
                         "test_count": result.get("test_count", 0),
                     })
 
-            except AwaitingInputError:
-                save_generation_cursor(
-                    session_dir,
-                    target_files=target_files,
-                    current_index=i,
-                    completed_files=completed_files,
-                )
-                raise
             except Exception as file_err:
                 logger.error(f"Failed to generate tests for {source_file}: {file_err}")
                 raise
@@ -795,9 +861,53 @@ async def _cmd_generate_async(args: argparse.Namespace) -> int:
             save_generation_cursor(
                 session_dir,
                 target_files=target_files,
-                current_index=i + 1,
+                current_index=len(completed_files),
                 completed_files=completed_files,
+                files_filter=files_filter,
+                deferred=deferred_out,
             )
+
+        # --- One batched question for everything that needs human input ---
+        if uncertainties:
+            # The verified answer (if any) was applied to the files that
+            # succeeded above; consume it before emitting the next question.
+            if answer_payload is not None:
+                finalize_answer(session_dir, answer_payload)
+            save_generation_cursor(
+                session_dir,
+                target_files=target_files,
+                current_index=len(completed_files),
+                completed_files=completed_files,
+                files_filter=files_filter,
+                deferred=deferred_out,
+            )
+            if len(uncertainties) == 1:
+                question_payload = uncertainties[0]
+            else:
+                question_payload = {
+                    "kind": "batch",
+                    "question": (
+                        f"{len(uncertainties)} file(s) need your input to finish "
+                        f"this generation run ({len(generated)} other file(s) "
+                        f"were generated successfully)."
+                    ),
+                    "items": uncertainties,
+                    "answer_schema": _merge_answer_schemas(uncertainties),
+                }
+            qpath = emit_question(
+                session_dir,
+                "generation",
+                question_payload,
+                project_path=project_path,
+                session_id=session["session_id"],
+            )
+            logger.info(
+                f"Paused: {len(uncertainties)} question item(s) written to {qpath}"
+            )
+            raise AwaitingInputError(qpath, "generation")
+
+        if answer_payload is not None:
+            finalize_answer(session_dir, answer_payload)
 
         # --- Build report ---
         content = "# Test Generation Results\n\n"
@@ -854,6 +964,50 @@ async def _cmd_generate_async(args: argparse.Namespace) -> int:
 _MAX_COMPILE_FIX_ATTEMPTS = 3
 
 
+def _compile_fix_item(
+    class_name: str, test_file: str, exhausted: dict, current_code: str
+) -> dict:
+    """Build a question item for a compile-fix budget exhaustion."""
+    attempts = exhausted.get("attempts", _MAX_COMPILE_FIX_ATTEMPTS)
+    return {
+        "kind": "compilation_fix_exhausted",
+        "subject": {
+            "class_name": class_name,
+            "test_file": test_file,
+            "attempts": attempts,
+        },
+        "question": (
+            f"Could not fix compilation of `{class_name}` after "
+            f"{attempts} LLM attempts. Please review the "
+            f"errors and provide either the corrected test code or hints."
+        ),
+        "compile_errors": exhausted.get("errors", ""),
+        "current_test_code": current_code[:8000],
+        "answer_schema": {
+            "compile_fixes": {
+                class_name: {
+                    "fixed_code": "string (full test file content)",
+                    "hints": ["natural-language hint for the LLM"],
+                }
+            }
+        },
+    }
+
+
+def _merge_answer_schemas(items: list[dict]) -> dict:
+    """Combine per-item answer schemas into one reply shape for a batch question."""
+    merged: dict = {}
+    for item in items:
+        for key, value in (item.get("answer_schema") or {}).items():
+            if isinstance(value, dict) and isinstance(merged.get(key), dict):
+                merged[key].update(value)
+            elif isinstance(value, dict):
+                merged[key] = dict(value)
+            else:
+                merged.setdefault(key, value)
+    return merged
+
+
 def _guess_failing_class(line: str) -> str | None:
     """Best-effort extraction of a test class name from a JUnit/Maven failure line.
 
@@ -873,21 +1027,19 @@ async def _attempt_compile_fix(
     logger,
     session_dir: str | None = None,
     maven_compile_cmd: str | None = None,
-    fail_on_uncertainty: bool = False,
-    session_id: str | None = None,
     hints: list[str] | None = None,
-) -> str:
+) -> tuple[str, dict | None]:
     """Run mvn test-compile and use LLM to fix compilation errors, retrying up to N times.
 
     Uses maven_compile_cmd from analysis.md if available, so profiles and
     custom properties set there are respected.
 
-    When fail_on_uncertainty=True and the max retry budget is exhausted,
-    raises AwaitingInputError so the caller can return EXIT_AWAITING_INPUT
-    and a CI bot can post the compile errors to the MR for the developer.
+    Returns (code, exhausted): exhausted is None when the file compiles (or
+    the check was skipped for infra reasons), or a dict with "errors" and
+    "attempts" when the retry budget ran out with the code still broken.
+    The caller decides whether to queue a question or give up silently.
     """
     from src.lib.plugins.java_spring import _parse_maven_cmd as _java_parse_maven_cmd
-    from src.lib.session_tracker import AwaitingInputError, emit_question
     try:
         cmd = _java_parse_maven_cmd(maven_compile_cmd) if maven_compile_cmd else None
     except ValueError as e:
@@ -909,14 +1061,14 @@ async def _attempt_compile_fix(
             result = subprocess.run(cmd, cwd=project_path, capture_output=True, text=True, timeout=120)
         except (subprocess.TimeoutExpired, FileNotFoundError) as e:
             logger.warn(f"Compile check skipped ({class_name}): {e}")
-            return current_code
+            return current_code, None
 
         if result.returncode == 0:
             if attempt == 1:
                 logger.info(f"Compilation OK: {class_name}")
             else:
                 logger.info(f"Compilation OK after {attempt - 1} fix(es): {class_name}")
-            return current_code
+            return current_code, None
 
         # --- parse errors for our file ---
         all_errors = result.stdout + result.stderr
@@ -925,7 +1077,7 @@ async def _attempt_compile_fix(
 
         if not file_error_lines:
             _warn_maven_config_issue(all_errors, session_dir, project_path, logger)
-            return current_code
+            return current_code, None
 
         relevant_lines = [ln for ln in all_errors.splitlines() if file_name in ln or "[ERROR]" in ln]
         relevant_errors = "\n".join(relevant_lines[:80])
@@ -938,37 +1090,8 @@ async def _attempt_compile_fix(
         )
 
         if attempt == max_attempts:
-            if fail_on_uncertainty and session_dir:
-                qpath = emit_question(
-                    session_dir,
-                    "generation",
-                    {
-                        "kind": "compilation_fix_exhausted",
-                        "subject": {
-                            "class_name": class_name,
-                            "test_file": str(test_file),
-                            "attempts": _MAX_COMPILE_FIX_ATTEMPTS,
-                        },
-                        "question": (
-                            f"Could not fix compilation of `{class_name}` after "
-                            f"{_MAX_COMPILE_FIX_ATTEMPTS} LLM attempts. Please review the "
-                            f"errors and provide either the corrected test code or hints."
-                        ),
-                        "compile_errors": relevant_errors,
-                        "current_test_code": current_code[:8000],
-                        "answer_schema": {
-                            "compile_fixes": {
-                                class_name: {"fixed_code": "string (full test file content)"}
-                            }
-                        },
-                    },
-                    project_path=project_path,
-                    session_id=session_id,
-                )
-                logger.info(f"Compile-fix exhausted for {class_name} — paused, question at {qpath}")
-                raise AwaitingInputError(qpath, "generation")
-            logger.info(f"Max fix attempts reached for {class_name} — leaving for manual correction")
-            return current_code
+            logger.info(f"Max fix attempts reached for {class_name}")
+            return current_code, {"errors": relevant_errors, "attempts": max_attempts}
 
         # --- ask LLM to fix ---
         try:
@@ -983,15 +1106,15 @@ async def _attempt_compile_fix(
             fixed = await fix_compilation_errors(current_code, errors_with_hints, class_name)
             if fixed == current_code:
                 logger.info(f"LLM returned identical code for {class_name} — stopping retries")
-                return current_code
+                return current_code, {"errors": relevant_errors, "attempts": attempt}
             test_file.write_text(fixed, encoding="utf-8")
             current_code = fixed
             logger.info(f"Applied fix attempt {attempt} for {class_name}, recompiling...")
         except Exception as e:
             logger.warn(f"Auto-fix failed for {class_name}: {e}")
-            return current_code
+            return current_code, None
 
-    return current_code
+    return current_code, None
 
 
 def cmd_validate(args: argparse.Namespace) -> int:
@@ -1008,9 +1131,10 @@ async def _cmd_validate_async(args: argparse.Namespace) -> int:
         STATUS_FAILED,
         STATUS_IN_PROGRESS,
         AwaitingInputError,
-        consume_answer,
         emit_question,
+        finalize_answer,
         get_current_session,
+        load_and_verify_answer,
         update_step_file,
     )
 
@@ -1032,12 +1156,12 @@ async def _cmd_validate_async(args: argparse.Namespace) -> int:
 
     update_step_file(session_dir, "validation", STATUS_IN_PROGRESS, "# Validation\n\nCompiling and testing...")
 
-    # --- Human-in-the-loop: load answer file if provided ---
+    # --- Human-in-the-loop: verify answer file if provided (finalized on success) ---
     answer_payload: dict | None = None
     answer_file = getattr(args, "answer_file", None)
     if answer_file:
         try:
-            answer_payload = consume_answer(
+            answer_payload = load_and_verify_answer(
                 session_dir, answer_file, project_path=project_path
             )
             logger.info(f"Loaded and verified answer payload from {answer_file}")
@@ -1222,6 +1346,9 @@ async def _cmd_validate_async(args: argparse.Namespace) -> int:
                     if _guess_failing_class(ln)
                 })
                 stack_trace = "\n".join(failure_lines[-30:])
+                # A new question supersedes the answered one
+                if answer_payload is not None:
+                    finalize_answer(session_dir, answer_payload)
                 qpath = emit_question(
                     session_dir,
                     "validation",
@@ -1233,14 +1360,15 @@ async def _cmd_validate_async(args: argparse.Namespace) -> int:
                         },
                         "question": (
                             f"{len(failing_classes) or '?'} test class(es) failed at runtime. "
-                            f"Review the stack trace and provide fixed code or hints."
+                            f"Review the stack trace and provide fixed code."
                         ),
                         "stack_trace": stack_trace,
+                        # Only fixed_code is applied by validate — natural-language
+                        # hints are a generate-step (compile_fixes) feature.
                         "answer_schema": {
                             "validate_fixes": {
                                 "<TestClassName>": {
                                     "fixed_code": "string (full test file content)",
-                                    "hints": ["natural-language hint for the LLM"],
                                 }
                             }
                         },
@@ -1264,6 +1392,8 @@ async def _cmd_validate_async(args: argparse.Namespace) -> int:
         logger.result("Validation Results", content)
 
         if test_returncode == 0:
+            if answer_payload is not None:
+                finalize_answer(session_dir, answer_payload)
             from src.lib.integrity import emit_token
             emit_token(project_path, "validation", session["session_id"])
         return 0 if test_returncode == 0 else 1
@@ -1472,9 +1602,10 @@ async def _cmd_killer_async(args: argparse.Namespace) -> int:
         STATUS_FAILED,
         STATUS_IN_PROGRESS,
         AwaitingInputError,
-        consume_answer,
         emit_question,
+        finalize_answer,
         get_current_session,
+        load_and_verify_answer,
         update_step_file,
     )
 
@@ -1488,12 +1619,12 @@ async def _cmd_killer_async(args: argparse.Namespace) -> int:
     session_dir = session["session_dir"]
     logger = MdLogger(session_dir, "killer-tests", verbose=getattr(args, "verbose", False))
 
-    # --- HITL: load and verify answer file if provided ---
+    # --- HITL: verify answer file if provided (finalized on success) ---
     answer_payload: dict | None = None
     answer_file = getattr(args, "answer_file", None)
     if answer_file:
         try:
-            answer_payload = consume_answer(
+            answer_payload = load_and_verify_answer(
                 session_dir, answer_file, project_path=project_path
             )
             logger.info(f"Loaded and verified answer payload from {answer_file}")
@@ -1575,8 +1706,11 @@ async def _cmd_killer_async(args: argparse.Namespace) -> int:
             print(f"\nERROR: Cannot connect to LLM provider. {e}")
             return 1
 
+        if killer_hints:
+            logger.info(f"Injecting {len(killer_hints)} developer hint(s) into killer generation")
         result_json = await generate_killer_tests(
             project_path, surviving_mutants, max_tests=max_tests,
+            hints=killer_hints if killer_hints else None,
         )
         result = json.loads(result_json)
 
@@ -1591,9 +1725,23 @@ async def _cmd_killer_async(args: argparse.Namespace) -> int:
 
         generated_tests = result.get("generated_tests", [])
 
-        # --- HITL trigger: no killer tests produced + flag on → pause ---
-        if not generated_tests and fail_on_uncertainty and not killer_hints:
+        # --- HITL trigger: no killer tests produced + flag on → pause.
+        # Pauses again even when hints were provided (the hints didn't work);
+        # the new question shows which hints were already tried.
+        if not generated_tests and fail_on_uncertainty:
             top_survivors = surviving_mutants[:10]
+            if answer_payload is not None:
+                finalize_answer(session_dir, answer_payload)
+            question_text = (
+                f"Killer-test generation produced 0 tests for "
+                f"{len(surviving_mutants)} surviving mutants. "
+                f"Provide hints about what these mutants represent or how to kill them."
+            )
+            if killer_hints:
+                question_text += (
+                    f" (Note: {len(killer_hints)} previous hint(s) were applied "
+                    f"and still yielded nothing — try being more specific.)"
+                )
             qpath = emit_question(
                 session_dir, "killer-tests",
                 {
@@ -1601,12 +1749,9 @@ async def _cmd_killer_async(args: argparse.Namespace) -> int:
                     "subject": {
                         "surviving_mutant_count": len(surviving_mutants),
                         "top_survivors": top_survivors,
+                        "previous_hints": killer_hints or None,
                     },
-                    "question": (
-                        f"Killer-test generation produced 0 tests for "
-                        f"{len(surviving_mutants)} surviving mutants. "
-                        f"Provide hints about what these mutants represent or how to kill them."
-                    ),
+                    "question": question_text,
                     "answer_schema": {
                         "killer_hints": {
                             "<ClassName.methodName>": "natural-language hint for the LLM"
@@ -1657,7 +1802,7 @@ async def _cmd_killer_async(args: argparse.Namespace) -> int:
 
             for full_path, test in written_files:
                 class_name = test.get("class", "").split(".")[-1]
-                fixed = await _attempt_compile_fix(
+                fixed, _exhausted = await _attempt_compile_fix(
                     project_path, full_path, test.get("test_code", ""),
                     class_name, logger, session_dir, maven_compile_cmd,
                 )
@@ -1681,6 +1826,9 @@ async def _cmd_killer_async(args: argparse.Namespace) -> int:
         )
 
         logger.result("Killer Test Generation Complete", content)
+
+        if answer_payload is not None:
+            finalize_answer(session_dir, answer_payload)
 
         from src.lib.integrity import emit_token
         emit_token(project_path, "killer-tests", session["session_id"])
@@ -1806,10 +1954,15 @@ def cmd_resume(args: argparse.Namespace) -> int:
     step = question.get("step", step)
 
     if step == "generation":
+        # Replay the paused run's exact --files scope from the cursor, so
+        # the recomputed target_files match and completed work is skipped.
+        from src.lib.session_tracker import load_generation_cursor
+        cursor = load_generation_cursor(str(session_dir))
+        files_filter = cursor.get("files_filter") if cursor else None
         gen_args = argparse.Namespace(
             project_path=project_path,
             verbose=getattr(args, "verbose", False),
-            files=None,
+            files=files_filter,
             fail_on_uncertainty=True,
             answer_file=answer_file,
         )
@@ -1878,6 +2031,48 @@ def cmd_sign_answer(args: argparse.Namespace) -> int:
     else:
         print(out_json)
     return 0
+
+
+def cmd_gitlab(args: argparse.Namespace) -> int:
+    """GitLab MR helpers for CI jobs (post-question / fetch-answer).
+
+    These used to be shell scripts under scripts/gitlab/; as subcommands
+    they ship with `pip install testboost`, which is all a consumer repo
+    gets from `include:`-ing the CI template.
+    """
+    import httpx
+
+    from src.lib.gitlab_mr import (
+        GitLabConfigError,
+        NoAnswerFoundError,
+        fetch_answer,
+        post_question,
+    )
+
+    sub = getattr(args, "gitlab_command", None)
+    try:
+        if sub == "post-question":
+            result = post_question(args.project_path)
+            print(
+                f"Posted question {result['question_id']} "
+                f"(note {result.get('note_id')})"
+            )
+            return 0
+        if sub == "fetch-answer":
+            out = fetch_answer(args.project_path, output=args.output)
+            print(f"Signed answer written to {out}")
+            return 0
+        print(f"Error: unknown gitlab subcommand: {sub}", file=sys.stderr)
+        return 1
+    except GitLabConfigError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        return 1
+    except NoAnswerFoundError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        return 2
+    except httpx.HTTPError as e:
+        print(f"Error: GitLab API call failed: {e}", file=sys.stderr)
+        return 1
 
 
 def cmd_cleanup(args: argparse.Namespace) -> int:
@@ -2185,6 +2380,25 @@ def main() -> int:
     p_sign.add_argument("--answer-file", required=True, help="Path to raw answer JSON")
     p_sign.add_argument("--output", "-o", default=None, help="Write signed answer here (default: stdout)")
 
+    # gitlab — MR helpers for CI jobs
+    p_gitlab = subparsers.add_parser(
+        "gitlab",
+        help="GitLab MR helpers (post pending question / fetch signed answer)",
+    )
+    gitlab_sub = p_gitlab.add_subparsers(dest="gitlab_command", required=True)
+    p_gl_post = gitlab_sub.add_parser(
+        "post-question", help="Post the pending question.json as an MR note"
+    )
+    p_gl_post.add_argument("project_path", help="Path to the project")
+    p_gl_fetch = gitlab_sub.add_parser(
+        "fetch-answer", help="Find the developer's answer note and write a signed answer file"
+    )
+    p_gl_fetch.add_argument("project_path", help="Path to the project")
+    p_gl_fetch.add_argument(
+        "--output", "-o", default="./answer.json",
+        help="Where to write the signed answer (default ./answer.json)",
+    )
+
     # cleanup — mark abandoned sessions past TTL
     p_cleanup = subparsers.add_parser(
         "cleanup",
@@ -2230,6 +2444,7 @@ def main() -> int:
         "status": cmd_status,
         "resume": cmd_resume,
         "sign-answer": cmd_sign_answer,
+        "gitlab": cmd_gitlab,
         "cleanup": cmd_cleanup,
         "doctor": cmd_doctor,
     }
@@ -2245,7 +2460,8 @@ def main() -> int:
         "duration_ms": duration_ms,
         "project_path": getattr(args, "project_path", None),
     }
-    print(f"[TESTBOOST_METRICS:{json.dumps(metrics, separators=(',', ':'))}]")
+    # stderr, so stdout consumers (sign-answer JSON, resume markdown) stay clean
+    print(f"[TESTBOOST_METRICS:{json.dumps(metrics, separators=(',', ':'))}]", file=sys.stderr)
     return exit_code
 
 

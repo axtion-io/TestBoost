@@ -18,6 +18,7 @@ Required env:
 
 from __future__ import annotations
 
+import hmac
 import logging
 import os
 import re
@@ -66,7 +67,7 @@ async def gitlab_note(
     x_gitlab_token: str | None = Header(default=None),
     x_gitlab_event: str | None = Header(default=None),
 ):
-    if x_gitlab_token != _expected_token():
+    if not hmac.compare_digest(x_gitlab_token or "", _expected_token()):
         raise HTTPException(status_code=401, detail="bad webhook token")
     if x_gitlab_event != "Note Hook":
         raise HTTPException(status_code=400, detail=f"unsupported event: {x_gitlab_event}")
@@ -85,12 +86,22 @@ async def gitlab_note(
     if not QUESTION_MARKER.search(body):
         return {"ignored": "no testboost question_id marker"}
 
+    commenter_username = user.get("username")
+
+    # Loop guard: the bot's own question comment carries the marker too.
+    # When the MR author IS the bot identity (automation-opened MRs), the
+    # author check below would let it through and trigger pipelines forever.
+    bot_username = os.environ.get("TESTBOOST_BOT_USERNAME")
+    if bot_username and commenter_username == bot_username:
+        return {"ignored": "comment authored by the bot identity"}
+    if body.lstrip().startswith("### 🤖 TestBoost needs input"):
+        return {"ignored": "testboost question comment, not an answer"}
+
     # Author check: must be the MR author OR a maintainer+ on the project.
     # GitLab webhook payload doesn't carry the project membership level, so
     # we only check identity here; rely on Project Access Token scoping for
     # the rest.
     author_username = (mr.get("author") or {}).get("username")
-    commenter_username = user.get("username")
     if not commenter_username or commenter_username != author_username:
         log.info(
             "ignored note from %s on MR by %s (not the author)",

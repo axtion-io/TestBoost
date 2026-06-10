@@ -13,8 +13,6 @@ Design decisions:
 
 import json
 import sys
-from datetime import UTC, datetime
-from pathlib import Path
 from typing import Any
 
 from src.lib.session_tracker import write_log
@@ -119,9 +117,3 @@ class MdLogger:
             print(f"[{marker}] {message}", file=sys.stderr)
         elif level == "WARN" or self.verbose or level == "INFO":
             print(f"[{marker}] {message}", file=sys.stdout)
-
-
-def get_log_path(session_dir: str) -> Path:
-    """Get the path to today's log file."""
-    today = datetime.now(UTC).strftime("%Y-%m-%d")
-    return Path(session_dir) / "logs" / f"{today}.md"

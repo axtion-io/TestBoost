@@ -666,3 +666,193 @@ class TestSessionCleanup:
         mark_abandoned(s["session_dir"])
         fm = _parse_frontmatter((tmp_path / ".testboost" / "sessions" / s["session_id"] / "spec.md").read_text())
         assert fm["status"] == STATUS_ABANDONED
+
+
+class TestPauseVisibleAtSessionLevel:
+    """P5.C — a real pause (emit_question) must be visible in spec.md so
+    cleanup/find_abandoned_sessions can detect it without manual edits."""
+
+    def test_emit_question_flips_spec_status(self, tmp_path):
+        from src.lib.session_tracker import (
+            STATUS_AWAITING_INPUT,
+            _parse_frontmatter,
+            create_session,
+            emit_question,
+            init_project,
+        )
+        init_project(str(tmp_path))
+        s = create_session(str(tmp_path), name="hitl")
+        emit_question(
+            s["session_dir"], "generation", {"question": "?"},
+            project_path=str(tmp_path), session_id=s["session_id"],
+        )
+        spec = tmp_path / ".testboost" / "sessions" / s["session_id"] / "spec.md"
+        fm = _parse_frontmatter(spec.read_text())
+        assert fm["status"] == STATUS_AWAITING_INPUT
+
+    def test_resumed_step_lifts_awaiting_status(self, tmp_path):
+        from src.lib.session_tracker import (
+            STATUS_IN_PROGRESS,
+            _parse_frontmatter,
+            create_session,
+            emit_question,
+            init_project,
+            update_step_file,
+        )
+        init_project(str(tmp_path))
+        s = create_session(str(tmp_path), name="hitl")
+        emit_question(s["session_dir"], "generation", {"question": "?"})
+        update_step_file(
+            s["session_dir"], "generation", STATUS_IN_PROGRESS, "# resuming",
+        )
+        spec = tmp_path / ".testboost" / "sessions" / s["session_id"] / "spec.md"
+        fm = _parse_frontmatter(spec.read_text())
+        assert fm["status"] == STATUS_IN_PROGRESS
+
+    def test_emitted_pause_is_found_by_cleanup(self, tmp_path):
+        """End-to-end: emit_question → find_abandoned_sessions, with NO
+        manual status edit (only the timestamp is backdated via _now_iso)."""
+        from unittest.mock import patch
+
+        from src.lib import session_tracker
+        from src.lib.session_tracker import (
+            create_session,
+            emit_question,
+            find_abandoned_sessions,
+            init_project,
+        )
+        init_project(str(tmp_path))
+        # Create the session "two days ago"
+        with patch.object(session_tracker, "_now_iso", return_value="2020-01-01T00:00:00Z"):
+            s = create_session(str(tmp_path), name="old-pause")
+            emit_question(s["session_dir"], "generation", {"question": "?"})
+
+        found = find_abandoned_sessions(str(tmp_path), ttl_hours=24)
+        assert [x["session_id"] for x in found] == [s["session_id"]]
+
+
+class TestBatchQuestionRendering:
+    """P6.A — multi-item questions render as one MR-ready comment."""
+
+    def test_batch_markdown_lists_items_and_combined_schema(self, tmp_path):
+        import json as _json
+
+        from src.lib.session_tracker import create_session, emit_question, init_project
+        init_project(str(tmp_path))
+        s = create_session(str(tmp_path), name="batch")
+        payload = {
+            "kind": "batch",
+            "question": "2 file(s) need your input.",
+            "items": [
+                {
+                    "kind": "missing_business_context",
+                    "subject": {"class_name": "OrderService"},
+                    "question": "No edge cases for OrderService.",
+                    "answer_schema": {"test_requirements": {"OrderService": []}},
+                },
+                {
+                    "kind": "compilation_fix_exhausted",
+                    "subject": {"class_name": "UserController"},
+                    "question": "Cannot compile UserControllerTest.",
+                    "answer_schema": {"compile_fixes": {"UserController": {}}},
+                },
+            ],
+            "answer_schema": {
+                "test_requirements": {"OrderService": []},
+                "compile_fixes": {"UserController": {}},
+            },
+        }
+        qpath = emit_question(
+            s["session_dir"], "generation", payload,
+            project_path=str(tmp_path), session_id=s["session_id"],
+        )
+        question = _json.loads(qpath.read_text())
+        preview = question["markdown_preview"]
+        assert "2 item(s)" in preview
+        assert "#### 1. missing_business_context" in preview
+        assert "#### 2. compilation_fix_exhausted" in preview
+        assert "OrderService" in preview and "UserController" in preview
+        assert "combining your answers" in preview
+
+
+class TestAnswerFinalization:
+    """P6.C — verify-then-finalize keeps a crashed resume retryable."""
+
+    def _session_with_question(self, tmp_path):
+        from src.lib.session_tracker import create_session, emit_question, init_project
+        init_project(str(tmp_path))
+        s = create_session(str(tmp_path), name="hitl")
+        emit_question(
+            s["session_dir"], "generation", {"question": "?"},
+            project_path=str(tmp_path), session_id=s["session_id"],
+        )
+        return s
+
+    def test_load_and_verify_keeps_question_in_place(self, tmp_path):
+        import json as _json
+        from pathlib import Path
+
+        from src.lib.integrity import sign_answer
+        from src.lib.session_tracker import load_and_verify_answer
+        s = self._session_with_question(tmp_path)
+        sdir = Path(s["session_dir"])
+        question = _json.loads((sdir / "question.json").read_text())
+        signed = sign_answer({"test_requirements": {}}, question, str(tmp_path))
+        afile = tmp_path / "answer.json"
+        afile.write_text(_json.dumps(signed))
+
+        payload = load_and_verify_answer(str(sdir), afile, project_path=str(tmp_path))
+
+        assert payload["question_id"] == question["question_id"]
+        # Question still pending, no consumed marker: a crash here is retryable
+        assert (sdir / "question.json").exists()
+        assert not (sdir / "answer.json.consumed").exists()
+
+    def test_finalize_consumes_and_clears(self, tmp_path):
+        import json as _json
+        from pathlib import Path
+
+        from src.lib.session_tracker import finalize_answer
+        s = self._session_with_question(tmp_path)
+        sdir = Path(s["session_dir"])
+
+        finalize_answer(str(sdir), {"test_requirements": {}})
+
+        assert not (sdir / "question.json").exists()
+        consumed = _json.loads((sdir / "answer.json.consumed").read_text())
+        assert consumed == {"test_requirements": {}}
+
+
+class TestReplyInstructionsInPreview:
+    """The MR comment itself must state the exact reply contract — the
+    machine marker is otherwise an invisible HTML comment nobody finds."""
+
+    def _question(self, tmp_path, payload):
+        from src.lib.session_tracker import create_session, emit_question, init_project
+        init_project(str(tmp_path))
+        s = create_session(str(tmp_path), name="x")
+        qpath = emit_question(
+            s["session_dir"], "generation", payload,
+            project_path=str(tmp_path), session_id=s["session_id"],
+        )
+        import json as _json
+        return _json.loads(qpath.read_text())
+
+    def test_single_question_states_marker_and_no_signing(self, tmp_path):
+        q = self._question(tmp_path, {
+            "kind": "missing_business_context", "question": "?",
+            "answer_schema": {"test_requirements": {}},
+        })
+        preview = q["markdown_preview"]
+        assert f"testboost:question_id={q['question_id']}" in preview
+        assert "How to reply" in preview
+        assert "do NOT sign" in preview
+        assert "sign-answer" not in preview  # CI flow: the CI signs, not the dev
+
+    def test_batch_question_states_marker(self, tmp_path):
+        q = self._question(tmp_path, {
+            "kind": "batch", "question": "2 items",
+            "items": [{"kind": "a", "question": "?", "subject": {"class_name": "X"}}],
+            "answer_schema": {"test_requirements": {}},
+        })
+        assert f"testboost:question_id={q['question_id']}" in q["markdown_preview"]

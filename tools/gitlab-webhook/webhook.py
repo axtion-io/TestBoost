@@ -18,6 +18,7 @@ Required env:
 
 from __future__ import annotations
 
+import hmac
 import logging
 import os
 import re
@@ -66,7 +67,7 @@ async def gitlab_note(
     x_gitlab_token: str | None = Header(default=None),
     x_gitlab_event: str | None = Header(default=None),
 ):
-    if x_gitlab_token != _expected_token():
+    if not hmac.compare_digest(x_gitlab_token or "", _expected_token()):
         raise HTTPException(status_code=401, detail="bad webhook token")
     if x_gitlab_event != "Note Hook":
         raise HTTPException(status_code=400, detail=f"unsupported event: {x_gitlab_event}")
@@ -81,20 +82,36 @@ async def gitlab_note(
     mr = payload.get("merge_request") or {}
     user = payload.get("user") or {}
 
-    body = note.get("body", "") or ""
+    # Real Note Hook payloads carry the comment text in
+    # `object_attributes.note` (duplicated in `description`) — there is NO
+    # `body` field in webhook payloads (that's the Notes REST API shape).
+    body = note.get("note") or note.get("description") or ""
     if not QUESTION_MARKER.search(body):
         return {"ignored": "no testboost question_id marker"}
 
-    # Author check: must be the MR author OR a maintainer+ on the project.
-    # GitLab webhook payload doesn't carry the project membership level, so
-    # we only check identity here; rely on Project Access Token scoping for
-    # the rest.
-    author_username = (mr.get("author") or {}).get("username")
     commenter_username = user.get("username")
-    if not commenter_username or commenter_username != author_username:
+
+    # Loop guard: the bot's own question comment carries the marker too.
+    # When the MR author IS the bot identity (automation-opened MRs), the
+    # author check below would let it through and trigger pipelines forever.
+    bot_username = os.environ.get("TESTBOOST_BOT_USERNAME")
+    if bot_username and commenter_username == bot_username:
+        return {"ignored": "comment authored by the bot identity"}
+    if body.lstrip().startswith("### 🤖 TestBoost needs input"):
+        return {"ignored": "testboost question comment, not an answer"}
+
+    # Author check: only the MR author may answer. Real Note Hook payloads
+    # carry the author as `merge_request.author_id` (an integer) and the
+    # commenter as the top-level `user.id` — there is NO nested
+    # merge_request.author object, so compare the ids directly. (A broader
+    # maintainer allow-list would need an extra API call — extend here if
+    # you want it.)
+    commenter_id = user.get("id")
+    author_id = mr.get("author_id")
+    if commenter_id is None or author_id is None or commenter_id != author_id:
         log.info(
-            "ignored note from %s on MR by %s (not the author)",
-            commenter_username, author_username,
+            "ignored note from user id %s on MR authored by id %s (not the author)",
+            commenter_id, author_id,
         )
         return {"ignored": "commenter is not the MR author"}
 

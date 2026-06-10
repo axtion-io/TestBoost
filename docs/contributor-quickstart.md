@@ -64,7 +64,7 @@ pytest --cov=src --cov-report=html
 # Open htmlcov/index.html in your browser
 
 # Specific test file
-pytest tests/unit/testboost/test_cli.py
+pytest tests/unit/testboost/test_cli_workflow.py
 
 # Tests matching a pattern
 pytest -k "test_session"
@@ -105,7 +105,8 @@ TestBoost/
 |   |   +-- killer_tests.py     # Killer test generation
 |   +-- lib/                    # Infrastructure layer
 |   |   +-- bridge.py           # Bridge to core functions (mockable boundary)
-|   |   +-- cli.py              # CLI entry point (10 commands + --list-plugins)
+|   |   +-- cli.py              # CLI facade: argparse + dispatch (15 commands)
+|   |   +-- commands/           # Command implementations (one module per group)
 |   |   +-- session_tracker.py  # Markdown-based session management
 |   |   +-- plugins/            # Technology plugin system
 |   |   |   +-- base.py         # TechnologyPlugin ABC
@@ -116,14 +117,14 @@ TestBoost/
 |   |   +-- llm.py              # LLM provider abstraction
 |   |   +-- maven_error_parser.py
 |   |   +-- prompt_utils.py     # Shared template load + render
-+-- config/
-|   +-- prompts/testing/        # Java/Spring LLM prompt templates
-|   +-- prompts/testing/python_pytest/ # Python/pytest LLM prompt templates
+|   +-- prompts/                # LLM prompt templates (shipped in the wheel)
+|   |   +-- testing/            # Java/Spring prompts (+ python_pytest/ overrides)
+|   |   +-- maven/              # Maven error formatting
 +-- tests/                      # Test suite
 |   +-- unit/lib/plugins/       # Plugin unit tests
 |   +-- unit/testboost/         # CLI, session, integrity tests
 |   +-- integration/            # Plugin detection, LLM connectivity
-|   +-- e2e/                    # Full LLM workflow tests
+|   +-- e2e/                    # Placeholder (E2E fixtures planned)
 +-- docs/                       # Documentation
 ```
 
@@ -188,22 +189,22 @@ The `MdLogger` writes concise output to stdout (for LLM consumption) and detaile
 
 1. Create `src/lib/plugins/<your_plugin>.py` implementing all `TechnologyPlugin` abstract members
 2. Add `_registry.register(YourPlugin())` in `src/lib/plugins/__init__.py`
-3. Create prompt templates in `config/prompts/testing/<your_tech>/`
+3. Create prompt templates in `src/prompts/testing/<your_tech>/`
 4. Add unit tests in `tests/unit/lib/plugins/test_<your_plugin>.py`
 5. Add detection test cases in `tests/integration/test_plugin_detection.py`
 6. No changes to the core engine (`cli.py`, `bridge.py`, `generate_unit.py`) are required
 
 ### Adding a New CLI Command
 
-1. Add the command function in `src/lib/cli.py`
-2. Register the subparser in the `main()` function
+1. Implement `cmd_<name>()` in the relevant `src/lib/commands/<group>_cmd.py` (or a new module)
+2. Re-export it from `src/lib/cli.py` and register the subparser in `main()`
 3. Add a shell script wrapper in `scripts/`
 4. Create slash command files in `.claude/commands/` and `.opencode/commands/`
 5. Add tests
 
 ### Modifying Test Generation Prompts
 
-Edit the prompt templates in `config/prompts/testing/` (Java) or `config/prompts/testing/python_pytest/` (Python). Changes take effect on the next `generate` run.
+Edit the prompt templates in `src/prompts/testing/` (Java) or `src/prompts/testing/python_pytest/` (Python). Changes take effect on the next `generate` run.
 
 ### Adding a New Core Function
 

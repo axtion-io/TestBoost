@@ -29,7 +29,7 @@ def test_detection_patterns(plugin):
 
 
 def test_prompt_template_dir(plugin):
-    assert plugin.prompt_template_dir == "config/prompts/testing"
+    assert plugin.prompt_template_dir == "testing"
 
 
 def test_test_file_pattern(plugin):
@@ -123,3 +123,45 @@ class TestTestRunCommand:
         cmd = plugin.test_run_command(tmp_path, session_config)
         assert "-P" in cmd
         assert "corp" in cmd
+
+
+# ---------------------------------------------------------------------------
+# _detect_maven_build_config() — pom profiles + .mvn/maven.config
+# ---------------------------------------------------------------------------
+
+class TestDetectMavenBuildConfig:
+    def test_defaults_without_config(self, tmp_path):
+        from src.lib.plugins.java_spring import _detect_maven_build_config
+        (tmp_path / "pom.xml").write_text("<project></project>")
+        config = _detect_maven_build_config(tmp_path)
+        assert "test-compile" in config["compile_cmd"]
+        assert "mvn" in config["compile_cmd"]
+        assert config["notes"] == [
+            "No special profiles or Maven config detected — using default flags"
+        ]
+
+    def test_maven_config_flags_appended(self, tmp_path):
+        from src.lib.plugins.java_spring import _detect_maven_build_config
+        (tmp_path / "pom.xml").write_text("<project></project>")
+        mvn_dir = tmp_path / ".mvn"
+        mvn_dir.mkdir()
+        (mvn_dir / "maven.config").write_text("-P corp-profile\n-DskipITs")
+        config = _detect_maven_build_config(tmp_path)
+        assert "-P corp-profile" in config["compile_cmd"]
+        assert "-DskipITs" in config["compile_cmd"]
+        assert config["notes"], "a note should document the extra flags"
+
+
+class TestParseMavenCmd:
+    def test_valid_command(self):
+        from src.lib.plugins.java_spring import _parse_maven_cmd
+        cmd = _parse_maven_cmd("mvn test-compile -q -P prof")
+        assert cmd[0].endswith("mvn") or "mvn" in cmd[0]
+        assert "-P" in cmd and "prof" in cmd
+
+    def test_rejects_non_maven_binary(self):
+        import pytest as _pytest
+
+        from src.lib.plugins.java_spring import _parse_maven_cmd
+        with _pytest.raises(ValueError):
+            _parse_maven_cmd("rm -rf /")

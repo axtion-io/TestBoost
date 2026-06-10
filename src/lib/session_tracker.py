@@ -40,7 +40,6 @@ STATUS_ABANDONED = "abandoned"
 EXIT_AWAITING_INPUT = 78
 
 QUESTION_FILENAME = "question.json"
-ANSWER_FILENAME = "answer.json"
 ANSWER_CONSUMED_FILENAME = "answer.json.consumed"
 GENERATION_CURSOR_FILENAME = "generation_cursor.json"
 
@@ -427,19 +426,18 @@ def emit_question(
     return question_path
 
 
-def consume_answer(
+def load_and_verify_answer(
     session_dir: str,
     answer_file: str | Path,
     project_path: str | None = None,
     ttl_hours: int | None = None,
 ) -> dict[str, Any]:
-    """Load an answer payload, verify its signature against the pending question, mark it consumed.
+    """Load an answer payload and verify it against the pending question.
 
-    Reads answer_file, parses JSON, then:
-      - if project_path is supplied, loads the session's question.json and
-        verifies that the answer is correctly signed and not expired
-      - writes the answer into the session as answer.json.consumed
-      - deletes question.json so the session is no longer awaiting
+    Unlike consume_answer(), question.json is left in place and no consumed
+    marker is written — call finalize_answer() once the answered work has
+    actually succeeded, so a crashed resume run can be retried with the
+    same answer file.
 
     Returns the parsed payload (with question_id/signature fields preserved).
 
@@ -464,8 +462,7 @@ def consume_answer(
     if not isinstance(payload, dict):
         raise ValueError("answer payload must be a JSON object at the top level")
 
-    session_path = Path(session_dir)
-    question_path = session_path / QUESTION_FILENAME
+    question_path = Path(session_dir) / QUESTION_FILENAME
 
     if project_path:
         if not question_path.exists():
@@ -480,17 +477,54 @@ def consume_answer(
             ttl_hours=ttl_hours if ttl_hours is not None else QUESTION_TTL_HOURS_DEFAULT,
         )
 
+    return payload
+
+
+def finalize_answer(session_dir: str, payload: dict[str, Any]) -> None:
+    """Mark a verified answer as consumed and clear the pending question.
+
+    Call this only after the answered work has succeeded (or when a new
+    question supersedes the old one) — see load_and_verify_answer().
+    """
+    session_path = Path(session_dir)
     consumed_path = session_path / ANSWER_CONSUMED_FILENAME
     consumed_path.write_text(json.dumps(payload, indent=2, default=str), encoding="utf-8")
 
+    question_path = session_path / QUESTION_FILENAME
     if question_path.exists():
         question_path.unlink()
 
+
+def consume_answer(
+    session_dir: str,
+    answer_file: str | Path,
+    project_path: str | None = None,
+    ttl_hours: int | None = None,
+) -> dict[str, Any]:
+    """Load, verify and immediately consume an answer (one-shot helper).
+
+    Equivalent to load_and_verify_answer() + finalize_answer(). Prefer the
+    two-step form in step implementations so a crashed run keeps the
+    question/answer pair retryable.
+    """
+    payload = load_and_verify_answer(
+        session_dir, answer_file, project_path=project_path, ttl_hours=ttl_hours
+    )
+    finalize_answer(session_dir, payload)
     return payload
 
 
 def _render_question_markdown(payload: dict[str, Any]) -> str:
-    """Render an MR-comment-ready markdown preview of a question payload."""
+    """Render an MR-comment-ready markdown preview of a question payload.
+
+    Payloads with an `items` list (batch questions — several files needing
+    input in one run) render each item as a numbered section followed by a
+    single combined answer schema.
+    """
+    items = payload.get("items")
+    if items:
+        return _render_batch_markdown(payload, items)
+
     kind = payload.get("kind", "question")
     subject = payload.get("subject", {})
     question = payload.get("question", "(no question text)")
@@ -510,15 +544,66 @@ def _render_question_markdown(payload: dict[str, Any]) -> str:
         lines.append("```")
         lines.append("")
     if answer_schema:
-        lines.append("**Reply with this shape** (sign with `testboost sign-answer`):")
+        lines.append("**Reply with this shape**:")
         lines.append("")
         lines.append("```json")
         lines.append(json.dumps(answer_schema, indent=2, default=str))
         lines.append("```")
         lines.append("")
+    lines.extend(_reply_instructions(payload))
+    return "\n".join(lines)
+
+
+def _reply_instructions(payload: dict[str, Any]) -> list[str]:
+    """How-to-reply block appended to every MR-posted question.
+
+    The marker line is what the resume webhook and `testboost gitlab
+    fetch-answer` look for in the reply — it MUST be stated visibly in the
+    comment, because the machine-readable copy appended by post_question
+    is an invisible HTML comment a human would never discover.
+    """
     qid = payload.get("question_id")
-    if qid:
-        lines.append(f"_Question ID: `{qid}`_")
+    if not qid:
+        return []
+    return [
+        "**How to reply** (as the MR author, in a new comment):",
+        "",
+        "1. Paste your answer as ONE fenced ```json block (raw JSON — do NOT sign it, the CI signs accepted answers itself);",
+        f"2. Include this exact line anywhere in the same comment: `testboost:question_id={qid}`",
+        "",
+        f"_Question ID: `{qid}`_",
+    ]
+
+
+def _render_batch_markdown(payload: dict[str, Any], items: list[dict[str, Any]]) -> str:
+    """Render a multi-item question as one MR-ready comment."""
+    lines = [
+        f"### 🤖 TestBoost needs input — {len(items)} item(s)",
+        "",
+        f"**Summary**: {payload.get('question', '(no summary)')}",
+        "",
+    ]
+    for idx, item in enumerate(items, 1):
+        subject = item.get("subject", {})
+        title = subject.get("class_name") or subject.get("source_file") or ""
+        lines.append(f"#### {idx}. {item.get('kind', 'question')}{' — `' + title + '`' if title else ''}")
+        lines.append("")
+        lines.append(f"**Question**: {item.get('question', '(no question text)')}")
+        lines.append("")
+        if subject:
+            lines.append("```json")
+            lines.append(json.dumps(subject, indent=2, default=str))
+            lines.append("```")
+            lines.append("")
+    answer_schema = payload.get("answer_schema", {})
+    if answer_schema:
+        lines.append("**Reply with ONE fenced JSON block combining your answers**:")
+        lines.append("")
+        lines.append("```json")
+        lines.append(json.dumps(answer_schema, indent=2, default=str))
+        lines.append("```")
+        lines.append("")
+    lines.extend(_reply_instructions(payload))
     return "\n".join(lines)
 
 
@@ -602,21 +687,29 @@ def save_generation_cursor(
     target_files: list[str],
     current_index: int,
     completed_files: list[str],
+    files_filter: list[str] | None = None,
+    deferred: list[dict[str, Any]] | None = None,
 ) -> Path:
-    """Persist progress through the generate per-file loop."""
+    """Persist progress through the generate per-file loop.
+
+    files_filter: the original `--files` patterns, so `resume` can replay
+      the exact same scope instead of recomputing target_files from gaps.
+    deferred: files awaiting human input, as dicts with at least
+      source_file / class_name / reason (+ test_path for compile fixes,
+      so a `fixed_code` answer can be applied without regenerating).
+    """
     path = Path(session_dir) / GENERATION_CURSOR_FILENAME
-    path.write_text(
-        json.dumps(
-            {
-                "target_files": target_files,
-                "current_index": current_index,
-                "completed_files": completed_files,
-                "updated_at": _now_iso(),
-            },
-            indent=2,
-        ),
-        encoding="utf-8",
-    )
+    payload: dict[str, Any] = {
+        "target_files": target_files,
+        "current_index": current_index,
+        "completed_files": completed_files,
+        "updated_at": _now_iso(),
+    }
+    if files_filter is not None:
+        payload["files_filter"] = files_filter
+    if deferred is not None:
+        payload["deferred"] = deferred
+    path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
     return path
 
 
@@ -695,6 +788,15 @@ def _update_spec_progress(session_dir: Path, step_name: str, status: str, timest
 
     if status in (STATUS_COMPLETED, STATUS_FAILED) and step_name == "validation":
         new_content = re.sub(r"(?<=status: )\S+", status, new_content)
+    elif status == STATUS_AWAITING_INPUT:
+        # Session-level status must reflect the pause so cleanup/doctor can
+        # find paused sessions by scanning spec.md alone.
+        new_content = re.sub(r"(?<=status: )\S+", STATUS_AWAITING_INPUT, new_content, count=1)
+    elif status == STATUS_IN_PROGRESS:
+        # A resumed step lifts the session out of awaiting_input
+        new_content = re.sub(
+            rf"(?<=status: ){STATUS_AWAITING_INPUT}\b", STATUS_IN_PROGRESS, new_content, count=1
+        )
 
     spec_path.write_text(new_content, encoding="utf-8")
 

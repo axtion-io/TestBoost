@@ -11,7 +11,7 @@ your-project/
 |   +-- analysis.md                       # Project-level class index (shared across sessions)
 |   +-- .gitignore                        # Ignores large log files
 |   +-- .tb_secret                        # Integrity token secret (git-ignored)
-|   +-- scripts/                          # Wrapper scripts (created by install)
+|   +-- scripts/                          # Wrapper scripts (created by install; .ps1 on Windows)
 |   |   +-- tb-init.sh
 |   |   +-- tb-analyze.sh
 |   |   +-- tb-gaps.sh
@@ -28,11 +28,17 @@ your-project/
 |       |   +-- coverage-gaps.md          # Gap analysis
 |       |   +-- generation.md             # Test generation results
 |       |   +-- validation.md             # Compilation + test results
+|       |   +-- question.json             # Pending HITL question (only while paused)
+|       |   +-- answer.json.consumed      # Last consumed answer (after a resume)
+|       |   +-- generation_cursor.json    # Per-file resume cursor (cleared on completion)
 |       |   +-- logs/
 |       |       +-- 2026-03-09.md         # Daily execution log
 |       +-- 002-test-generation/          # Second session (if any)
 |           +-- ...
 ```
+
+The three JSON files implement the human-in-the-loop pause/resume cycle —
+see [Async CI Integration](./ci-async-integration.md).
 
 ## Project-Level Analysis File
 
@@ -83,8 +89,8 @@ completed_at: 2026-03-09T10:05:23Z
 
 | Field | Values | Description |
 |-------|--------|-------------|
-| `status` | `pending`, `in_progress`, `completed`, `failed` | Current step status |
-| `step` | `analysis`, `coverage-gaps`, `generation`, `validation` | Step name |
+| `status` | `pending`, `in_progress`, `completed`, `failed`, `awaiting_input`, `abandoned` | Current step status. `awaiting_input` = paused on a HITL question (also reflected in `spec.md` so `cleanup` can find stale pauses); `abandoned` = flipped by `cleanup` past the TTL |
+| `step` | `analysis`, `coverage-gaps`, `generation`, `validation`, `mutation`, `killer-tests` | Step name |
 | `started_at` | ISO 8601 timestamp | When the step started |
 | `updated_at` | ISO 8601 timestamp | Last update |
 | `completed_at` | ISO 8601 timestamp | When the step finished |
@@ -110,12 +116,13 @@ The `spec.md` file tracks overall session progress:
 
 ```markdown
 ---
-session_id: "001"
-session_name: test-generation
-created_at: 2026-03-09T10:00:00Z
+status: in_progress
+started_at: 2026-03-09T10:00:00Z
+step: generation
+technology: java-spring
 ---
 
-# Session 001 - Test Generation
+# Test Generation Session: 001-test-generation
 
 ## Progress
 
@@ -126,6 +133,10 @@ created_at: 2026-03-09T10:00:00Z
 | generation | in_progress | 2026-03-09T10:07:00Z | - |
 | validation | pending | - | - |
 ```
+
+The frontmatter `status` mirrors the active step (including
+`awaiting_input` while paused on a question); `technology` stores the
+plugin identifier.
 
 ## Log Files
 

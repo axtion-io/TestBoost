@@ -74,7 +74,9 @@ These ensure the correct working directory and Python module path.
 
 ### 3. Python CLI
 
-The main entry point: `src/lib/cli.py`. Uses `argparse` to dispatch to ten commands: `init`, `analyze`, `gaps`, `generate`, `validate`, `mutate`, `killer`, `status`, `install`, `verify`, plus the `--list-plugins` flag.
+The stable entry point and facade: `src/lib/cli.py`. It owns the `argparse` parser and dispatches to fifteen commands — the workflow steps (`init`, `analyze`, `gaps`, `generate`, `validate`, `mutate`, `killer`), the auxiliaries (`status`, `install`, `verify`), and the HITL/ops commands (`resume`, `sign-answer`, `gitlab`, `cleanup`, `doctor`) — plus the `--list-plugins` flag.
+
+The implementations live in `src/lib/commands/`, one module per command group (`generate_cmd.py`, `validate_cmd.py`, `mutation_cmd.py`, `hitl_cmd.py`, `ops_cmd.py`, …, with shared helpers in `_shared.py`). The facade re-exports everything, so external callers — tests, wrapper scripts, `python -m testboost` — always go through `src.lib.cli`.
 
 Each command:
 1. Reads the current session state from `.testboost/`
@@ -87,9 +89,14 @@ Each command:
 
 `src/lib/plugins/` provides the technology abstraction layer. All technology-specific behavior is encapsulated in plugins.
 
-**`TechnologyPlugin` (ABC in `base.py`)** defines 11 abstract members:
+**`TechnologyPlugin` (ABC in `base.py`)** defines 10 abstract members:
 - Properties: `identifier`, `description`, `detection_patterns`, `prompt_template_dir`
-- Methods: `find_source_files()`, `classify_source_file()`, `test_file_name()`, `test_file_pattern()`, `validation_command()`, `test_run_command()`, `build_generation_context()`
+- Methods: `find_source_files()`, `classify_source_file()`, `test_file_name()`, `test_file_pattern()`, `validation_command()`, `test_run_command()`
+
+`test_file_name()` decides WHERE generated tests are written — it is wired
+into `generate` (the generator's internal fallback is Java-only and must
+never be used for path decisions: it returns non-Java sources unchanged,
+which used to overwrite production files with generated tests).
 
 **`PluginRegistry` (`registry.py`)** manages plugin lookup:
 - `detect(project_path)` — returns first plugin whose detection patterns match (priority = registration order)
@@ -223,7 +230,8 @@ TestBoost/
 |   |   +-- killer_tests.py     # Killer test generation
 |   +-- lib/
 |   |   +-- bridge.py           # Bridge to core functions (mockable boundary)
-|   |   +-- cli.py              # CLI entry point (10 commands + --list-plugins)
+|   |   +-- cli.py              # CLI facade: argparse + dispatch (15 commands)
+|   |   +-- commands/           # Command implementations (one module per group)
 |   |   +-- session_tracker.py  # Markdown-based session management
 |   |   +-- integrity.py        # HMAC-SHA256 integrity token system
 |   |   +-- installer.py        # Persistent installer for target projects
@@ -239,16 +247,14 @@ TestBoost/
 |   |   +-- prompt_utils.py     # Shared template load + render
 |   |   +-- md_logger.py        # Dual-output logger
 |   |   +-- startup_checks.py   # LLM connectivity check
-|   +-- workflows/
-|   |   +-- test_generation_agent.py
-+-- config/
-|   +-- prompts/testing/        # Java/Spring LLM prompt templates
-|   +-- prompts/testing/python_pytest/ # Python/pytest LLM prompt templates
+|   +-- prompts/                # LLM prompt templates (shipped in the wheel)
+|   |   +-- testing/            # Java/Spring prompts (+ python_pytest/ overrides)
+|   |   +-- maven/              # Maven error formatting
 +-- tests/
 |   +-- unit/lib/plugins/       # Plugin unit tests
 |   +-- unit/testboost/         # CLI, session, integrity, installer tests
 |   +-- integration/            # Plugin detection, LLM connectivity tests
-|   +-- e2e/                    # Full LLM workflow tests
+|   +-- e2e/                    # Placeholder (E2E fixtures planned, see mvp-plan)
 +-- docs/                       # Documentation
 ```
 

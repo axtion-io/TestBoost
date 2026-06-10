@@ -600,7 +600,7 @@ class TestBatchedQuestions:
         mock_gen.assert_not_called()
         mock_edge.assert_not_called()
         test_file = (initialized_project / "src" / "test" / "java" / "com"
-                     / "example" / "OrderServiceTest.java")
+                     / "example" / "service" / "OrderServiceTest.java")
         assert "developer_fix" in test_file.read_text()
 
 

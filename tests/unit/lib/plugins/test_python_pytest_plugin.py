@@ -88,3 +88,25 @@ class TestFindSourceFiles:
         (tmp_path / "a_module.py").write_text("")
         result = plugin.find_source_files(tmp_path)
         assert result == sorted(result)
+
+
+# ---------------------------------------------------------------------------
+# test_file_name()
+# ---------------------------------------------------------------------------
+
+class TestTestFileName:
+    def test_src_prefix_stripped(self, plugin):
+        result = plugin.test_file_name("src/services/user_service.py")
+        assert result == "tests/services/test_user_service.py"
+
+    def test_top_level_file(self, plugin):
+        result = plugin.test_file_name("my_module.py")
+        assert result == "tests/test_my_module.py"
+
+    def test_nested_non_src(self, plugin):
+        result = plugin.test_file_name("app/models/user.py")
+        assert result == "tests/app/models/test_user.py"
+
+    def test_backslash_separator(self, plugin):
+        result = plugin.test_file_name("src\\services\\order.py")
+        assert result == "tests/services/test_order.py"

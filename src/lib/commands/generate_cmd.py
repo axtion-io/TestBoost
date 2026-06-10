@@ -218,7 +218,7 @@ async def _cmd_generate_async(args: argparse.Namespace) -> int:
                     if isinstance(dev_fix, dict) and dev_fix.get("fixed_code"):
                         test_path = prior["test_path"]
                         test_code = str(dev_fix["fixed_code"])
-                        full_path = Path(project_path) / test_path
+                        full_path = _safe_test_target(project_path, test_path, source_file)
                         full_path.parent.mkdir(parents=True, exist_ok=True)
                         full_path.write_text(test_code, encoding="utf-8")
                         logger.info(
@@ -227,6 +227,7 @@ async def _cmd_generate_async(args: argparse.Namespace) -> int:
                         test_code, exhausted = await _attempt_compile_fix(
                             project_path, full_path, test_code,
                             fix_key, logger, session_dir, maven_compile_cmd,
+                            plugin=plugin,
                         )
                         if exhausted and fail_on_uncertainty:
                             uncertainties.append(
@@ -329,7 +330,11 @@ async def _cmd_generate_async(args: argparse.Namespace) -> int:
                 if not (result.get("success") and test_code and has_tests):
                     logger.warn(f"No tests generated for {source_file}")
                 else:
-                    test_path = result.get("test_file", "")
+                    # Test path comes from the technology plugin, NOT from the
+                    # generator's Java-only fallback — that fallback returns
+                    # non-Java sources unchanged, which used to overwrite the
+                    # production file with the generated test.
+                    test_path = plugin.test_file_name(source_file)
                     cls = result.get("context", {}).get("class_name", "") or class_name
 
                     # Developer-provided fix (fixed_code wins over hints if both)
@@ -342,7 +347,7 @@ async def _cmd_generate_async(args: argparse.Namespace) -> int:
                         elif "hints" in dev_fix and isinstance(dev_fix["hints"], list):
                             dev_hints = [str(h) for h in dev_fix["hints"]]
 
-                    full_path = Path(project_path) / test_path
+                    full_path = _safe_test_target(project_path, test_path, source_file)
                     full_path.parent.mkdir(parents=True, exist_ok=True)
                     full_path.write_text(test_code, encoding="utf-8")
                     logger.info(f"Wrote test file: {test_path}")
@@ -351,6 +356,7 @@ async def _cmd_generate_async(args: argparse.Namespace) -> int:
                         project_path, full_path, test_code,
                         cls, logger, session_dir, maven_compile_cmd,
                         hints=dev_hints,
+                        plugin=plugin,
                     )
                     if exhausted and fail_on_uncertainty:
                         uncertainties.append(
@@ -523,6 +529,30 @@ def _merge_answer_schemas(items: list[dict]) -> dict:
             else:
                 merged.setdefault(key, value)
     return merged
+
+
+def _safe_test_target(project_path: str, test_path: str, source_file: str) -> Path:
+    """Resolve the absolute target for a generated test, refusing to clobber
+    the source under test.
+
+    Defense in depth behind the plugin's test_file_name(): whatever the
+    mapping (or a future bug in it) produces, a generated test must never
+    land on the production file it was generated FOR.
+    """
+    full_path = Path(project_path) / test_path
+    source_abs = Path(project_path) / source_file
+    try:
+        collision = full_path.resolve() == source_abs.resolve()
+    except OSError:
+        collision = str(full_path) == str(source_abs)
+    if collision:
+        raise RuntimeError(
+            f"refusing to write generated test over its own source file "
+            f"({source_file}) — test path mapping returned the source path"
+        )
+    return full_path
+
+
 async def _attempt_compile_fix(
     project_path: str,
     test_file: Path,
@@ -532,10 +562,13 @@ async def _attempt_compile_fix(
     session_dir: str | None = None,
     maven_compile_cmd: str | None = None,
     hints: list[str] | None = None,
+    plugin=None,
 ) -> tuple[str, dict | None]:
-    """Run mvn test-compile and use LLM to fix compilation errors, retrying up to N times.
+    """Compile-check the test file and use the LLM to fix errors, retrying up to N times.
 
-    Uses maven_compile_cmd from analysis.md if available, so profiles and
+    The compile command comes from the technology plugin when one is
+    supplied (e.g. `py_compile {test_file}` for Python); the Java path
+    keeps honoring maven_compile_cmd from analysis.md so profiles and
     custom properties set there are respected.
 
     Returns (code, exhausted): exhausted is None when the file compiles (or
@@ -544,11 +577,20 @@ async def _attempt_compile_fix(
     The caller decides whether to queue a question or give up silently.
     """
     from src.lib.plugins.java_spring import _parse_maven_cmd as _java_parse_maven_cmd
-    try:
-        cmd = _java_parse_maven_cmd(maven_compile_cmd) if maven_compile_cmd else None
-    except ValueError as e:
-        logger.warn(f"Invalid maven_compile_cmd, using default: {e}")
-        cmd = None
+
+    cmd: list[str] | None = None
+    if plugin is not None and plugin.identifier != "java-spring":
+        # Technology-specific compile/syntax check ({test_file} placeholder)
+        cmd = [
+            part.replace("{test_file}", str(test_file))
+            for part in plugin.validation_command(Path(project_path), {})
+        ]
+    if cmd is None:
+        try:
+            cmd = _java_parse_maven_cmd(maven_compile_cmd) if maven_compile_cmd else None
+        except ValueError as e:
+            logger.warn(f"Invalid maven_compile_cmd, using default: {e}")
+            cmd = None
     if not cmd:
         cmd = [shutil.which("mvn") or shutil.which("mvn.cmd") or "mvn", "test-compile", "-q", "--no-transfer-progress"]
 

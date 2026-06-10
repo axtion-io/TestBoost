@@ -78,6 +78,23 @@ class TechnologyPlugin(ABC):
         """
 
     @abstractmethod
+    def test_file_name(self, source_relative_path: str) -> str:
+        """Derive the test file path for a given source file.
+
+        Used by `generate` to decide WHERE the generated test is written —
+        the result must never collide with a production source path
+        (history: a Java-only fallback used to return Python sources
+        unchanged, overwriting them with generated tests).
+
+        Args:
+            source_relative_path: Path relative to project root.
+
+        Returns:
+            Test file path relative to project root. Deterministic for a
+            given input.
+        """
+
+    @abstractmethod
     def test_file_pattern(self) -> list[str]:
         """Return glob patterns identifying test files for this technology.
 

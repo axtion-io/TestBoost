@@ -55,6 +55,28 @@ class JavaSpringPlugin(TechnologyPlugin):
         from src.java.discovery import classify_source_file
         return classify_source_file(relative_path)
 
+    # ------------------------------------------------------------------
+    # Test file naming
+    # ------------------------------------------------------------------
+
+    def test_file_name(self, source_relative_path: str) -> str:
+        """Derive the test file path for a Java source file.
+
+        src/main/java/com/example/UserService.java
+          → src/test/java/com/example/UserServiceTest.java
+        """
+        normalized = source_relative_path.replace("\\", "/")
+        # Replace src/main/java/ (with or without leading slash) with src/test/java/
+        if "src/main/java/" in normalized:
+            test_path = normalized.replace("src/main/java/", "src/test/java/", 1)
+        else:
+            test_path = normalized
+
+        if test_path.endswith(".java") and not test_path.endswith("Test.java"):
+            test_path = test_path[:-5] + "Test.java"
+
+        return test_path
+
     def test_file_pattern(self) -> list[str]:
         return ["**/*Test.java", "**/*Tests.java", "**/Test*.java"]
 

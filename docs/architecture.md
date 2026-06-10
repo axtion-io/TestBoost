@@ -89,9 +89,14 @@ Each command:
 
 `src/lib/plugins/` provides the technology abstraction layer. All technology-specific behavior is encapsulated in plugins.
 
-**`TechnologyPlugin` (ABC in `base.py`)** defines 9 abstract members:
+**`TechnologyPlugin` (ABC in `base.py`)** defines 10 abstract members:
 - Properties: `identifier`, `description`, `detection_patterns`, `prompt_template_dir`
-- Methods: `find_source_files()`, `classify_source_file()`, `test_file_pattern()`, `validation_command()`, `test_run_command()`
+- Methods: `find_source_files()`, `classify_source_file()`, `test_file_name()`, `test_file_pattern()`, `validation_command()`, `test_run_command()`
+
+`test_file_name()` decides WHERE generated tests are written — it is wired
+into `generate` (the generator's internal fallback is Java-only and must
+never be used for path decisions: it returns non-Java sources unchanged,
+which used to overwrite production files with generated tests).
 
 **`PluginRegistry` (`registry.py`)** manages plugin lookup:
 - `detect(project_path)` — returns first plugin whose detection patterns match (priority = registration order)

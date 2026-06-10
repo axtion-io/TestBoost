@@ -71,6 +71,17 @@ class GoTestingPlugin(TechnologyPlugin):
             return "repository"
         return "other"
 
+    # ------------------------------------------------------------------
+    # Test file naming
+    # ------------------------------------------------------------------
+
+    def test_file_name(self, source_relative_path: str) -> str:
+        """Derive Go test file: foo.go → foo_test.go."""
+        normalized = source_relative_path.replace("\\", "/")
+        if normalized.endswith(".go"):
+            return normalized[:-3] + "_test.go"
+        return source_relative_path + "_test.go"
+
     def test_file_pattern(self) -> list[str]:
         return ["**/*_test.go"]
 

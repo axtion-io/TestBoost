@@ -322,7 +322,7 @@ class TestCompileFixInterruption:
         assert result == 0
         # The on-disk file must contain the dev's code, not the LLM-generated one
         test_file = (initialized_project / "src" / "test" / "java" / "com" / "example"
-                     / "OrderServiceTest.java")
+                     / "service" / "OrderServiceTest.java")
         assert test_file.exists()
         assert "developer_fixed_test" in test_file.read_text()
         # Answer must be marked consumed
@@ -447,7 +447,7 @@ class TestHintsMode:
         fix_mock.assert_not_called()
         # On-disk file contains the winner code
         test_file = (initialized_project / "src" / "test" / "java" / "com" / "example"
-                     / "OrderServiceTest.java")
+                     / "service" / "OrderServiceTest.java")
         assert "winner" in test_file.read_text()
 class TestMarkdownPreview:
     """P2.D — question.json must carry an MR-ready markdown_preview."""
@@ -519,7 +519,7 @@ class TestValidatePause:
             session["session_dir"], "generation", STATUS_COMPLETED,
             "# Generation\n\nDone.",
             data={"generated": [{
-                "path": "src/test/java/com/example/OrderServiceTest.java",
+                "path": "src/test/java/com/example/service/OrderServiceTest.java",
                 "class_name": "OrderServiceTest",
             }]},
         )
@@ -639,7 +639,7 @@ class TestValidatePause:
 
         assert rc == 0
         test_file = (initialized_project / "src" / "test" / "java" / "com" / "example"
-                     / "OrderServiceTest.java")
+                     / "service" / "OrderServiceTest.java")
         assert test_file.exists()
         assert "developer_test" in test_file.read_text()
 class TestGuessFailingClass:

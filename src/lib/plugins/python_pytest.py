@@ -107,6 +107,33 @@ class PythonPytestPlugin(TechnologyPlugin):
 
         return "module"
 
+    # ------------------------------------------------------------------
+    # Test file naming
+    # ------------------------------------------------------------------
+
+    def test_file_name(self, source_relative_path: str) -> str:
+        """Derive the test file path for a Python source file.
+
+        src/services/user_service.py  → tests/services/test_user_service.py
+        my_module.py                  → tests/test_my_module.py
+        src/foo/bar.py                → tests/foo/test_bar.py
+        """
+        normalized = source_relative_path.replace("\\", "/")
+        path = Path(normalized)
+        stem = path.stem
+
+        # Strip leading src/ component if present
+        parts = list(path.parts)
+        if parts and parts[0] == "src":
+            parts = parts[1:]
+
+        # Drop the filename — we'll rebuild it with test_ prefix
+        if len(parts) > 1:
+            sub_dirs = "/".join(parts[:-1])
+            return f"tests/{sub_dirs}/test_{stem}.py"
+        else:
+            return f"tests/test_{stem}.py"
+
     def test_file_pattern(self) -> list[str]:
         return ["**/test_*.py", "**/*_test.py"]
 

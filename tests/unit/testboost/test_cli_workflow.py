@@ -326,7 +326,7 @@ class TestCmdGenerate:
              patch("subprocess.run", return_value=mock_compile):
             await _cmd_generate_async(gen_args)
 
-        test_file = initialized_project / "src" / "test" / "java" / "com" / "example" / "OrderServiceTest.java"
+        test_file = initialized_project / "src" / "test" / "java" / "com" / "example" / "service" / "OrderServiceTest.java"
         assert test_file.exists()
         assert "@Test" in test_file.read_text()
 

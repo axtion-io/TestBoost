@@ -2,6 +2,8 @@
 """Unit tests for PluginRegistry."""
 
 
+from pathlib import Path
+
 import pytest
 
 from src.lib.plugins.base import TechnologyPlugin
@@ -33,6 +35,9 @@ class _JavaLikePlugin(TechnologyPlugin):
 
     def classify_source_file(self, relative_path):
         return "other"
+
+    def test_file_name(self, source_relative_path):
+        return source_relative_path.replace(".java", "Test.java")
 
     def test_file_pattern(self):
         return ["**/*Test.java"]
@@ -66,6 +71,9 @@ class _PythonLikePlugin(TechnologyPlugin):
 
     def classify_source_file(self, relative_path):
         return "module"
+
+    def test_file_name(self, source_relative_path):
+        return f"tests/test_{Path(source_relative_path).stem}.py"
 
     def test_file_pattern(self):
         return ["**/test_*.py"]

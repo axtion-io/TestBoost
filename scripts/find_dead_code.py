@@ -275,8 +275,14 @@ def analyze():
             continue
         if d.name in IGNORED_NAMES:
             continue
-        if any("app." in dec or "pytest" in dec for dec in d.decorators):
-            continue  # FastAPI routes, fixtures
+        if any(
+            "app." in dec or "pytest" in dec
+            or "validator" in dec  # pydantic @model_validator/@field_validator
+            for dec in d.decorators
+        ):
+            continue  # framework-invoked
+        if d.kind == "method" and d.name.startswith("on_"):
+            continue  # LangChain/event callback hooks, called by the framework
 
         prod_hit = False
         test_hit = False

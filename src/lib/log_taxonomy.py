@@ -45,19 +45,6 @@ class LogSeverity(StrEnum):
     TRACE = "trace"
 
 
-# Paths to exclude from access logs (monitoring endpoints)
-EXCLUDED_PATHS = {
-    "/health",
-    "/metrics",
-    "/docs",
-    "/redoc",
-    "/openapi.json",
-    "/favicon.ico",
-    "/api/v2/logs",  # Don't log the logs API itself
-    "/api/v2/logs/stats",  # Don't log the logs stats endpoint
-}
-
-
 # Event name patterns for automatic categorization
 EVENT_CATEGORY_MAPPING = {
     # Business events

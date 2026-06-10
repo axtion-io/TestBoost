@@ -3,7 +3,7 @@
 
 import pytest
 
-from src.lib.md_logger import MdLogger, get_log_path
+from src.lib.md_logger import MdLogger
 from src.lib.session_tracker import create_session, init_project
 
 
@@ -135,18 +135,3 @@ class TestMdLogger:
         content = log_files[0].read_text()
         assert "analysis" in content
         assert "generation" in content
-
-
-# ============================================================================
-# get_log_path
-# ============================================================================
-
-
-class TestGetLogPath:
-    def test_returns_path_with_date(self, session_dir):
-        path = get_log_path(session_dir)
-        assert "logs" in str(path)
-        assert path.suffix == ".md"
-        # Path should contain today's date
-        import re
-        assert re.search(r"\d{4}-\d{2}-\d{2}", str(path))

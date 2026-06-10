@@ -10,10 +10,9 @@ class TechnologyPlugin(ABC):
 
     A plugin encapsulates all technology-specific knowledge:
     - Source file discovery and classification
-    - Test file naming conventions
+    - Test file patterns
     - Validation and test run commands
     - LLM prompt template directory
-    - Generation context building
 
     Register plugins in priority order in src/lib/plugins/__init__.py.
     Python raises TypeError at instantiation if any abstract member is missing.
@@ -79,17 +78,6 @@ class TechnologyPlugin(ABC):
         """
 
     @abstractmethod
-    def test_file_name(self, source_relative_path: str) -> str:
-        """Derive the test file path for a given source file.
-
-        Args:
-            source_relative_path: Path relative to project root.
-
-        Returns:
-            Test file path relative to project root. Deterministic for a given input.
-        """
-
-    @abstractmethod
     def test_file_pattern(self) -> list[str]:
         """Return glob patterns identifying test files for this technology.
 
@@ -124,16 +112,3 @@ class TechnologyPlugin(ABC):
             May include '{test_file}' placeholder for the caller to substitute.
         """
 
-    @abstractmethod
-    def build_generation_context(self, project_path: Path, source_file: str) -> dict:
-        """Build the LLM context dict for test generation.
-
-        Args:
-            project_path: Project root directory.
-            source_file: Path to the source file to test (absolute or relative).
-
-        Returns:
-            Dict with at minimum: source_code, class_name, class_type,
-            dependencies, existing_tests, conventions.
-            Technology-specific keys may be added freely.
-        """

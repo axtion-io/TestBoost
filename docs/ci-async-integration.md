@@ -335,7 +335,7 @@ In `src/lib/session_tracker.py`:
 
 - `STATUS_AWAITING_INPUT = "awaiting_input"` — distinct from `failed`
 - `EXIT_AWAITING_INPUT = 78`
-- `QUESTION_FILENAME`, `ANSWER_FILENAME`, `ANSWER_CONSUMED_FILENAME`, `GENERATION_CURSOR_FILENAME`
+- `QUESTION_FILENAME`, `ANSWER_CONSUMED_FILENAME`, `GENERATION_CURSOR_FILENAME`
 - `class AwaitingInputError(Exception)` — raise from a step to trigger pause
 - `emit_question(session_dir, step_name, payload, project_path=None, session_id=None) -> Path`
   — payloads with an `items` list render as a batch question

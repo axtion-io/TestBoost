@@ -26,7 +26,6 @@ class Settings(BaseSettings):
     )
 
     # Application settings
-    app_name: str = Field(default="TestBoost", description="Application name")
     debug: bool = Field(default=False, description="Debug mode")
     log_level: str = Field(default="INFO", description="Logging level")
 
@@ -86,24 +85,6 @@ class Settings(BaseSettings):
     max_retries: int = Field(
         default=3,
         description="Maximum retry attempts for transient errors",
-    )
-
-    # Data retention settings
-    session_retention_days: int = Field(
-        default=30,
-        description="Number of days to retain session data",
-    )
-
-    # Locking settings
-    project_lock_timeout_seconds: int = Field(
-        default=3600,
-        description="Project lock timeout in seconds",
-    )
-
-    # API authentication
-    api_key: str | None = Field(
-        default=None,
-        description="API key for authentication",
     )
 
     @model_validator(mode="after")

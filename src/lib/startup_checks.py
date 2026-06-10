@@ -19,7 +19,6 @@ STARTUP_TIMEOUT = settings.startup_timeout
 
 # Retry configuration for intermittent errors
 MAX_RETRIES = 3
-MIN_WAIT = 1  # seconds
 MAX_WAIT = 10  # seconds
 
 
@@ -31,23 +30,6 @@ class StartupCheckError(Exception):
 class LLMConnectionError(StartupCheckError):
     """Raised when LLM connection check fails."""
     pass
-
-
-def _is_retryable_error(exception: Exception) -> bool:
-    """Determine if an error is retryable."""
-    if isinstance(exception, TimeoutError | asyncio.TimeoutError | LLMTimeoutError):
-        return True
-    if isinstance(exception, ConnectionError):
-        return True
-    # OS-level errors (missing files, broken pipes, etc.) are not retryable
-    if isinstance(exception, OSError):
-        return False
-    error_msg = str(exception).lower()
-    if any(keyword in error_msg for keyword in ["401", "403", "unauthorized", "forbidden", "invalid api key"]):
-        return False
-    if "429" in error_msg or "rate limit" in error_msg:
-        return False
-    return "not configured" not in error_msg and "missing" not in error_msg
 
 
 async def _ping_llm_with_retry(llm: Any, timeout: int = STARTUP_TIMEOUT, max_retries: int = MAX_RETRIES) -> None:

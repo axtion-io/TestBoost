@@ -40,7 +40,6 @@ STATUS_ABANDONED = "abandoned"
 EXIT_AWAITING_INPUT = 78
 
 QUESTION_FILENAME = "question.json"
-ANSWER_FILENAME = "answer.json"
 ANSWER_CONSUMED_FILENAME = "answer.json.consumed"
 GENERATION_CURSOR_FILENAME = "generation_cursor.json"
 

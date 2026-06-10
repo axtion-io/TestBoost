@@ -87,9 +87,9 @@ Each command:
 
 `src/lib/plugins/` provides the technology abstraction layer. All technology-specific behavior is encapsulated in plugins.
 
-**`TechnologyPlugin` (ABC in `base.py`)** defines 11 abstract members:
+**`TechnologyPlugin` (ABC in `base.py`)** defines 9 abstract members:
 - Properties: `identifier`, `description`, `detection_patterns`, `prompt_template_dir`
-- Methods: `find_source_files()`, `classify_source_file()`, `test_file_name()`, `test_file_pattern()`, `validation_command()`, `test_run_command()`, `build_generation_context()`
+- Methods: `find_source_files()`, `classify_source_file()`, `test_file_pattern()`, `validation_command()`, `test_run_command()`
 
 **`PluginRegistry` (`registry.py`)** manages plugin lookup:
 - `detect(project_path)` — returns first plugin whose detection patterns match (priority = registration order)
@@ -239,8 +239,6 @@ TestBoost/
 |   |   +-- prompt_utils.py     # Shared template load + render
 |   |   +-- md_logger.py        # Dual-output logger
 |   |   +-- startup_checks.py   # LLM connectivity check
-|   +-- workflows/
-|   |   +-- test_generation_agent.py
 +-- config/
 |   +-- prompts/testing/        # Java/Spring LLM prompt templates
 |   +-- prompts/testing/python_pytest/ # Python/pytest LLM prompt templates

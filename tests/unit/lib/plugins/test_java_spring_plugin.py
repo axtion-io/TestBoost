@@ -39,29 +39,6 @@ def test_test_file_pattern(plugin):
 
 
 # ---------------------------------------------------------------------------
-# test_file_name()
-# ---------------------------------------------------------------------------
-
-class TestTestFileName:
-    def test_standard_maven_layout(self, plugin):
-        result = plugin.test_file_name("src/main/java/com/example/UserService.java")
-        assert result == "src/test/java/com/example/UserServiceTest.java"
-
-    def test_nested_package(self, plugin):
-        result = plugin.test_file_name("src/main/java/com/example/service/OrderService.java")
-        assert result == "src/test/java/com/example/service/OrderServiceTest.java"
-
-    def test_already_has_test_suffix(self, plugin):
-        # If the file already ends with Test.java, it should not double-add
-        result = plugin.test_file_name("src/main/java/com/example/FooTest.java")
-        assert result == "src/test/java/com/example/FooTest.java"
-
-    def test_backslash_separator(self, plugin):
-        result = plugin.test_file_name("src\\main\\java\\com\\example\\Bar.java")
-        assert result == "src/test/java/com/example/BarTest.java"
-
-
-# ---------------------------------------------------------------------------
 # find_source_files() — delegates to src.java.discovery
 # ---------------------------------------------------------------------------
 

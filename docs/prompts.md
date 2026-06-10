@@ -12,14 +12,12 @@ Prompt files use `{{placeholder}}` syntax. The double braces are intentional —
 config/prompts/
 +-- testing/
 |   +-- unit_test_generation.md      # Main test generation prompt
-|   +-- unit_test_strategy.md        # Unit test strategy (agent system prompt)
 |   +-- compilation_fix.md           # Fix compilation errors in generated tests
 |   +-- mutation_killer.md           # LLM-powered killer tests for surviving mutants
 |   +-- edge_case_analysis.md        # Pre-generation edge case scenario analysis
 |   +-- python_pytest/               # Python/pytest-specific prompt overrides
 +-- maven/
 |   +-- compilation_errors_format.md # Format Maven errors for LLM consumption
-|   +-- system_agent.md              # Maven maintenance agent system prompt
 ```
 
 ## Unit Test Generation

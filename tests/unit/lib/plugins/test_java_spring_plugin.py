@@ -137,7 +137,8 @@ class TestParseMavenCmd:
         assert "-P" in cmd and "prof" in cmd
 
     def test_rejects_non_maven_binary(self):
-        from src.lib.plugins.java_spring import _parse_maven_cmd
         import pytest as _pytest
+
+        from src.lib.plugins.java_spring import _parse_maven_cmd
         with _pytest.raises(ValueError):
             _parse_maven_cmd("rm -rf /")

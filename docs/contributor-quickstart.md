@@ -64,7 +64,7 @@ pytest --cov=src --cov-report=html
 # Open htmlcov/index.html in your browser
 
 # Specific test file
-pytest tests/unit/testboost/test_cli.py
+pytest tests/unit/testboost/test_cli_workflow.py
 
 # Tests matching a pattern
 pytest -k "test_session"
@@ -105,7 +105,8 @@ TestBoost/
 |   |   +-- killer_tests.py     # Killer test generation
 |   +-- lib/                    # Infrastructure layer
 |   |   +-- bridge.py           # Bridge to core functions (mockable boundary)
-|   |   +-- cli.py              # CLI entry point (15 commands + --list-plugins)
+|   |   +-- cli.py              # CLI facade: argparse + dispatch (15 commands)
+|   |   +-- commands/           # Command implementations (one module per group)
 |   |   +-- session_tracker.py  # Markdown-based session management
 |   |   +-- plugins/            # Technology plugin system
 |   |   |   +-- base.py         # TechnologyPlugin ABC
@@ -195,8 +196,8 @@ The `MdLogger` writes concise output to stdout (for LLM consumption) and detaile
 
 ### Adding a New CLI Command
 
-1. Add the command function in `src/lib/cli.py`
-2. Register the subparser in the `main()` function
+1. Implement `cmd_<name>()` in the relevant `src/lib/commands/<group>_cmd.py` (or a new module)
+2. Re-export it from `src/lib/cli.py` and register the subparser in `main()`
 3. Add a shell script wrapper in `scripts/`
 4. Create slash command files in `.claude/commands/` and `.opencode/commands/`
 5. Add tests

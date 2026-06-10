@@ -74,7 +74,9 @@ These ensure the correct working directory and Python module path.
 
 ### 3. Python CLI
 
-The main entry point: `src/lib/cli.py`. Uses `argparse` to dispatch to fifteen commands — the workflow steps (`init`, `analyze`, `gaps`, `generate`, `validate`, `mutate`, `killer`), the auxiliaries (`status`, `install`, `verify`), and the HITL/ops commands (`resume`, `sign-answer`, `gitlab`, `cleanup`, `doctor`) — plus the `--list-plugins` flag.
+The stable entry point and facade: `src/lib/cli.py`. It owns the `argparse` parser and dispatches to fifteen commands — the workflow steps (`init`, `analyze`, `gaps`, `generate`, `validate`, `mutate`, `killer`), the auxiliaries (`status`, `install`, `verify`), and the HITL/ops commands (`resume`, `sign-answer`, `gitlab`, `cleanup`, `doctor`) — plus the `--list-plugins` flag.
+
+The implementations live in `src/lib/commands/`, one module per command group (`generate_cmd.py`, `validate_cmd.py`, `mutation_cmd.py`, `hitl_cmd.py`, `ops_cmd.py`, …, with shared helpers in `_shared.py`). The facade re-exports everything, so external callers — tests, wrapper scripts, `python -m testboost` — always go through `src.lib.cli`.
 
 Each command:
 1. Reads the current session state from `.testboost/`
@@ -223,7 +225,8 @@ TestBoost/
 |   |   +-- killer_tests.py     # Killer test generation
 |   +-- lib/
 |   |   +-- bridge.py           # Bridge to core functions (mockable boundary)
-|   |   +-- cli.py              # CLI entry point (15 commands + --list-plugins)
+|   |   +-- cli.py              # CLI facade: argparse + dispatch (15 commands)
+|   |   +-- commands/           # Command implementations (one module per group)
 |   |   +-- session_tracker.py  # Markdown-based session management
 |   |   +-- integrity.py        # HMAC-SHA256 integrity token system
 |   |   +-- installer.py        # Persistent installer for target projects

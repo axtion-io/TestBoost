@@ -74,7 +74,7 @@ These ensure the correct working directory and Python module path.
 
 ### 3. Python CLI
 
-The main entry point: `src/lib/cli.py`. Uses `argparse` to dispatch to ten commands: `init`, `analyze`, `gaps`, `generate`, `validate`, `mutate`, `killer`, `status`, `install`, `verify`, plus the `--list-plugins` flag.
+The main entry point: `src/lib/cli.py`. Uses `argparse` to dispatch to fifteen commands — the workflow steps (`init`, `analyze`, `gaps`, `generate`, `validate`, `mutate`, `killer`), the auxiliaries (`status`, `install`, `verify`), and the HITL/ops commands (`resume`, `sign-answer`, `gitlab`, `cleanup`, `doctor`) — plus the `--list-plugins` flag.
 
 Each command:
 1. Reads the current session state from `.testboost/`
@@ -223,7 +223,7 @@ TestBoost/
 |   |   +-- killer_tests.py     # Killer test generation
 |   +-- lib/
 |   |   +-- bridge.py           # Bridge to core functions (mockable boundary)
-|   |   +-- cli.py              # CLI entry point (10 commands + --list-plugins)
+|   |   +-- cli.py              # CLI entry point (15 commands + --list-plugins)
 |   |   +-- session_tracker.py  # Markdown-based session management
 |   |   +-- integrity.py        # HMAC-SHA256 integrity token system
 |   |   +-- installer.py        # Persistent installer for target projects
@@ -246,7 +246,7 @@ TestBoost/
 |   +-- unit/lib/plugins/       # Plugin unit tests
 |   +-- unit/testboost/         # CLI, session, integrity, installer tests
 |   +-- integration/            # Plugin detection, LLM connectivity tests
-|   +-- e2e/                    # Full LLM workflow tests
+|   +-- e2e/                    # Placeholder (E2E fixtures planned, see mvp-plan)
 +-- docs/                       # Documentation
 ```
 

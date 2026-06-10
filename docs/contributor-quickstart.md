@@ -105,7 +105,7 @@ TestBoost/
 |   |   +-- killer_tests.py     # Killer test generation
 |   +-- lib/                    # Infrastructure layer
 |   |   +-- bridge.py           # Bridge to core functions (mockable boundary)
-|   |   +-- cli.py              # CLI entry point (10 commands + --list-plugins)
+|   |   +-- cli.py              # CLI entry point (15 commands + --list-plugins)
 |   |   +-- session_tracker.py  # Markdown-based session management
 |   |   +-- plugins/            # Technology plugin system
 |   |   |   +-- base.py         # TechnologyPlugin ABC
@@ -123,7 +123,7 @@ TestBoost/
 |   +-- unit/lib/plugins/       # Plugin unit tests
 |   +-- unit/testboost/         # CLI, session, integrity tests
 |   +-- integration/            # Plugin detection, LLM connectivity
-|   +-- e2e/                    # Full LLM workflow tests
+|   +-- e2e/                    # Placeholder (E2E fixtures planned)
 +-- docs/                       # Documentation
 ```
 

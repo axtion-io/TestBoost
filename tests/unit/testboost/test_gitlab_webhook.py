@@ -35,18 +35,24 @@ def webhook_app(monkeypatch):
         sys.path.remove(str(WEBHOOK_DIR))
 
 
+_USER_IDS = {"alice": 11, "bob": 22, "tb-bot": 99}
+
+
 def _note_payload(commenter: str = "alice", author: str = "alice", body: str = "") -> dict:
+    """Mirror the REAL GitLab Note Hook shape: the commenter is the top-level
+    `user` object (with id), the MR author is `merge_request.author_id`
+    (an integer — there is NO nested merge_request.author object)."""
     return {
         "object_kind": "note",
         "object_attributes": {
             "noteable_type": "MergeRequest",
             "body": body,
         },
-        "user": {"username": commenter},
+        "user": {"id": _USER_IDS.get(commenter, 1), "username": commenter},
         "merge_request": {
             "iid": 7,
             "source_branch": "feature/x",
-            "author": {"username": author},
+            "author_id": _USER_IDS.get(author, 1),
         },
         "project": {"id": 100},
     }

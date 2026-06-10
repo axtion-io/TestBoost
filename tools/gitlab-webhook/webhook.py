@@ -97,14 +97,18 @@ async def gitlab_note(
     if body.lstrip().startswith("### 🤖 TestBoost needs input"):
         return {"ignored": "testboost question comment, not an answer"}
 
-    # Author check: only the MR author may answer. (The webhook payload
-    # doesn't carry project membership levels, so a broader maintainer
-    # allow-list would need an extra API call — extend here if you want it.)
-    author_username = (mr.get("author") or {}).get("username")
-    if not commenter_username or commenter_username != author_username:
+    # Author check: only the MR author may answer. Real Note Hook payloads
+    # carry the author as `merge_request.author_id` (an integer) and the
+    # commenter as the top-level `user.id` — there is NO nested
+    # merge_request.author object, so compare the ids directly. (A broader
+    # maintainer allow-list would need an extra API call — extend here if
+    # you want it.)
+    commenter_id = user.get("id")
+    author_id = mr.get("author_id")
+    if commenter_id is None or author_id is None or commenter_id != author_id:
         log.info(
-            "ignored note from %s on MR by %s (not the author)",
-            commenter_username, author_username,
+            "ignored note from user id %s on MR authored by id %s (not the author)",
+            commenter_id, author_id,
         )
         return {"ignored": "commenter is not the MR author"}
 

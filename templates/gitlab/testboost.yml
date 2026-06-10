@@ -9,7 +9,7 @@
 #       ref: 'main'
 #       file: 'templates/gitlab/testboost.yml'
 #
-#   stages: [test]
+#   stages: [test]   # ← if you already define stages, ADD test to your list
 #
 # Required CI/CD variables (Settings → CI/CD → Variables, masked):
 #   GITLAB_TOKEN          — Project Access Token (Settings → Access Tokens),
@@ -25,30 +25,29 @@
 #   protected — protected variables are NOT injected into pipelines on
 #   unprotected branches (the job then sees them empty).
 #
-# Optional variables:
-#   TESTBOOST_IMAGE       — job image. Default python:3.11-slim has NO
+# Optional variables (override the YAML defaults below):
+#   TESTBOOST_IMAGE       — job image. The default python:3.11-slim has NO
 #                           Java/Maven: generated tests are then written but
 #                           neither compile-checked nor fixed. For Java
 #                           projects use an image with JDK + Maven + Python
-#                           3.11+ (build a small custom image, or extend
-#                           maven:3.9-eclipse-temurin-17 with python3).
+#                           3.11+ and python3-venv (see the Dockerfile in
+#                           docs/gitlab-integration.md "Prerequisites").
 #   TESTBOOST_PACKAGE     — pip requirement for TestBoost. Defaults to the
 #                           GitHub repo at main; if your runners have no
 #                           GitHub egress, point it at your mirror:
 #                           git+https://<your-gitlab>/your-group/testboost.git@<tag>
 #   TESTBOOST_COMMIT_PATHS — workspace paths committed back to the MR branch
-#                           (generated tests + session state). Default
-#                           "src/test" suits Maven; use "tests" for Python.
-#   TESTBOOST_BOT_USERNAME — username of the GITLAB_TOKEN identity (loop
-#                           guard for the webhook). For a Project Access
-#                           Token this is the auto-generated bot user, e.g.
-#                           project_42_bot_abc123 — find it in Members, or
-#                           via: curl -H "PRIVATE-TOKEN: $TOKEN" .../api/v4/user
+#                           (generated tests). Default "src/test" suits
+#                           Maven; use "tests" for Python.
 #   TESTBOOST_TECH        — technology plugin (default java-spring).
+#   TESTBOOST_RUN_VALIDATE — "true" to also compile and RUN generated tests.
+#
+# (TESTBOOST_BOT_USERNAME belongs to the WEBHOOK's environment, not here —
+#  a CI/CD variable never reaches the separately-deployed webhook process.)
 #
 # Runner requirements: docker/kubernetes executor able to pull
-# $TESTBOOST_IMAGE and run apt-get (root). Shell executors are not supported
-# as-is.
+# $TESTBOOST_IMAGE and run apt-get (root) when the default image is used.
+# Shell executors are not supported as-is.
 #
 # ⚠️ Interactions with your existing pipeline config:
 #   - `workflow: rules` that only allow merge_request_event pipelines will
@@ -63,23 +62,37 @@
 #   2. after_script commits the session state (.testboost/, never the
 #      secret) AND the tests generated so far ($TESTBOOST_COMMIT_PATHS) to
 #      the MR branch with `-o ci.skip`, then posts ONE question comment.
+#      (On green runs the same after_script commits the final tests; on
+#      hard failures nothing is committed.)
 #   3. The developer replies (the comment itself explains the exact reply
 #      format); the webhook triggers a branch pipeline with
 #      TESTBOOST_RESUME=true + TESTBOOST_MR_IID.
 #   4. testboost:resume finds the session state in its checkout, fetches +
 #      signs the answer from the MR notes, and resumes — completed files
 #      are skipped, their tests are already on the branch (step 2).
-#   On success the same after_script commits the final generated tests.
 
 .testboost:base:
-  image: ${TESTBOOST_IMAGE:-python:3.11-slim}
+  # NOTE: ${VAR:-default} shell syntax is NOT supported in `image:` —
+  # the default lives in `variables:` below; a project/group CI variable
+  # of the same name overrides it.
+  image: $TESTBOOST_IMAGE
   variables:
+    TESTBOOST_IMAGE: "python:3.11-slim"
     TESTBOOST_PROJECT: "$CI_PROJECT_DIR"
     TESTBOOST_PACKAGE: "git+https://github.com/axtion-io/TestBoost.git@main"
     TESTBOOST_COMMIT_PATHS: "src/test"
     PIP_DISABLE_PIP_VERSION_CHECK: "1"
+    GIT_TERMINAL_PROMPT: "0"
   before_script:
+    # Fail fast on misconfiguration — a missing masked/protected variable
+    # otherwise only surfaces as a silent no-op at the end of the job.
+    - test -n "$TESTBOOST_TB_SECRET" || { echo "ERROR. TESTBOOST_TB_SECRET is empty. Set it in Settings - CI/CD - Variables, and do not mark it protected unless the branch is protected."; exit 1; }
+    - test -n "$GITLAB_TOKEN" || { echo "ERROR. GITLAB_TOKEN is empty. Same checks as above."; exit 1; }
     - command -v git >/dev/null || (apt-get update -qq && apt-get install -qq --no-install-recommends git)
+    # Install into a venv: survives PEP 668 (externally-managed environments)
+    # and provides `python`/`pip` regardless of the base image's aliases.
+    - python3 -m venv /tmp/testboost-venv
+    - . /tmp/testboost-venv/bin/activate
     - pip install --quiet "$TESTBOOST_PACKAGE"
     # Seed .tb_secret so HMAC is stable across jobs and pipelines
     # (masked CI variable; never write it to logs).
@@ -104,32 +117,46 @@
     exit_codes: [78]
   after_script:
     - |
-      QFILE=$(ls -t .testboost/sessions/*/question.json 2>/dev/null | head -1 || true)
-      git config user.email "${TESTBOOST_BOT_EMAIL:-testboost-bot@invalid}"
-      git config user.name "${TESTBOOST_BOT_USERNAME:-TestBoost Bot}"
-      # Stage session state and generated tests. The ':!' pathspec is a
-      # second line of defense for the secret on top of .testboost/.gitignore.
-      git add -- .testboost ':!.testboost/.tb_secret' || true
-      for p in $TESTBOOST_COMMIT_PATHS; do
-        [ -e "$p" ] && git add -- "$p" || true
-      done
-      if ! git diff --cached --quiet; then
-        if [ "$CI_JOB_STATUS" = "failed" ] && [ -n "$QFILE" ]; then
-          MSG="chore(testboost): pause state + partial tests [skip ci]"
-        else
-          MSG="test(testboost): generated tests [skip ci]"
+      # after_script runs in a fresh shell: re-enter the venv
+      [ -f /tmp/testboost-venv/bin/activate ] && . /tmp/testboost-venv/bin/activate
+      # Only the CURRENT session's question counts (older sessions may
+      # carry stale questions that must not be re-posted).
+      CURRENT_SESSION=$(ls -td .testboost/sessions/*/ 2>/dev/null | head -1 || true)
+      QFILE=""
+      [ -n "$CURRENT_SESSION" ] && [ -f "${CURRENT_SESSION}question.json" ] && QFILE="${CURRENT_SESSION}question.json"
+      PAUSED="no"
+      [ "$CI_JOB_STATUS" = "failed" ] && [ -n "$QFILE" ] && PAUSED="yes"
+      # Commit policy: deliver tests on SUCCESS, persist state+partial tests
+      # on PAUSE, push NOTHING on a hard failure (no half-broken tests in
+      # the MR diff).
+      if [ "$CI_JOB_STATUS" = "success" ] || [ "$PAUSED" = "yes" ]; then
+        git config user.email "${TESTBOOST_BOT_EMAIL:-testboost-bot@invalid}"
+        git config user.name "TestBoost Bot"
+        # ':!' pathspec: second line of defense for the secret on top of
+        # .testboost/.gitignore.
+        git add -- .testboost ':!.testboost/.tb_secret' || true
+        for p in $TESTBOOST_COMMIT_PATHS; do
+          [ -e "$p" ] && git add -- "$p" || true
+        done
+        if ! git diff --cached --quiet; then
+          if [ "$PAUSED" = "yes" ]; then
+            MSG="chore(testboost): pause state + partial tests [skip ci]"
+          else
+            MSG="test(testboost): generated tests [skip ci]"
+          fi
+          git -c commit.gpgsign=false commit -m "$MSG"
+          # Token goes through the credential store, NOT the remote URL — a
+          # failing push must never print the token into the CI log.
+          # CI_SERVER_PROTOCOL/PORT keep self-managed non-443 setups working.
+          git config credential.helper store
+          echo "${CI_SERVER_PROTOCOL}://oauth2:${GITLAB_TOKEN}@${CI_SERVER_HOST}:${CI_SERVER_PORT}" > ~/.git-credentials
+          git push "${CI_SERVER_PROTOCOL}://${CI_SERVER_HOST}:${CI_SERVER_PORT}/${CI_PROJECT_PATH}.git" \
+            "HEAD:${CI_COMMIT_REF_NAME}" -o ci.skip \
+            || echo "WARNING: could not push to the MR branch (tests/state not delivered)"
+          rm -f ~/.git-credentials
         fi
-        git -c commit.gpgsign=false commit -m "$MSG"
-        # Token goes through the credential store, NOT the remote URL — a
-        # failing push must never print the token into the CI log.
-        git config credential.helper store
-        echo "https://oauth2:${GITLAB_TOKEN}@${CI_SERVER_HOST}" > ~/.git-credentials
-        git push "https://${CI_SERVER_HOST}/${CI_PROJECT_PATH}.git" \
-          "HEAD:${CI_COMMIT_REF_NAME}" -o ci.skip \
-          || echo "WARNING: could not push to the MR branch (tests/state not delivered)"
-        rm -f ~/.git-credentials
       fi
-      if [ "$CI_JOB_STATUS" = "failed" ] && [ -n "$QFILE" ]; then
+      if [ "$PAUSED" = "yes" ]; then
         echo "TestBoost paused — posting the question to the MR"
         python -m testboost gitlab post-question "$TESTBOOST_PROJECT" \
           || echo "WARNING: could not post the question to the MR"
@@ -179,13 +206,8 @@ testboost:resume:
     - python -m testboost gitlab fetch-answer "$TESTBOOST_PROJECT" --output ./answer.json
     - python -m testboost resume "$TESTBOOST_PROJECT" --answer-file ./answer.json
 
-# Periodic cleanup of abandoned awaiting_input sessions (run on schedule:
-# CI/CD → Schedules, e.g. daily — optional but recommended). 24h matches the
-# answer TTL: a question that can no longer be answered gets abandoned.
-testboost:cleanup:
-  extends: .testboost:base
-  stage: test
-  rules:
-    - if: $CI_PIPELINE_SOURCE == "schedule"
-  script:
-    - python -m testboost cleanup "$TESTBOOST_PROJECT" --ttl-hours 24
+# NOTE: there is intentionally no scheduled cleanup job. Paused sessions
+# live on MR source branches, which die when the MR merges — a scheduled
+# pipeline runs on the default branch and would never see them. Use
+# `python -m testboost cleanup <project>` locally if you keep long-lived
+# branches around.

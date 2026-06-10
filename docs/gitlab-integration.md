@@ -38,7 +38,8 @@ Key mechanics:
 - Generated tests and the session state (`.testboost/`, minus the
   secret) are **committed to the MR branch** (`[skip ci]`) — on success
   as the deliverable, on pause so the resume pipeline finds both the
-  paused session and the already-generated tests in its checkout.
+  paused session and the already-generated tests in its checkout. On a
+  hard failure (red job) nothing is committed.
 
 Two moving parts to set up:
 
@@ -65,9 +66,20 @@ the template needs at least Reporter access to the mirror project.
 `python:3.11-slim`, which has **no JDK and no Maven**: TestBoost will
 still generate tests, but cannot compile-check or auto-fix them, and the
 `validate` job cannot run. For a Java project, set the `TESTBOOST_IMAGE`
-CI variable to an image containing **JDK + Maven + Python 3.11+** — e.g.
-build a small image `FROM maven:3.9-eclipse-temurin-17` +
-`apt-get install python3 python3-pip python3-venv`.
+CI variable to an image containing **JDK + Maven + Python 3.11+ with
+venv support**. This Dockerfile works (Ubuntu noble base → Python 3.12;
+the template installs TestBoost into a venv, so PEP 668 and the
+`python` vs `python3` alias question are non-issues):
+
+```dockerfile
+FROM maven:3.9-eclipse-temurin-17-noble
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends python3 python3-pip python3-venv git \
+ && rm -rf /var/lib/apt/lists/*
+```
+
+Push it to your registry and set `TESTBOOST_IMAGE` to its path. Avoid
+jammy-based tags (Python 3.10 < TestBoost's required 3.11).
 
 **Runners.** Docker or Kubernetes executor, able to pull the image
 (from Docker Hub or your registry) and to run `apt-get` as root when the
@@ -86,7 +98,13 @@ pipeline triggering), scopes **`api` + `write_repository`**. It posts MR
 notes, pushes the state/tests commits, and triggers resume pipelines.
 Note the bot user it creates (e.g. `project_42_bot_abc123`, visible in
 Members or via `curl -H "PRIVATE-TOKEN: $TOKEN" https://<your-gitlab>/api/v4/user`)
-— you'll need that username for the webhook's loop guard.
+— you'll need that username for the webhook's loop guard (Step 3).
+
+> ⚠️ On GitLab 17.7+ check Settings → CI/CD → Variables → **"Minimum
+> role to use pipeline variables"**: the resume webhook triggers
+> pipelines *with variables* (`TESTBOOST_RESUME`, `TESTBOOST_MR_IID`),
+> so the token's role must meet that threshold or the trigger returns
+> `403 Insufficient permissions to set pipeline variables`.
 
 **Check your `workflow: rules`.** If your `.gitlab-ci.yml` restricts
 pipelines to `merge_request_event` (the common duplicate-pipeline
@@ -122,7 +140,6 @@ In your project (or group) → Settings → CI/CD → Variables. Enable the
 | `TESTBOOST_IMAGE` | Job image with your build toolchain (see Prerequisites). |
 | `TESTBOOST_PACKAGE` | (optional) pip source override — pin a tag in production. |
 | `TESTBOOST_COMMIT_PATHS` | (optional) paths committed back to the MR branch; default `src/test` (Maven). Use `tests` for Python projects. |
-| `TESTBOOST_BOT_USERNAME` | (optional) the token's bot username (see Prerequisites) — webhook loop guard. |
 | `TESTBOOST_TECH` | (optional) `java-spring` (default), `python-pytest`, … |
 
 > ⚠️ **Don't mark these variables "protected"** unless your MR source
@@ -139,11 +156,12 @@ include:
     ref: 'main'                       # ← or a pinned tag
     file: 'templates/gitlab/testboost.yml'
 
-stages: [test]
+stages: [test]   # if you already define stages, ADD test to your list — don't replace it
 ```
 
-The template is self-contained: jobs `pip install` TestBoost, nothing
-needs to be vendored into your repo. Five jobs are defined:
+The template is self-contained: jobs `pip install` TestBoost (into a
+venv), nothing needs to be vendored into your repo. Four jobs are
+defined:
 
 - **`testboost:analyze`** — `init` + `analyze` + `gaps` on MR events
 - **`testboost:generate`** — `generate --fail-on-uncertainty`; on exit 78
@@ -155,7 +173,6 @@ needs to be vendored into your repo. Five jobs are defined:
 - **`testboost:resume`** — runs in webhook-triggered pipelines
   (`TESTBOOST_RESUME=true`); fetches + signs the answer from the MR
   notes and resumes the paused step
-- **`testboost:cleanup`** — scheduled pipelines only (see Step 5)
 
 ## Step 3 — Deploy the webhook
 
@@ -196,13 +213,9 @@ In your project → Settings → Webhooks → Add new webhook:
 
 Click "Test → Comments" to verify connectivity.
 
-## Step 5 — (Recommended) schedule the cleanup
-
-CI/CD → Schedules → New schedule (e.g. daily), no special variables
-needed. The scheduled pipeline runs `testboost:cleanup`, which marks
-sessions stuck in `awaiting_input` for more than 24h as `abandoned`
-(audit-preserving — nothing is deleted). Skipping this step only means
-stale paused sessions linger in `.testboost/sessions/`.
+> **No cleanup schedule needed**: paused sessions live on MR source
+> branches, which die when the MR merges. (`testboost cleanup` exists
+> for local, long-lived checkouts.)
 
 ## How a developer experiences this
 

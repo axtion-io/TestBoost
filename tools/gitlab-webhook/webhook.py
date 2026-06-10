@@ -97,10 +97,9 @@ async def gitlab_note(
     if body.lstrip().startswith("### 🤖 TestBoost needs input"):
         return {"ignored": "testboost question comment, not an answer"}
 
-    # Author check: must be the MR author OR a maintainer+ on the project.
-    # GitLab webhook payload doesn't carry the project membership level, so
-    # we only check identity here; rely on Project Access Token scoping for
-    # the rest.
+    # Author check: only the MR author may answer. (The webhook payload
+    # doesn't carry project membership levels, so a broader maintainer
+    # allow-list would need an extra API call — extend here if you want it.)
     author_username = (mr.get("author") or {}).get("username")
     if not commenter_username or commenter_username != author_username:
         log.info(

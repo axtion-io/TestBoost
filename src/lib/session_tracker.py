@@ -544,16 +544,35 @@ def _render_question_markdown(payload: dict[str, Any]) -> str:
         lines.append("```")
         lines.append("")
     if answer_schema:
-        lines.append("**Reply with this shape** (sign with `testboost sign-answer`):")
+        lines.append("**Reply with this shape**:")
         lines.append("")
         lines.append("```json")
         lines.append(json.dumps(answer_schema, indent=2, default=str))
         lines.append("```")
         lines.append("")
-    qid = payload.get("question_id")
-    if qid:
-        lines.append(f"_Question ID: `{qid}`_")
+    lines.extend(_reply_instructions(payload))
     return "\n".join(lines)
+
+
+def _reply_instructions(payload: dict[str, Any]) -> list[str]:
+    """How-to-reply block appended to every MR-posted question.
+
+    The marker line is what the resume webhook and `testboost gitlab
+    fetch-answer` look for in the reply — it MUST be stated visibly in the
+    comment, because the machine-readable copy appended by post_question
+    is an invisible HTML comment a human would never discover.
+    """
+    qid = payload.get("question_id")
+    if not qid:
+        return []
+    return [
+        "**How to reply** (as the MR author, in a new comment):",
+        "",
+        "1. Paste your answer as ONE fenced ```json block (raw JSON — do NOT sign it, the CI signs accepted answers itself);",
+        f"2. Include this exact line anywhere in the same comment: `testboost:question_id={qid}`",
+        "",
+        f"_Question ID: `{qid}`_",
+    ]
 
 
 def _render_batch_markdown(payload: dict[str, Any], items: list[dict[str, Any]]) -> str:
@@ -578,16 +597,13 @@ def _render_batch_markdown(payload: dict[str, Any], items: list[dict[str, Any]])
             lines.append("")
     answer_schema = payload.get("answer_schema", {})
     if answer_schema:
-        lines.append("**Reply with ONE fenced JSON block combining your answers** "
-                     "(sign with `testboost sign-answer`):")
+        lines.append("**Reply with ONE fenced JSON block combining your answers**:")
         lines.append("")
         lines.append("```json")
         lines.append(json.dumps(answer_schema, indent=2, default=str))
         lines.append("```")
         lines.append("")
-    qid = payload.get("question_id")
-    if qid:
-        lines.append(f"_Question ID: `{qid}`_")
+    lines.extend(_reply_instructions(payload))
     return "\n".join(lines)
 
 

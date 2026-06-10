@@ -1,13 +1,12 @@
-# GitLab CI Integration (Phases 4-6)
-
-> Status (2026-06-09): the loop closes end-to-end — pause state is
-> committed to the MR branch, the resume pipeline is part of the
-> template, and the MR helpers ship as `testboost gitlab …` subcommands.
-> Real-world validation (P4-USR) is still pending: see "User test" below.
+# GitLab CI Integration
 
 Step-by-step guide to enable TestBoost on a GitLab project so that
 merge requests trigger automatic test generation, pausing in the MR
 comments when the developer's input is needed.
+
+> ⚠️ **Maturity**: every component is implemented and unit-tested, but
+> the full loop has not yet been validated on a real GitLab project.
+> Expect rough edges; please report them.
 
 ## Architecture (5-minute mental model)
 
@@ -16,14 +15,13 @@ comments when the developer's input is needed.
   │  Developer   │──────────▶│    GitLab CI      │──────────▶│   MR comment   │
   │              │            │ testboost:generate│  (orange)  │ (ONE question, │
   └──────────────┘            │   ⤷ commits state │            │  all items)    │
-         ▲                    └──────────────────┘            └────────────────┘
-         │                                                           │ reply
-         │  pipeline                                                 ▼
-         │  succeeds                                         ┌────────────────┐
-         │                                                   │  Comment with  │
+         ▲                    │     + tests so far│            └────────────────┘
+         │  green job:        └──────────────────┘                   │ reply
+         │  generated tests                                          ▼
+         │  committed to the                                 ┌────────────────┐
+         │  MR branch                                        │  Comment with  │
          │                                                   │  JSON answer   │
-         │                                                   └────────────────┘
-         │  resume pipeline                                          │
+         │  resume pipeline                                  └────────────────┘
   ┌──────────────────┐ ◀──────  ┌──────────────┐ ◀──────  ┌──────────────────┐
   │ testboost:resume │          │   Webhook    │          │  GitLab Note     │
   │ (state from git) │          │  (you host)  │          │     Hook         │
@@ -33,100 +31,161 @@ comments when the developer's input is needed.
 Key mechanics:
 
 - A run that needs human input **exits 78** and shows as an **orange
-  "warning" job** (`allow_failure: exit_codes`), not a green one: the MR
-  is not blocked, but the state is honest.
+  "warning" job** (`allow_failure: exit_codes`): the MR is not blocked,
+  but the state is honest.
 - All uncertainties of a run are **batched into one question** (one MR
-  comment), instead of one round-trip per file.
-- On pause, the job **commits `.testboost/` to the MR branch**
-  (`[skip ci]`, secret excluded via `.testboost/.gitignore`) — that is
-  how the resume pipeline, which starts from a fresh checkout, finds the
-  session again. No cross-pipeline artifact plumbing.
+  comment) — and the comment itself explains exactly how to reply.
+- Generated tests and the session state (`.testboost/`, minus the
+  secret) are **committed to the MR branch** (`[skip ci]`) — on success
+  as the deliverable, on pause so the resume pipeline finds both the
+  paused session and the already-generated tests in its checkout.
 
 Two moving parts to set up:
 
 1. **The `.gitlab-ci.yml` template** (provided) — includes the resume job
-2. **A webhook service** (provided as `tools/gitlab-webhook/`) — you
-   deploy this somewhere reachable from GitLab (a small FastAPI app)
+2. **A webhook service** (provided as `tools/gitlab-webhook/`) — a small
+   FastAPI app you deploy somewhere reachable from your GitLab
 
-The former `scripts/gitlab/*.sh` are gone: posting the question and
-fetching the answer are now `testboost gitlab post-question` and
-`testboost gitlab fetch-answer`, shipped with `pip install testboost`.
+## Prerequisites
+
+Work through these BEFORE step 1 — they are where self-managed setups
+actually stall:
+
+**A GitLab mirror of TestBoost.** `include: project:` resolves on *your*
+GitLab instance, and the TestBoost source of truth lives on GitHub. Create
+a project on your instance (e.g. `your-group/testboost`) and set up [pull
+mirroring](https://docs.gitlab.com/ee/user/project/repository/mirror/pull.html)
+from `https://github.com/axtion-io/TestBoost.git` (or push a clone
+manually). Requirements: the mirror must contain
+`templates/gitlab/testboost.yml` at the `ref:` you include (use `main`,
+or a tag for reproducibility), and every developer whose pipelines use
+the template needs at least Reporter access to the mirror project.
+
+**A job image with your build toolchain.** The template defaults to
+`python:3.11-slim`, which has **no JDK and no Maven**: TestBoost will
+still generate tests, but cannot compile-check or auto-fix them, and the
+`validate` job cannot run. For a Java project, set the `TESTBOOST_IMAGE`
+CI variable to an image containing **JDK + Maven + Python 3.11+** — e.g.
+build a small image `FROM maven:3.9-eclipse-temurin-17` +
+`apt-get install python3 python3-pip python3-venv`.
+
+**Runners.** Docker or Kubernetes executor, able to pull the image
+(from Docker Hub or your registry) and to run `apt-get` as root when the
+default image is used. Shell executors are not supported as-is.
+
+**Network egress for pip.** Jobs install TestBoost with
+`pip install $TESTBOOST_PACKAGE`, defaulting to
+`git+https://github.com/axtion-io/TestBoost.git@main`. If your runners
+cannot reach GitHub, point `TESTBOOST_PACKAGE` at your mirror:
+`git+https://<your-gitlab>/your-group/testboost.git@<tag>`.
+
+**A Project Access Token.** Created under your project → Settings →
+**Access Tokens** (not the Variables page — that's where you'll *store*
+it): role **Developer** (Maintainer if your project restricts pushes or
+pipeline triggering), scopes **`api` + `write_repository`**. It posts MR
+notes, pushes the state/tests commits, and triggers resume pipelines.
+Note the bot user it creates (e.g. `project_42_bot_abc123`, visible in
+Members or via `curl -H "PRIVATE-TOKEN: $TOKEN" https://<your-gitlab>/api/v4/user`)
+— you'll need that username for the webhook's loop guard.
+
+**Check your `workflow: rules`.** If your `.gitlab-ci.yml` restricts
+pipelines to `merge_request_event` (the common duplicate-pipeline
+recipe), the webhook-triggered **branch** pipeline carrying
+`TESTBOOST_RESUME=true` will be filtered out before any job runs. Add an
+allow rule, e.g.:
+
+```yaml
+workflow:
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $TESTBOOST_RESUME == "true"
+```
+
+Conversely, if you have **no** workflow rules, your other jobs will also
+run in resume pipelines — gate them as needed.
+
+**Merged-results MR pipelines are not supported.** The pause commit
+pushes `HEAD` to the source branch; with "merged results" enabled, HEAD
+is a transient merge commit. Use standard (detached) MR pipelines.
 
 ## Step 1 — Configure CI/CD variables
 
-In your project → Settings → CI/CD → Variables, add:
+In your project (or group) → Settings → CI/CD → Variables. Enable the
+**Masked** flag on every secret:
 
-| Variable | Type | Notes |
-|----------|------|-------|
-| `GITLAB_TOKEN` | masked | Project Access Token with `api` + `write_repository` scopes. Reads MRs, posts notes, pushes the pause-state commit. |
-| `TESTBOOST_TB_SECRET` | masked | A random 64-char hex value. Seeds `.tb_secret` so HMAC is stable across pipelines. Generate with `openssl rand -hex 32`. |
-| `ANTHROPIC_API_KEY` (or equivalent) | masked | Your LLM provider's API key. |
-| `TESTBOOST_TECH` | (optional) | `java-spring`, `python-pytest`, etc. Default `java-spring`. |
-| `TESTBOOST_PACKAGE` | (optional) | pip requirement for TestBoost. Defaults to the GitHub repo at `main`; pin a tag in production. |
-| `TESTBOOST_BOT_USERNAME` | (optional) | Username of the `GITLAB_TOKEN` identity — used by the webhook as a loop guard. |
+| Variable | Notes |
+|----------|-------|
+| `GITLAB_TOKEN` | The Project Access Token from Prerequisites (masked). |
+| `TESTBOOST_TB_SECRET` | `openssl rand -hex 32` (masked). Seeds the per-project HMAC key (`.testboost/.tb_secret`) used to sign questions/answers, so signatures stay verifiable across pipelines. |
+| `ANTHROPIC_API_KEY` (or `GOOGLE_API_KEY` / `OPENAI_API_KEY`) | Your LLM provider's key (masked). |
+| `LLM_PROVIDER`, `MODEL` | Only if you don't use the defaults (`anthropic`, `claude-sonnet-4-6`) — e.g. `google-genai` + `gemini-2.5-flash`. |
+| `TESTBOOST_IMAGE` | Job image with your build toolchain (see Prerequisites). |
+| `TESTBOOST_PACKAGE` | (optional) pip source override — pin a tag in production. |
+| `TESTBOOST_COMMIT_PATHS` | (optional) paths committed back to the MR branch; default `src/test` (Maven). Use `tests` for Python projects. |
+| `TESTBOOST_BOT_USERNAME` | (optional) the token's bot username (see Prerequisites) — webhook loop guard. |
+| `TESTBOOST_TECH` | (optional) `java-spring` (default), `python-pytest`, … |
 
-> ⚠️ **Protected variables and MR pipelines**: GitLab only injects
-> *protected* variables into pipelines running on protected branches or
-> tags. MR pipelines on feature branches will see them **empty** — with
-> the current code, `.tb_secret` is then seeded empty and HMAC runs with
-> an empty key. Either protect your branch naming pattern, or leave
-> `TESTBOOST_TB_SECRET` unprotected (masked only) and rely on masking +
-> repository access control.
+> ⚠️ **Don't mark these variables "protected"** unless your MR source
+> branches are protected: GitLab only injects protected variables into
+> pipelines on protected refs, so MR pipelines on feature branches would
+> see them **empty** — an empty `GITLAB_TOKEN` or API key fails loudly,
+> an empty `TESTBOOST_TB_SECRET` silently weakens signing.
 
 ## Step 2 — Include the template in your `.gitlab-ci.yml`
 
 ```yaml
 include:
-  - project: 'axtion-io/testboost'
-    ref: 'main'
+  - project: 'your-group/testboost'   # ← your mirror (see Prerequisites)
+    ref: 'main'                       # ← or a pinned tag
     file: 'templates/gitlab/testboost.yml'
 
 stages: [test]
 ```
 
-> ℹ️ `include: project:` resolves on **your GitLab instance**: since the
-> TestBoost source of truth lives on GitHub, this requires a GitLab
-> mirror of the repo reachable by your project (adjust the `project:`
-> path to wherever your mirror lives). The template is self-contained:
-> jobs `pip install` TestBoost (`TESTBOOST_PACKAGE`), so nothing else
-> needs to be vendored into your repo.
+The template is self-contained: jobs `pip install` TestBoost, nothing
+needs to be vendored into your repo. Five jobs are defined:
 
-Four jobs are now defined:
-
-- **`testboost:analyze`** — runs `init` + `analyze` + `gaps` on MR events
-- **`testboost:generate`** — runs `generate --fail-on-uncertainty`; on
-  exit 78 the job goes orange, commits the session state to the MR
-  branch, and posts the question via `testboost gitlab post-question`
-- **`testboost:resume`** — runs when the webhook triggers a pipeline with
-  `TESTBOOST_RESUME=true`; fetches + signs the answer from the MR notes
-  (`testboost gitlab fetch-answer`) and resumes the paused step
-- **`testboost:cleanup`** — runs on scheduled pipelines only; marks
-  abandoned sessions
+- **`testboost:analyze`** — `init` + `analyze` + `gaps` on MR events
+- **`testboost:generate`** — `generate --fail-on-uncertainty`; on exit 78
+  the job goes orange, commits session state + tests generated so far to
+  the MR branch, and posts the question comment
+- **`testboost:validate`** — compiles and runs the generated tests;
+  opt-in via `TESTBOOST_RUN_VALIDATE=true` (requires a `TESTBOOST_IMAGE`
+  with your build toolchain)
+- **`testboost:resume`** — runs in webhook-triggered pipelines
+  (`TESTBOOST_RESUME=true`); fetches + signs the answer from the MR
+  notes and resumes the paused step
+- **`testboost:cleanup`** — scheduled pipelines only (see Step 5)
 
 ## Step 3 — Deploy the webhook
 
-The webhook is a small FastAPI app (~120 lines) that:
+The webhook is a small FastAPI app (~120 lines) that listens for GitLab
+**Note Hook** events, validates the secret token (constant-time) and the
+commenter identity (only the MR author may answer; the bot's own
+comments are ignored), and triggers a branch pipeline with
+`TESTBOOST_RESUME=true` + `TESTBOOST_MR_IID=<iid>`.
 
-1. Listens for GitLab **Note Hook** events
-2. Validates the secret token (constant-time) + author identity (only
-   the MR author can answer); ignores the bot's own comments
-3. Triggers a new pipeline on the MR's source branch with
-   `TESTBOOST_RESUME=true` and `TESTBOOST_MR_IID=<iid>`
+Deployment host requirements: Python 3.10+, network route to your
+GitLab, and a clone of the TestBoost repo for `tools/gitlab-webhook/`.
 
 ```bash
 cd tools/gitlab-webhook
 pip install -r requirements.txt
-GITLAB_WEBHOOK_TOKEN=<random-secret> \
-GITLAB_TOKEN=<same-as-CI> \
-GITLAB_API_URL=https://gitlab.com/api/v4 \
-TESTBOOST_BOT_USERNAME=<bot-username> \
+GITLAB_WEBHOOK_TOKEN=<random secret you choose> \
+GITLAB_TOKEN=<same Project Access Token as the CI> \
+GITLAB_API_URL=https://<your-gitlab>/api/v4 \
+TESTBOOST_BOT_USERNAME=<the token's bot username> \
 uvicorn webhook:app --host 0.0.0.0 --port 8080
 ```
+
+> ⚠️ `GITLAB_API_URL` **defaults to gitlab.com** when unset — on a
+> self-managed instance, forgetting it produces confusing 401/404s
+> against the wrong GitLab.
 
 In a real deployment, run it behind a reverse proxy with TLS. For
 development, ngrok or cloudflared tunnel works.
 
-## Step 4 — Configure GitLab webhook
+## Step 4 — Register the webhook in GitLab
 
 In your project → Settings → Webhooks → Add new webhook:
 
@@ -137,16 +196,21 @@ In your project → Settings → Webhooks → Add new webhook:
 
 Click "Test → Comments" to verify connectivity.
 
-That's it — the resume job is part of the template (Step 2), no extra
-`.gitlab-ci.yml` work needed.
+## Step 5 — (Recommended) schedule the cleanup
+
+CI/CD → Schedules → New schedule (e.g. daily), no special variables
+needed. The scheduled pipeline runs `testboost:cleanup`, which marks
+sessions stuck in `awaiting_input` for more than 24h as `abandoned`
+(audit-preserving — nothing is deleted). Skipping this step only means
+stale paused sessions linger in `.testboost/sessions/`.
 
 ## How a developer experiences this
 
-1. They push to a branch and open an MR
-2. The pipeline runs; `testboost:generate` finishes everything it can,
-   and goes **orange** if one or more files need input
-3. ONE comment appears on the MR listing every open item (the
-   `markdown_preview` from `question.json`):
+1. They push a branch and open an MR.
+2. The pipeline runs; `testboost:generate` finishes everything it can.
+   Generated tests are **committed to the MR branch** (`[skip ci]`,
+   author "TestBoost Bot"). If one or more files need input, the job
+   goes **orange** and ONE comment appears:
 
    ````markdown
    ### 🤖 TestBoost needs input — 2 item(s)
@@ -167,17 +231,32 @@ That's it — the resume job is part of the template (Step 2), no extra
      "compile_fixes": {"UserController": {"fixed_code": "…", "hints": ["…"]}}
    }
    ```
-   _Question ID: `…`_
+
+   **How to reply** (as the MR author, in a new comment):
+
+   1. Paste your answer as ONE fenced ```json block (raw JSON — do NOT
+      sign it, the CI signs accepted answers itself);
+   2. Include this exact line anywhere in the same comment:
+      `testboost:question_id=3f2a…`
+
+   _Question ID: `3f2a…`_
    ````
 
-4. The developer replies in the same thread with their JSON block + the
-   `<!-- testboost:question_id=… -->` marker (copy-paste from the bot's
-   comment)
-5. The webhook fires → branch pipeline with `TESTBOOST_RESUME=true` →
-   `testboost:resume` finds the session state in its checkout (committed
-   when the run paused), extracts + signs the answer, and continues
-   exactly where the previous pipeline stopped — completed files are
-   skipped, and a `fixed_code` answer is applied without regenerating.
+3. The developer replies following those two instructions — raw JSON
+   block + the `testboost:question_id=…` line copied from the comment.
+4. The webhook fires → branch pipeline with `TESTBOOST_RESUME=true` →
+   `testboost:resume` finds the session state AND the already-generated
+   tests in its checkout (committed at step 2), extracts + signs the
+   answer, and continues exactly where the previous run stopped —
+   completed files are skipped, a `fixed_code` answer is applied without
+   regenerating.
+5. On completion, the remaining tests are committed to the MR branch:
+   the MR now contains all generated tests, ready for review.
+
+If the developer answers **after the 24h TTL**, the resume pipeline
+fails red with a clear signature/TTL error — re-run `testboost:generate`
+(e.g. push a trivial commit or re-run the MR pipeline) to get a fresh
+question.
 
 ## Security notes
 
@@ -198,38 +277,32 @@ Be clear about what protects what in the CI flow:
   answerable. Replay of an old answer on a *new* question is prevented
   by the `question_id` binding, not by the TTL.
 - `.tb_secret` is provisioned from a masked CI variable and is never
-  logged. The template **excludes it from artifacts**
-  (`artifacts:exclude`) and `.testboost/.gitignore` keeps it out of the
-  pause-state commit.
-- The state commit is pushed with `-o ci.skip` so it cannot trigger
-  recursive pipelines.
+  logged. It is kept out of **artifacts** (`artifacts:exclude`), out of
+  the **state commit** (ensured in `.testboost/.gitignore` even when CI
+  seeds the secret before init, plus an explicit `:!` pathspec on
+  `git add`), and the push goes through the **credential store** so a
+  failing push cannot print the token into CI logs.
+- The state/tests commits are pushed with `-o ci.skip` so they cannot
+  trigger recursive pipelines.
 
-## User test ("P4-USR" from the MVP plan)
+## User test ("P4-USR")
 
-For the real-world demo, you need:
+For the real-world validation, you need a demo Java repo with an
+"unclear" service, the webhook deployed, and two humans (dev +
+reviewer). Run the flow once on a private MR, record a 5-minute
+screencast, and check: is the question comment clear? does the reply
+resume the pipeline? do the generated tests land on the MR? is the
+round-trip under 5 minutes?
 
-1. A demo Java repo with a "broken" service (e.g., `OrderService.java`
-   with no obvious test scenarios)
-2. The webhook deployed and accessible
-3. Two humans: one playing the dev, one the reviewer
-
-Run through the flow once on a private MR. Record a 5-minute screencast.
-Iterate on UX issues:
-
-- Is the question's markdown_preview clear?
-- Are the answer instructions obvious?
-- Does the resume pipeline succeed without further help?
-- How long does the round-trip take? (Acceptance target: < 5 min)
-
-> **Open call**: the loop is now implemented end-to-end (Phases 5-6).
-> We need a volunteer dev with a real GitLab project to run P4-USR.
-> See `docs/mvp-plan.md` Phase 4 for the exact protocol.
+> **Open call**: we need a volunteer dev with a real GitLab project to
+> run this end-to-end.
 
 ## Known limitations
 
-- The pause-state commit adds `.testboost/` session markdown to the MR
-  diff. This is by design (it's the audit trail); mark it
-  `linguist-generated` in `.gitattributes` if it bothers reviewers.
+- The pause/delivery commits add content to the MR diff. This is by
+  design (the tests ARE the deliverable; `.testboost/` is the audit
+  trail); mark `.testboost/` as `linguist-generated` in `.gitattributes`
+  if it bothers reviewers.
 - `testboost gitlab fetch-answer` takes the *first* matching JSON block
   from the *newest* matching note. Multiple-answer flows aren't
   supported.

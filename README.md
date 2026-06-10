@@ -121,14 +121,15 @@ resume pipeline <── webhook <── GitLab Note Hook ◄─┘
    └─> picks up exactly where it paused (completed files are skipped)
 ```
 
-Setup in three steps (full guide: [GitLab Integration](./docs/gitlab-integration.md)):
+Setup in three steps (full guide with the self-managed prerequisites —
+mirror, runners, token role: [GitLab Integration](./docs/gitlab-integration.md)):
 
 1. **Include the CI template** in your project's `.gitlab-ci.yml`
    (requires a GitLab mirror of TestBoost reachable by your instance):
 
    ```yaml
    include:
-     - project: 'axtion-io/testboost'
+     - project: 'your-group/testboost'   # your mirror of this repo
        ref: 'main'
        file: 'templates/gitlab/testboost.yml'
 
@@ -138,19 +139,23 @@ Setup in three steps (full guide: [GitLab Integration](./docs/gitlab-integration
    The jobs `pip install` TestBoost — no checkout or vendoring needed.
 
 2. **Set the CI/CD variables**: `GITLAB_TOKEN` (Project Access Token,
-   scopes `api` + `write_repository`), `TESTBOOST_TB_SECRET`
-   (`openssl rand -hex 32`), and your LLM API key.
+   role Developer+, scopes `api` + `write_repository`),
+   `TESTBOOST_TB_SECRET` (`openssl rand -hex 32`), your LLM API key —
+   and for Java projects, `TESTBOOST_IMAGE` pointing to an image with
+   JDK + Maven + Python (the default image cannot compile-check tests).
 
 3. **Deploy the resume webhook** (`tools/gitlab-webhook/`, a small
    FastAPI app) and register it on **Comments** events.
 
 What you get on every MR: project analysis, gap detection, test
-generation with compile-fix retries, and the pause/resume loop. Answers
-posted on the MR are HMAC-signed and bound to their question; the paused
-session state travels between pipelines as a `[skip ci]` commit on the
-MR branch. See [Async CI Integration](./docs/ci-async-integration.md)
-for the underlying mechanics (exit codes, `question.json`/`answer.json`
-schemas, signing).
+generation with compile-fix retries, and **the generated tests committed
+to the MR branch** (`[skip ci]`), ready for review. Answers posted on
+the MR are verified, bound to their question and TTL-checked before
+being applied; the paused session state travels between pipelines as a
+commit on the MR branch. See
+[Async CI Integration](./docs/ci-async-integration.md) for the
+underlying mechanics (exit codes, `question.json`/`answer.json` schemas,
+signing).
 
 ## Supported LLM CLIs
 

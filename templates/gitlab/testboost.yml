@@ -1,50 +1,85 @@
-# TestBoost GitLab CI template (Phase 4-6 — MVP)
+# TestBoost GitLab CI template
 #
 # include in your .gitlab-ci.yml (requires a GitLab mirror of the TestBoost
-# repo reachable by your instance; adjust the project path to your mirror):
+# repo reachable by your instance — see docs/gitlab-integration.md
+# "Prerequisites" for how to set the mirror up):
 #
 #   include:
-#     - project: 'axtion-io/testboost'
+#     - project: 'your-group/testboost'        # ← your mirror's path
 #       ref: 'main'
 #       file: 'templates/gitlab/testboost.yml'
 #
-# Required CI/CD variables (group or project):
-#   GITLAB_TOKEN          — Project Access Token, scopes: api + write_repository
-#                           (masked!). write_repository is needed to commit the
-#                           paused session state back to the MR branch.
-#   TESTBOOST_TB_SECRET   — value to seed .testboost/.tb_secret on each run
-#                           (masked). Must be stable so signatures are
-#                           verifiable across pipelines. ⚠️ Only mark it
-#                           "protected" if your MR source branches are
-#                           protected — protected variables are NOT injected
-#                           into pipelines on unprotected branches.
-#   Optional:
-#   TESTBOOST_PACKAGE     — pip requirement for TestBoost (defaults to the
-#                           GitHub repo at main; pin a tag in production)
-#   TESTBOOST_BOT_USERNAME — username of the GITLAB_TOKEN identity (loop guard)
-#   ANTHROPIC_API_KEY / GOOGLE_API_KEY / OPENAI_API_KEY (depending on
-#     LLM_PROVIDER you set in your project)
+#   stages: [test]
+#
+# Required CI/CD variables (Settings → CI/CD → Variables, masked):
+#   GITLAB_TOKEN          — Project Access Token (Settings → Access Tokens),
+#                           role Developer+ on the project, scopes
+#                           api + write_repository. Posts MR notes, pushes
+#                           the pause-state commit, triggers resume pipelines.
+#   TESTBOOST_TB_SECRET   — `openssl rand -hex 32`. Seeds .testboost/.tb_secret
+#                           so HMAC signatures are stable across pipelines.
+#   ANTHROPIC_API_KEY / GOOGLE_API_KEY / OPENAI_API_KEY — your LLM key.
+#   LLM_PROVIDER / MODEL  — if you don't use the defaults
+#                           (anthropic / claude-sonnet-4-6).
+#   ⚠️ Don't mark variables "protected" unless your MR source branches are
+#   protected — protected variables are NOT injected into pipelines on
+#   unprotected branches (the job then sees them empty).
+#
+# Optional variables:
+#   TESTBOOST_IMAGE       — job image. Default python:3.11-slim has NO
+#                           Java/Maven: generated tests are then written but
+#                           neither compile-checked nor fixed. For Java
+#                           projects use an image with JDK + Maven + Python
+#                           3.11+ (build a small custom image, or extend
+#                           maven:3.9-eclipse-temurin-17 with python3).
+#   TESTBOOST_PACKAGE     — pip requirement for TestBoost. Defaults to the
+#                           GitHub repo at main; if your runners have no
+#                           GitHub egress, point it at your mirror:
+#                           git+https://<your-gitlab>/your-group/testboost.git@<tag>
+#   TESTBOOST_COMMIT_PATHS — workspace paths committed back to the MR branch
+#                           (generated tests + session state). Default
+#                           "src/test" suits Maven; use "tests" for Python.
+#   TESTBOOST_BOT_USERNAME — username of the GITLAB_TOKEN identity (loop
+#                           guard for the webhook). For a Project Access
+#                           Token this is the auto-generated bot user, e.g.
+#                           project_42_bot_abc123 — find it in Members, or
+#                           via: curl -H "PRIVATE-TOKEN: $TOKEN" .../api/v4/user
+#   TESTBOOST_TECH        — technology plugin (default java-spring).
+#
+# Runner requirements: docker/kubernetes executor able to pull
+# $TESTBOOST_IMAGE and run apt-get (root). Shell executors are not supported
+# as-is.
+#
+# ⚠️ Interactions with your existing pipeline config:
+#   - `workflow: rules` that only allow merge_request_event pipelines will
+#     kill the webhook-triggered resume pipeline (it is a branch pipeline
+#     with TESTBOOST_RESUME=true) — add an allow rule for it.
+#   - "Merged results" MR pipelines are not supported: the pause commit
+#     pushes HEAD, which must be the source-branch SHA.
 #
 # How the pause/resume loop works:
 #   1. testboost:generate runs with --fail-on-uncertainty. On uncertainty it
-#      exits 78 → the job shows as an orange "warning" (allow_failure), not
-#      green: the pipeline is usable but a human is needed.
-#   2. after_script detects the pause, commits .testboost/ (minus the secret,
-#      see .testboost/.gitignore) to the MR branch with `-o ci.skip`, and
-#      posts the question as an MR comment.
-#   3. The developer replies; the webhook (tools/gitlab-webhook/) triggers a
-#      branch pipeline with TESTBOOST_RESUME=true + TESTBOOST_MR_IID.
-#   4. testboost:resume finds the session state in its checkout (committed at
-#      step 2), fetches + signs the answer from the MR notes, and resumes.
+#      exits 78 → the job shows as an orange "warning" (allow_failure).
+#   2. after_script commits the session state (.testboost/, never the
+#      secret) AND the tests generated so far ($TESTBOOST_COMMIT_PATHS) to
+#      the MR branch with `-o ci.skip`, then posts ONE question comment.
+#   3. The developer replies (the comment itself explains the exact reply
+#      format); the webhook triggers a branch pipeline with
+#      TESTBOOST_RESUME=true + TESTBOOST_MR_IID.
+#   4. testboost:resume finds the session state in its checkout, fetches +
+#      signs the answer from the MR notes, and resumes — completed files
+#      are skipped, their tests are already on the branch (step 2).
+#   On success the same after_script commits the final generated tests.
 
 .testboost:base:
-  image: python:3.11-slim
+  image: ${TESTBOOST_IMAGE:-python:3.11-slim}
   variables:
     TESTBOOST_PROJECT: "$CI_PROJECT_DIR"
     TESTBOOST_PACKAGE: "git+https://github.com/axtion-io/TestBoost.git@main"
+    TESTBOOST_COMMIT_PATHS: "src/test"
     PIP_DISABLE_PIP_VERSION_CHECK: "1"
   before_script:
-    - apt-get update -qq && apt-get install -qq --no-install-recommends git
+    - command -v git >/dev/null || (apt-get update -qq && apt-get install -qq --no-install-recommends git)
     - pip install --quiet "$TESTBOOST_PACKAGE"
     # Seed .tb_secret so HMAC is stable across jobs and pipelines
     # (masked CI variable; never write it to logs).
@@ -60,7 +95,9 @@
       - .testboost/.tb_secret
     expire_in: 1 week
 
-# Jobs that may pause (exit 78): orange status + state commit + MR comment
+# Jobs that may pause (exit 78): orange status + state commit + MR comment.
+# The after_script also runs on success, to deliver the generated tests to
+# the MR branch (a green run would otherwise discard them with the runner).
 .testboost:pause-aware:
   extends: .testboost:base
   allow_failure:
@@ -68,20 +105,32 @@
   after_script:
     - |
       QFILE=$(ls -t .testboost/sessions/*/question.json 2>/dev/null | head -1 || true)
-      if [ "$CI_JOB_STATUS" = "failed" ] && [ -n "$QFILE" ]; then
-        echo "TestBoost paused — committing session state and posting the question"
-        git config user.email "${TESTBOOST_BOT_EMAIL:-testboost-bot@invalid}"
-        git config user.name "${TESTBOOST_BOT_USERNAME:-TestBoost Bot}"
-        git add .testboost
-        git -c commit.gpgsign=false commit -m "chore(testboost): pause state [skip ci]" || true
+      git config user.email "${TESTBOOST_BOT_EMAIL:-testboost-bot@invalid}"
+      git config user.name "${TESTBOOST_BOT_USERNAME:-TestBoost Bot}"
+      # Stage session state and generated tests. The ':!' pathspec is a
+      # second line of defense for the secret on top of .testboost/.gitignore.
+      git add -- .testboost ':!.testboost/.tb_secret' || true
+      for p in $TESTBOOST_COMMIT_PATHS; do
+        [ -e "$p" ] && git add -- "$p" || true
+      done
+      if ! git diff --cached --quiet; then
+        if [ "$CI_JOB_STATUS" = "failed" ] && [ -n "$QFILE" ]; then
+          MSG="chore(testboost): pause state + partial tests [skip ci]"
+        else
+          MSG="test(testboost): generated tests [skip ci]"
+        fi
+        git -c commit.gpgsign=false commit -m "$MSG"
         # Token goes through the credential store, NOT the remote URL — a
         # failing push must never print the token into the CI log.
         git config credential.helper store
         echo "https://oauth2:${GITLAB_TOKEN}@${CI_SERVER_HOST}" > ~/.git-credentials
         git push "https://${CI_SERVER_HOST}/${CI_PROJECT_PATH}.git" \
           "HEAD:${CI_COMMIT_REF_NAME}" -o ci.skip \
-          || echo "WARNING: could not push session state (resume will not work)"
+          || echo "WARNING: could not push to the MR branch (tests/state not delivered)"
         rm -f ~/.git-credentials
+      fi
+      if [ "$CI_JOB_STATUS" = "failed" ] && [ -n "$QFILE" ]; then
+        echo "TestBoost paused — posting the question to the MR"
         python -m testboost gitlab post-question "$TESTBOOST_PROJECT" \
           || echo "WARNING: could not post the question to the MR"
       fi
@@ -107,6 +156,17 @@ testboost:generate:
   script:
     - python -m testboost generate "$TESTBOOST_PROJECT" --fail-on-uncertainty
 
+# Optional: compile and RUN the generated tests (requires $TESTBOOST_IMAGE
+# with your build toolchain). Enable by setting TESTBOOST_RUN_VALIDATE=true.
+testboost:validate:
+  extends: .testboost:pause-aware
+  stage: test
+  needs: ["testboost:generate"]
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event" && $TESTBOOST_RUN_VALIDATE == "true"
+  script:
+    - python -m testboost validate "$TESTBOOST_PROJECT" --fail-on-uncertainty
+
 # Resume: triggered by the webhook (branch pipeline with TESTBOOST_RESUME=true
 # and TESTBOOST_MR_IID set). Session state comes from the checkout — it was
 # committed to the branch when the previous pipeline paused.
@@ -119,11 +179,13 @@ testboost:resume:
     - python -m testboost gitlab fetch-answer "$TESTBOOST_PROJECT" --output ./answer.json
     - python -m testboost resume "$TESTBOOST_PROJECT" --answer-file ./answer.json
 
-# Periodic cleanup of abandoned awaiting_input sessions (run on schedule)
+# Periodic cleanup of abandoned awaiting_input sessions (run on schedule:
+# CI/CD → Schedules, e.g. daily — optional but recommended). 24h matches the
+# answer TTL: a question that can no longer be answered gets abandoned.
 testboost:cleanup:
   extends: .testboost:base
   stage: test
   rules:
     - if: $CI_PIPELINE_SOURCE == "schedule"
   script:
-    - python -m testboost cleanup "$TESTBOOST_PROJECT" --ttl-hours 72
+    - python -m testboost cleanup "$TESTBOOST_PROJECT" --ttl-hours 24

@@ -261,3 +261,35 @@ class TestAnswerTTL:
         except ExpiredQuestionError:
             return
         raise AssertionError("expected ExpiredQuestionError")
+
+
+class TestSecretGitignoredWhenPreSeeded:
+    """CI seeds .tb_secret from a masked variable BEFORE init runs — the
+    gitignore entry must be ensured on read too, or the pause-state commit
+    would push the raw secret to the MR branch."""
+
+    def test_preseeded_secret_gets_gitignored_on_first_access(self, tmp_path):
+        from src.lib.integrity import get_or_create_secret
+
+        tb_dir = tmp_path / ".testboost"
+        tb_dir.mkdir()
+        (tb_dir / ".tb_secret").write_text("a" * 64)
+        assert not (tb_dir / ".gitignore").exists()
+
+        secret = get_or_create_secret(str(tmp_path))
+
+        assert secret == "a" * 64
+        gitignore = (tb_dir / ".gitignore").read_text()
+        assert ".tb_secret" in gitignore
+
+    def test_existing_gitignore_without_entry_is_amended(self, tmp_path):
+        from src.lib.integrity import get_or_create_secret
+
+        tb_dir = tmp_path / ".testboost"
+        tb_dir.mkdir()
+        (tb_dir / ".tb_secret").write_text("b" * 64)
+        (tb_dir / ".gitignore").write_text("sessions/*/logs/*.md\n")
+
+        get_or_create_secret(str(tmp_path))
+
+        assert ".tb_secret" in (tb_dir / ".gitignore").read_text()

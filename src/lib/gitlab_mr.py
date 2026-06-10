@@ -130,7 +130,10 @@ def fetch_answer(
     env = _require_env()
     qpath, question = _pending_question(project_path)
     qid = question["question_id"]
-    marker = QUESTION_MARKER_TEMPLATE.format(qid=qid)
+    # Bare marker: matches whether the developer pasted the visible
+    # `testboost:question_id=…` line (possibly inside backticks) or quoted
+    # the bot's invisible HTML-comment copy. Same rule as the webhook.
+    marker = f"testboost:question_id={qid}"
 
     base = f"{env['api']}/projects/{env['project_id']}/merge_requests/{env['mr_iid']}"
     headers = {"PRIVATE-TOKEN": env["token"]}

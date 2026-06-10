@@ -821,3 +821,38 @@ class TestAnswerFinalization:
         assert not (sdir / "question.json").exists()
         consumed = _json.loads((sdir / "answer.json.consumed").read_text())
         assert consumed == {"test_requirements": {}}
+
+
+class TestReplyInstructionsInPreview:
+    """The MR comment itself must state the exact reply contract — the
+    machine marker is otherwise an invisible HTML comment nobody finds."""
+
+    def _question(self, tmp_path, payload):
+        from src.lib.session_tracker import create_session, emit_question, init_project
+        init_project(str(tmp_path))
+        s = create_session(str(tmp_path), name="x")
+        qpath = emit_question(
+            s["session_dir"], "generation", payload,
+            project_path=str(tmp_path), session_id=s["session_id"],
+        )
+        import json as _json
+        return _json.loads(qpath.read_text())
+
+    def test_single_question_states_marker_and_no_signing(self, tmp_path):
+        q = self._question(tmp_path, {
+            "kind": "missing_business_context", "question": "?",
+            "answer_schema": {"test_requirements": {}},
+        })
+        preview = q["markdown_preview"]
+        assert f"testboost:question_id={q['question_id']}" in preview
+        assert "How to reply" in preview
+        assert "do NOT sign" in preview
+        assert "sign-answer" not in preview  # CI flow: the CI signs, not the dev
+
+    def test_batch_question_states_marker(self, tmp_path):
+        q = self._question(tmp_path, {
+            "kind": "batch", "question": "2 items",
+            "items": [{"kind": "a", "question": "?", "subject": {"class_name": "X"}}],
+            "answer_schema": {"test_requirements": {}},
+        })
+        assert f"testboost:question_id={q['question_id']}" in q["markdown_preview"]

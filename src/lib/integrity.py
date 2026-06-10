@@ -54,6 +54,11 @@ def get_or_create_secret(project_path: str) -> str:
     secret_path = tb_dir / SECRET_FILE
 
     if secret_path.exists():
+        # The secret may have been seeded externally (CI seeds it from a
+        # masked variable BEFORE init runs) — the gitignore entry must be
+        # ensured on every access, or the CI pause-state commit would push
+        # the raw secret to the MR branch.
+        _ensure_gitignored(tb_dir, SECRET_FILE)
         return secret_path.read_text(encoding="utf-8").strip()
 
     # Generate a new secret

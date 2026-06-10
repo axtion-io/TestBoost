@@ -38,7 +38,7 @@ class GoTestingPlugin(TechnologyPlugin):
     @property
     def prompt_template_dir(self) -> str:
         # A full plugin would have its own templates; reuse Java dir as placeholder
-        return "config/prompts/testing"
+        return "testing"
 
     # ------------------------------------------------------------------
     # Source discovery

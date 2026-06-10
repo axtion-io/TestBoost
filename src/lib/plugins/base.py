@@ -45,10 +45,10 @@ class TechnologyPlugin(ABC):
     @property
     @abstractmethod
     def prompt_template_dir(self) -> str:
-        """Relative path from repo root to the prompt template directory.
+        """Prompt template directory, relative to src/prompts/.
 
         Must contain unit_test_generation.md at minimum.
-        Examples: 'config/prompts/testing', 'config/prompts/testing/python_pytest'
+        Examples: 'testing', 'testing/python_pytest'
         """
 
     @abstractmethod

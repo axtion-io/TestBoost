@@ -26,7 +26,7 @@ class _JavaLikePlugin(TechnologyPlugin):
 
     @property
     def prompt_template_dir(self) -> str:
-        return "config/prompts/testing"
+        return "testing"
 
     def find_source_files(self, project_path):
         return []
@@ -59,7 +59,7 @@ class _PythonLikePlugin(TechnologyPlugin):
 
     @property
     def prompt_template_dir(self) -> str:
-        return "config/prompts/testing/python"
+        return "testing/python_pytest"
 
     def find_source_files(self, project_path):
         return []

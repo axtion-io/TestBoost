@@ -242,9 +242,9 @@ TestBoost/
 |   |   +-- prompt_utils.py     # Shared template load + render
 |   |   +-- md_logger.py        # Dual-output logger
 |   |   +-- startup_checks.py   # LLM connectivity check
-+-- config/
-|   +-- prompts/testing/        # Java/Spring LLM prompt templates
-|   +-- prompts/testing/python_pytest/ # Python/pytest LLM prompt templates
+|   +-- prompts/                # LLM prompt templates (shipped in the wheel)
+|   |   +-- testing/            # Java/Spring prompts (+ python_pytest/ overrides)
+|   |   +-- maven/              # Maven error formatting
 +-- tests/
 |   +-- unit/lib/plugins/       # Plugin unit tests
 |   +-- unit/testboost/         # CLI, session, integrity, installer tests

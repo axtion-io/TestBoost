@@ -117,9 +117,9 @@ TestBoost/
 |   |   +-- llm.py              # LLM provider abstraction
 |   |   +-- maven_error_parser.py
 |   |   +-- prompt_utils.py     # Shared template load + render
-+-- config/
-|   +-- prompts/testing/        # Java/Spring LLM prompt templates
-|   +-- prompts/testing/python_pytest/ # Python/pytest LLM prompt templates
+|   +-- prompts/                # LLM prompt templates (shipped in the wheel)
+|   |   +-- testing/            # Java/Spring prompts (+ python_pytest/ overrides)
+|   |   +-- maven/              # Maven error formatting
 +-- tests/                      # Test suite
 |   +-- unit/lib/plugins/       # Plugin unit tests
 |   +-- unit/testboost/         # CLI, session, integrity tests
@@ -189,7 +189,7 @@ The `MdLogger` writes concise output to stdout (for LLM consumption) and detaile
 
 1. Create `src/lib/plugins/<your_plugin>.py` implementing all `TechnologyPlugin` abstract members
 2. Add `_registry.register(YourPlugin())` in `src/lib/plugins/__init__.py`
-3. Create prompt templates in `config/prompts/testing/<your_tech>/`
+3. Create prompt templates in `src/prompts/testing/<your_tech>/`
 4. Add unit tests in `tests/unit/lib/plugins/test_<your_plugin>.py`
 5. Add detection test cases in `tests/integration/test_plugin_detection.py`
 6. No changes to the core engine (`cli.py`, `bridge.py`, `generate_unit.py`) are required
@@ -204,7 +204,7 @@ The `MdLogger` writes concise output to stdout (for LLM consumption) and detaile
 
 ### Modifying Test Generation Prompts
 
-Edit the prompt templates in `config/prompts/testing/` (Java) or `config/prompts/testing/python_pytest/` (Python). Changes take effect on the next `generate` run.
+Edit the prompt templates in `src/prompts/testing/` (Java) or `src/prompts/testing/python_pytest/` (Python). Changes take effect on the next `generate` run.
 
 ### Adding a New Core Function
 

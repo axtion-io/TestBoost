@@ -152,6 +152,7 @@ the pipeline. This is what the official template does.
 
 - Success (stdout): `[TESTBOOST_INTEGRITY:sha256=<hex>:<step>:<session_id>:<timestamp>]`
 - Pause (stdout):   `[TESTBOOST_AWAITING_INPUT:step=<step>:question=<path>]`
+- Hard fail (stdout, wrapper scripts): `[TESTBOOST_FAILED:exit_code=<n>:step=<step>]`
 - Metrics (stderr): `[TESTBOOST_METRICS:{...}]`
 
 ## GitLab CI

@@ -2,13 +2,13 @@ name: CI - TestBoost Tests
 
 on:
   push:
-    branches: [ main, develop, '001-*', '002-*', '003-*', '004-*' ]
+    branches: [ main, develop ]
   pull_request:
   workflow_dispatch:
 
 jobs:
   test:
-    name: Run Tests
+    name: Tests (unit + integration + security)
     runs-on: ubuntu-latest
 
     strategy:
@@ -38,16 +38,18 @@ jobs:
         pip install poetry
         poetry install --no-interaction
 
-    - name: Run Integration Tests (no LLM required)
+    # Full suite: unit, integration (LLM-free), security, webhook.
+    # Tests requiring a real LLM key self-skip or are deselected.
+    - name: Run test suite with coverage
       run: |
-        poetry run pytest tests/integration/test_llm_connectivity.py -v --tb=short --no-cov --durations=0 --durations-min=0.1 -k "not test_llm_connection_success"
-        poetry run pytest tests/integration/test_provider_switching.py -v --tb=short --no-cov --durations=0 --durations-min=0.1
-      continue-on-error: false
+        poetry run pytest tests/ --tb=short \
+          --cov=src --cov-report=term --cov-fail-under=75 \
+          -k "not test_llm_connection_success" \
+          --durations=10
 
-    - name: Run Security Audit Tests (T101a)
+    - name: Dead code check
       run: |
-        poetry run pytest tests/security/test_api_key_audit.py -v --tb=short --no-cov --durations=0 --durations-min=0.1
-      continue-on-error: false
+        poetry run python scripts/find_dead_code.py
 
   lint:
     name: Code Quality
@@ -76,15 +78,60 @@ jobs:
         pip install poetry
         poetry install --no-interaction
 
+    # Blocking: the whole repo, same command as local development
     - name: Run Ruff linter
       run: |
-        poetry run ruff check src/ tests/
-      continue-on-error: true
+        poetry run ruff check .
 
+    # Advisory only: the codebase is not mypy-strict-clean yet
     - name: Run type checking with mypy
       run: |
         poetry run mypy src/ --ignore-missing-imports
       continue-on-error: true
+
+  package:
+    name: Packaging sanity
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Python 3.12
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+
+    # The GitLab CI template pip-installs TestBoost: the wheel must be
+    # self-contained (prompt templates included) and the CLI must run
+    # from site-packages without a repo checkout.
+    - name: Build wheel and verify it is self-contained
+      run: |
+        python -m pip install --upgrade pip poetry
+        poetry build
+        python - <<'EOF'
+        import glob, zipfile
+        wheel = glob.glob("dist/*.whl")[0]
+        names = zipfile.ZipFile(wheel).namelist()
+        prompts = [n for n in names if n.startswith("src/prompts/")]
+        assert prompts, f"no prompt templates in {wheel}"
+        print(f"OK: {len(prompts)} prompt templates in the wheel")
+        EOF
+
+    - name: Install wheel in a clean venv and smoke-test the CLI
+      run: |
+        python -m venv /tmp/clean-venv
+        /tmp/clean-venv/bin/pip install --quiet dist/*.whl
+        cd /tmp
+        /tmp/clean-venv/bin/python -m testboost --list-plugins
+        /tmp/clean-venv/bin/python - <<'EOF'
+        from src.lib.prompt_utils import load_prompt_template
+        from src.lib.plugins import get_registry
+        for info in get_registry().list_plugins():
+            plugin = get_registry().get(info["identifier"])
+            load_prompt_template(f"{plugin.prompt_template_dir}/unit_test_generation.md")
+        print("OK: prompts resolve from site-packages for every plugin")
+        EOF
 
   # E2E Tests with Real LLM are NOT run in CI
   # Reason: Requires paid API keys (Google Gemini, Anthropic, ...)

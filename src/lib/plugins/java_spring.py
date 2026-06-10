@@ -39,7 +39,7 @@ class JavaSpringPlugin(TechnologyPlugin):
 
     @property
     def prompt_template_dir(self) -> str:
-        return "config/prompts/testing"
+        return "testing"
 
     # ------------------------------------------------------------------
     # Source discovery

@@ -41,7 +41,7 @@ class PythonPytestPlugin(TechnologyPlugin):
 
     @property
     def prompt_template_dir(self) -> str:
-        return "config/prompts/testing/python_pytest"
+        return "testing/python_pytest"
 
     # ------------------------------------------------------------------
     # Source discovery

@@ -74,9 +74,14 @@
         git config user.name "${TESTBOOST_BOT_USERNAME:-TestBoost Bot}"
         git add .testboost
         git -c commit.gpgsign=false commit -m "chore(testboost): pause state [skip ci]" || true
-        git push "https://oauth2:${GITLAB_TOKEN}@${CI_SERVER_HOST}/${CI_PROJECT_PATH}.git" \
+        # Token goes through the credential store, NOT the remote URL — a
+        # failing push must never print the token into the CI log.
+        git config credential.helper store
+        echo "https://oauth2:${GITLAB_TOKEN}@${CI_SERVER_HOST}" > ~/.git-credentials
+        git push "https://${CI_SERVER_HOST}/${CI_PROJECT_PATH}.git" \
           "HEAD:${CI_COMMIT_REF_NAME}" -o ci.skip \
           || echo "WARNING: could not push session state (resume will not work)"
+        rm -f ~/.git-credentials
         python -m testboost gitlab post-question "$TESTBOOST_PROJECT" \
           || echo "WARNING: could not post the question to the MR"
       fi

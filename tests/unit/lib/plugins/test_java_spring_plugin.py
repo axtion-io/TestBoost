@@ -29,7 +29,7 @@ def test_detection_patterns(plugin):
 
 
 def test_prompt_template_dir(plugin):
-    assert plugin.prompt_template_dir == "config/prompts/testing"
+    assert plugin.prompt_template_dir == "testing"
 
 
 def test_test_file_pattern(plugin):

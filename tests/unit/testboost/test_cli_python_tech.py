@@ -25,6 +25,20 @@ from src.lib.cli import (
 PY_TEST_CODE = "import app\n\n\ndef test_app():\n    assert app.PRODUCTION_CODE == 42\n"
 
 
+@pytest.fixture(autouse=True)
+def _no_child_coverage(monkeypatch):
+    """The pipeline under test really runs `python -m py_compile` in a
+    subprocess (the plugin compile check). pytest-cov's subprocess hook
+    would make that child record a STATEMENT-coverage data file (its cwd
+    is the tmp project, so it never sees our branch=true config), and the
+    final cov.combine() dies with "Can't combine statement coverage data
+    with branch data". Strip the hook triggers (pytest-cov uses its own
+    COV_CORE_* variables; plain coverage.py uses COVERAGE_PROCESS_START)."""
+    for var in ("COV_CORE_SOURCE", "COV_CORE_CONFIG", "COV_CORE_DATAFILE",
+                "COVERAGE_PROCESS_START"):
+        monkeypatch.delenv(var, raising=False)
+
+
 @pytest.fixture
 def python_project(tmp_path):
     (tmp_path / "pyproject.toml").write_text("[project]\nname = 'demo'\n")

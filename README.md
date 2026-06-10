@@ -13,10 +13,12 @@ TestBoost analyzes your Java project, identifies files lacking test coverage, an
 The workflow is simple:
 
 ```
-init --> analyze --> gaps --> generate --> validate
+init --> analyze --> gaps --> generate --> validate [--> mutate --> killer]
 ```
 
-Each step produces a markdown report in your project's `.testboost/` directory, giving you full visibility into what was analyzed, what's missing, and what was generated.
+Each step produces a markdown report in your project's `.testboost/` directory, giving you full visibility into what was analyzed, what's missing, and what was generated. The optional `mutate`/`killer` steps run PIT mutation testing and generate targeted tests for surviving mutants.
+
+TestBoost runs interactively from an LLM CLI, directly from the command line, or **unattended in CI** — pausing on a Merge Request comment whenever it needs human input (see [CI section](#using-testboost-in-ci-gitlab)).
 
 ## Quick Start
 
@@ -99,8 +101,56 @@ python -m testboost install /path/to/java/project --shell-type powershell
 3. **Gaps** -- Compares source files against existing tests to find what's missing
 4. **Generate** -- Uses an LLM to generate JUnit 5 tests with Mockito mocks, following your project's conventions
 5. **Validate** -- Compiles and runs the generated tests with Maven
+6. **Mutate / Killer** (optional) -- Runs PIT mutation testing, then generates targeted tests to kill the surviving mutants
 
 All results are written to `.testboost/sessions/<id>/` as markdown files, so you can review everything before committing.
+
+## Using TestBoost in CI (GitLab)
+
+TestBoost can run **unattended in your Merge Request pipelines**. The key
+idea: instead of generating doubtful tests silently or failing the build,
+a run that needs human input **pauses** — the job turns orange
+(`allow_failure`, exit code 78), ONE comment listing every open question
+is posted on the MR, and the pipeline resumes automatically when the
+developer replies.
+
+```
+push MR ──> testboost:generate ──exit 78──> orange job + MR comment
+                                                   │  developer replies
+resume pipeline <── webhook <── GitLab Note Hook ◄─┘
+   └─> picks up exactly where it paused (completed files are skipped)
+```
+
+Setup in three steps (full guide: [GitLab Integration](./docs/gitlab-integration.md)):
+
+1. **Include the CI template** in your project's `.gitlab-ci.yml`
+   (requires a GitLab mirror of TestBoost reachable by your instance):
+
+   ```yaml
+   include:
+     - project: 'axtion-io/testboost'
+       ref: 'main'
+       file: 'templates/gitlab/testboost.yml'
+
+   stages: [test]
+   ```
+
+   The jobs `pip install` TestBoost — no checkout or vendoring needed.
+
+2. **Set the CI/CD variables**: `GITLAB_TOKEN` (Project Access Token,
+   scopes `api` + `write_repository`), `TESTBOOST_TB_SECRET`
+   (`openssl rand -hex 32`), and your LLM API key.
+
+3. **Deploy the resume webhook** (`tools/gitlab-webhook/`, a small
+   FastAPI app) and register it on **Comments** events.
+
+What you get on every MR: project analysis, gap detection, test
+generation with compile-fix retries, and the pause/resume loop. Answers
+posted on the MR are HMAC-signed and bound to their question; the paused
+session state travels between pipelines as a `[skip ci]` commit on the
+MR branch. See [Async CI Integration](./docs/ci-async-integration.md)
+for the underlying mechanics (exit codes, `question.json`/`answer.json`
+schemas, signing).
 
 ## Supported LLM CLIs
 
@@ -131,15 +181,16 @@ Set the `MODEL` environment variable to choose a specific model. See [LLM Provid
 
 ## Documentation
 
+Full index with reading paths: [docs/README.md](./docs/README.md). Highlights:
+
 | Document | Description |
 |----------|-------------|
 | [Getting Started](./docs/getting-started.md) | Installation and first usage |
 | [Workflow](./docs/workflow.md) | Detailed description of each step |
+| [GitLab Integration](./docs/gitlab-integration.md) | Run TestBoost in MR pipelines, step by step |
+| [Async CI Integration](./docs/ci-async-integration.md) | The pause/resume mechanics (exit 78, signed answers) |
 | [LLM Providers](./docs/llm-providers.md) | Provider configuration and comparison |
-| [Configuration](./docs/configuration.md) | Project settings and environment variables |
-| [Session Format](./docs/session-format.md) | Structure of `.testboost/` session files |
 | [Architecture](./docs/architecture.md) | Internal architecture and design |
-| [Prompts](./docs/prompts.md) | LLM prompts used for test generation |
 | [Contributor Quickstart](./docs/contributor-quickstart.md) | Set up a development environment |
 
 ## Development

@@ -22,8 +22,10 @@ from src.lib.log_taxonomy import (
 # Configure once flag
 _configured = False
 
-# Log directory
-LOG_DIR = Path(__file__).parent.parent.parent / "logs"
+# Log directory: overridable via TESTBOOST_LOG_DIR; defaults to ./logs in the
+# working directory (NOT the install dir — a pip-installed TestBoost must
+# never write into site-packages).
+LOG_DIR = Path(os.environ.get("TESTBOOST_LOG_DIR", "") or Path.cwd() / "logs")
 
 
 def add_log_categorization(

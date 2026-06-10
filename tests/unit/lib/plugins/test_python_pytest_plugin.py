@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 """Unit tests for PythonPytestPlugin."""
 
-import textwrap
 
 import pytest
 
@@ -111,61 +110,3 @@ class TestTestFileName:
     def test_backslash_separator(self, plugin):
         result = plugin.test_file_name("src\\services\\order.py")
         assert result == "tests/services/test_order.py"
-
-
-# ---------------------------------------------------------------------------
-# build_generation_context() — uses ast parsing
-# ---------------------------------------------------------------------------
-
-class TestBuildGenerationContext:
-    def _write_source(self, tmp_path, filename, code):
-        path = tmp_path / filename
-        path.write_text(textwrap.dedent(code))
-        return path
-
-    def test_extracts_class_name(self, plugin, tmp_path):
-        self._write_source(tmp_path, "user_service.py", """
-            class UserService:
-                def get_user(self, user_id: int) -> dict:
-                    return {}
-        """)
-        ctx = plugin.build_generation_context(tmp_path, "user_service.py")
-        assert ctx["class_name"] == "UserService"
-        assert ctx["class_type"] == "class"
-
-    def test_extracts_function_names(self, plugin, tmp_path):
-        self._write_source(tmp_path, "utils.py", """
-            def format_date(date_str: str) -> str:
-                return date_str
-
-            def parse_number(s: str) -> int:
-                return int(s)
-        """)
-        ctx = plugin.build_generation_context(tmp_path, "utils.py")
-        assert ctx["class_type"] == "function"
-        fn_names = [f["name"] for f in ctx["functions"]]
-        assert "format_date" in fn_names
-        assert "parse_number" in fn_names
-
-    def test_extracts_imports(self, plugin, tmp_path):
-        self._write_source(tmp_path, "service.py", """
-            import os
-            from pathlib import Path
-            from typing import Optional
-
-            def do_something():
-                pass
-        """)
-        ctx = plugin.build_generation_context(tmp_path, "service.py")
-        assert "os" in ctx["dependencies"]
-
-    def test_includes_source_code(self, plugin, tmp_path):
-        self._write_source(tmp_path, "simple.py", "x = 42\n")
-        ctx = plugin.build_generation_context(tmp_path, "simple.py")
-        assert "x = 42" in ctx["source_code"]
-
-    def test_has_required_keys(self, plugin, tmp_path):
-        self._write_source(tmp_path, "empty.py", "")
-        ctx = plugin.build_generation_context(tmp_path, "empty.py")
-        for key in ["source_code", "class_name", "class_type", "dependencies", "existing_tests", "conventions"]:
-            assert key in ctx, f"Missing required key: {key}"

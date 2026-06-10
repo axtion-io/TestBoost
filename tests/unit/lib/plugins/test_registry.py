@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 """Unit tests for PluginRegistry."""
 
+
 from pathlib import Path
 
 import pytest
@@ -27,7 +28,7 @@ class _JavaLikePlugin(TechnologyPlugin):
 
     @property
     def prompt_template_dir(self) -> str:
-        return "config/prompts/testing"
+        return "testing"
 
     def find_source_files(self, project_path):
         return []
@@ -47,10 +48,6 @@ class _JavaLikePlugin(TechnologyPlugin):
     def test_run_command(self, project_path, session_config):
         return ["mvn", "test"]
 
-    def build_generation_context(self, project_path, source_file):
-        return {"source_code": "", "class_name": "Test", "class_type": "other",
-                "dependencies": [], "existing_tests": [], "conventions": {}}
-
 
 class _PythonLikePlugin(TechnologyPlugin):
     @property
@@ -67,7 +64,7 @@ class _PythonLikePlugin(TechnologyPlugin):
 
     @property
     def prompt_template_dir(self) -> str:
-        return "config/prompts/testing/python"
+        return "testing/python_pytest"
 
     def find_source_files(self, project_path):
         return []
@@ -86,10 +83,6 @@ class _PythonLikePlugin(TechnologyPlugin):
 
     def test_run_command(self, project_path, session_config):
         return ["python", "-m", "pytest", "{test_file}"]
-
-    def build_generation_context(self, project_path, source_file):
-        return {"source_code": "", "class_name": "module", "class_type": "module",
-                "dependencies": [], "existing_tests": [], "conventions": {}}
 
 
 # ---------------------------------------------------------------------------

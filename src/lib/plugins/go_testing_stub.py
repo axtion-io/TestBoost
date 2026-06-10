@@ -38,7 +38,7 @@ class GoTestingPlugin(TechnologyPlugin):
     @property
     def prompt_template_dir(self) -> str:
         # A full plugin would have its own templates; reuse Java dir as placeholder
-        return "config/prompts/testing"
+        return "testing"
 
     # ------------------------------------------------------------------
     # Source discovery
@@ -94,27 +94,3 @@ class GoTestingPlugin(TechnologyPlugin):
 
     def test_run_command(self, project_path: Path, session_config: dict) -> list[str]:
         return ["go", "test", "./..."]
-
-    # ------------------------------------------------------------------
-    # Generation context
-    # ------------------------------------------------------------------
-
-    def build_generation_context(self, project_path: Path, source_file: str) -> dict:
-        """Return minimal context for Go test generation."""
-        source_path = Path(source_file)
-        if not source_path.is_absolute():
-            source_path = Path(project_path) / source_file
-
-        try:
-            source_code = source_path.read_text(encoding="utf-8")
-        except OSError:
-            source_code = ""
-
-        return {
-            "source_code": source_code,
-            "class_name": source_path.stem,
-            "class_type": self.classify_source_file(str(source_file)),
-            "dependencies": [],
-            "existing_tests": [],
-            "conventions": {},
-        }

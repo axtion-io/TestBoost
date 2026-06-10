@@ -39,7 +39,7 @@ class JavaSpringPlugin(TechnologyPlugin):
 
     @property
     def prompt_template_dir(self) -> str:
-        return "config/prompts/testing"
+        return "testing"
 
     # ------------------------------------------------------------------
     # Source discovery
@@ -101,35 +101,6 @@ class JavaSpringPlugin(TechnologyPlugin):
 
         config = _detect_maven_build_config(project_path)
         return _parse_maven_cmd(config["test_cmd"])
-
-    # ------------------------------------------------------------------
-    # Generation context
-    # ------------------------------------------------------------------
-
-    def build_generation_context(self, project_path: Path, source_file: str) -> dict:
-        """Build the LLM context dict using the Java class analyzer."""
-        from src.java.class_analyzer import build_class_index, extract_test_examples
-
-        source_files = self.find_source_files(project_path)
-        class_index = build_class_index(str(project_path), source_files)
-        existing_tests = extract_test_examples(str(project_path))
-
-        # Find this specific file's entry in the index
-        normalized = source_file.replace("\\", "/")
-        class_info = class_index.get(normalized, {})
-
-        return {
-            "source_code": class_info.get("source_code", ""),
-            "class_name": class_info.get("class_name", Path(source_file).stem),
-            "class_type": self.classify_source_file(normalized),
-            "dependencies": class_info.get("dependencies", []),
-            "existing_tests": [t.get("content", "") for t in existing_tests],
-            "conventions": {},
-            # Java-specific extras
-            "class_index": class_index,
-            "spring_annotations": class_info.get("annotations", []),
-            "java_version": class_info.get("java_version", ""),
-        }
 
 
 # ---------------------------------------------------------------------------

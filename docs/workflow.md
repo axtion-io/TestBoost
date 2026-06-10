@@ -160,6 +160,22 @@ Installs TestBoost slash commands and wrapper scripts into a target project so t
 
 Verifies an HMAC integrity token emitted at the end of a CLI step.
 
+## HITL and Operations Commands
+
+Five more commands support the asynchronous CI workflow (pause on
+uncertainty, answer via MR comment, resume) and day-2 operations:
+
+| Command | Purpose |
+|---------|---------|
+| `resume <project> [--answer-file f]` | Show the pending question, or resume a paused session with a signed answer |
+| `sign-answer <project> --question-file q --answer-file a` | HMAC-sign a raw answer against a pending question |
+| `gitlab post-question / fetch-answer <project>` | MR helpers used by the GitLab CI template |
+| `cleanup <project> [--ttl-hours N] [--dry-run]` | Mark sessions stuck in `awaiting_input` past the TTL as abandoned |
+| `doctor <project>` | Health checks: `.tb_secret`, write perms, Maven, LLM ping |
+
+See [Async CI Integration](./ci-async-integration.md) and the
+[GitLab Integration Guide](./gitlab-integration.md) for the full loop.
+
 ## Interactive Workflow with LLM CLI
 
 When using TestBoost through an LLM CLI (Claude Code, OpenCode), the workflow becomes interactive:

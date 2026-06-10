@@ -10,10 +10,9 @@ class TechnologyPlugin(ABC):
 
     A plugin encapsulates all technology-specific knowledge:
     - Source file discovery and classification
-    - Test file naming conventions
+    - Test file patterns
     - Validation and test run commands
     - LLM prompt template directory
-    - Generation context building
 
     Register plugins in priority order in src/lib/plugins/__init__.py.
     Python raises TypeError at instantiation if any abstract member is missing.
@@ -46,10 +45,10 @@ class TechnologyPlugin(ABC):
     @property
     @abstractmethod
     def prompt_template_dir(self) -> str:
-        """Relative path from repo root to the prompt template directory.
+        """Prompt template directory, relative to src/prompts/.
 
         Must contain unit_test_generation.md at minimum.
-        Examples: 'config/prompts/testing', 'config/prompts/testing/python_pytest'
+        Examples: 'testing', 'testing/python_pytest'
         """
 
     @abstractmethod
@@ -82,11 +81,17 @@ class TechnologyPlugin(ABC):
     def test_file_name(self, source_relative_path: str) -> str:
         """Derive the test file path for a given source file.
 
+        Used by `generate` to decide WHERE the generated test is written —
+        the result must never collide with a production source path
+        (history: a Java-only fallback used to return Python sources
+        unchanged, overwriting them with generated tests).
+
         Args:
             source_relative_path: Path relative to project root.
 
         Returns:
-            Test file path relative to project root. Deterministic for a given input.
+            Test file path relative to project root. Deterministic for a
+            given input.
         """
 
     @abstractmethod
@@ -124,16 +129,3 @@ class TechnologyPlugin(ABC):
             May include '{test_file}' placeholder for the caller to substitute.
         """
 
-    @abstractmethod
-    def build_generation_context(self, project_path: Path, source_file: str) -> dict:
-        """Build the LLM context dict for test generation.
-
-        Args:
-            project_path: Project root directory.
-            source_file: Path to the source file to test (absolute or relative).
-
-        Returns:
-            Dict with at minimum: source_code, class_name, class_type,
-            dependencies, existing_tests, conventions.
-            Technology-specific keys may be added freely.
-        """

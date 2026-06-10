@@ -1,6 +1,6 @@
 # LLM Prompts
 
-TestBoost uses LLM prompts at two stages: **test generation** and **compilation error fixing**. All prompts are stored as markdown files in `config/prompts/` and can be edited without restarting anything.
+TestBoost uses LLM prompts at two stages: **test generation** and **compilation error fixing**. All prompts are stored as markdown files in `src/prompts/` and can be edited without restarting anything.
 
 ## Template System
 
@@ -9,22 +9,20 @@ Prompt files use `{{placeholder}}` syntax. The double braces are intentional —
 ## Active Prompt Files
 
 ```
-config/prompts/
+src/prompts/
 +-- testing/
 |   +-- unit_test_generation.md      # Main test generation prompt
-|   +-- unit_test_strategy.md        # Unit test strategy (agent system prompt)
 |   +-- compilation_fix.md           # Fix compilation errors in generated tests
 |   +-- mutation_killer.md           # LLM-powered killer tests for surviving mutants
 |   +-- edge_case_analysis.md        # Pre-generation edge case scenario analysis
 |   +-- python_pytest/               # Python/pytest-specific prompt overrides
 +-- maven/
 |   +-- compilation_errors_format.md # Format Maven errors for LLM consumption
-|   +-- system_agent.md              # Maven maintenance agent system prompt
 ```
 
 ## Unit Test Generation
 
-**File:** `config/prompts/testing/unit_test_generation.md`
+**File:** `src/prompts/testing/unit_test_generation.md`
 
 Used by `generate_adaptive_tests()` in `generate_unit.py`. This is the main prompt the LLM receives when generating tests for a source file.
 
@@ -60,7 +58,7 @@ Used by `generate_adaptive_tests()` in `generate_unit.py`. This is the main prom
 
 ## Compilation Fix
 
-**File:** `config/prompts/testing/compilation_fix.md`
+**File:** `src/prompts/testing/compilation_fix.md`
 
 Used by `fix_compilation_errors()` when `mvn test-compile` fails on a generated test file. The LLM receives the test code and the error messages, and must return only corrected Java code.
 
@@ -71,7 +69,7 @@ Used by `fix_compilation_errors()` when `mvn test-compile` fails on a generated 
 
 ## Maven Error Formatting
 
-**File:** `config/prompts/maven/compilation_errors_format.md`
+**File:** `src/prompts/maven/compilation_errors_format.md`
 
 Used by `MavenErrorParser.format_for_llm()` to produce a structured error report. This is what the LLM CLI sees when the `validate` step fails.
 
@@ -82,7 +80,7 @@ Used by `MavenErrorParser.format_for_llm()` to produce a structured error report
 
 ## Mutation Killer (LLM-Powered)
 
-**File:** `config/prompts/testing/mutation_killer.md`
+**File:** `src/prompts/testing/mutation_killer.md`
 
 Used by `_generate_killer_tests_llm()` in `killer_tests.py`. Replaces the static template-based killer test generation with LLM-powered tests that use real parameter values computed from the source code.
 
@@ -95,7 +93,7 @@ Used by `_generate_killer_tests_llm()` in `killer_tests.py`. Replaces the static
 
 ## Edge Case Analysis (Pre-Generation)
 
-**File:** `config/prompts/testing/edge_case_analysis.md`
+**File:** `src/prompts/testing/edge_case_analysis.md`
 
 Used by `analyze_edge_cases()` in `generate_unit.py`. Returns a JSON array of edge case scenarios (null inputs, boundaries, empty collections, exception paths) that can be fed into `test_requirements` for targeted generation.
 
@@ -117,4 +115,4 @@ The detected naming pattern, assertion style, Mockito usage, and Spring MockBean
 
 ## Customizing
 
-Edit any file in `config/prompts/` to adjust behavior. Changes take effect on the next `generate` run — no restart needed. The `{{placeholder}}` values are injected at runtime by `src/lib/prompt_utils.render_template()`.
+Edit any file in `src/prompts/` to adjust behavior. Changes take effect on the next `generate` run — no restart needed. The `{{placeholder}}` values are injected at runtime by `src/lib/prompt_utils.render_template()`.

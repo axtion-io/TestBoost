@@ -57,20 +57,6 @@ class Settings(BaseSettings):
         description="OpenAI-compatible API base URL (for vLLM, Ollama, etc.)",
     )
 
-    # LangSmith tracing (optional)
-    langsmith_api_key: str | None = Field(
-        default=None,
-        description="LangSmith API key for tracing",
-    )
-    langsmith_tracing: bool = Field(
-        default=False,
-        description="Enable LangSmith tracing",
-    )
-    langsmith_project: str = Field(
-        default="testboost",
-        description="LangSmith project name",
-    )
-
     # Timeout settings
     llm_timeout: int = Field(
         default=120,

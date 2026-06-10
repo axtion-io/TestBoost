@@ -87,6 +87,6 @@ jobs:
       continue-on-error: true
 
   # E2E Tests with Real LLM are NOT run in CI
-  # Reason: Requires paid API keys (Google Gemini, LangSmith)
+  # Reason: Requires paid API keys (Google Gemini, Anthropic, ...)
   # These tests are run manually during development with local API keys
   # See .github/README.md for details on running E2E tests locally

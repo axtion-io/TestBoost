@@ -602,3 +602,64 @@ class TestBatchedQuestions:
         test_file = (initialized_project / "src" / "test" / "java" / "com"
                      / "example" / "OrderServiceTest.java")
         assert "developer_fix" in test_file.read_text()
+
+
+class TestResumeDispatch:
+    """Resume must dispatch to the step recorded in the pending question."""
+
+    def _plant_question(self, project_path, step):
+        from src.lib.session_tracker import emit_question
+        cmd_init(argparse.Namespace(
+            project_path=str(project_path), name=None, description="", tech="java-spring",
+        ))
+        session = get_current_session(str(project_path))
+        emit_question(
+            session["session_dir"], step,
+            {"kind": "x", "question": "?"},
+            project_path=str(project_path), session_id=session["session_id"],
+        )
+
+    def test_dispatches_to_validate(self, tmp_path):
+        from src.lib.cli import cmd_resume
+        self._plant_question(tmp_path, "validation")
+        seen = {}
+        def fake(args):
+            seen["fail_on_uncertainty"] = args.fail_on_uncertainty
+            seen["answer_file"] = args.answer_file
+            return 0
+        with patch("src.lib.cli.cmd_validate", side_effect=fake):
+            rc = cmd_resume(argparse.Namespace(
+                project_path=str(tmp_path), answer_file="/tmp/a.json", verbose=False,
+            ))
+        assert rc == 0
+        assert seen == {"fail_on_uncertainty": True, "answer_file": "/tmp/a.json"}
+
+    def test_dispatches_to_killer(self, tmp_path):
+        from src.lib.cli import cmd_resume
+        self._plant_question(tmp_path, "killer-tests")
+        with patch("src.lib.cli.cmd_killer", return_value=0) as mock_killer:
+            rc = cmd_resume(argparse.Namespace(
+                project_path=str(tmp_path), answer_file="/tmp/a.json", verbose=False,
+            ))
+        assert rc == 0
+        assert mock_killer.call_args.args[0].max_tests == 10
+
+    def test_unknown_step_errors(self, tmp_path, capsys):
+        from src.lib.cli import cmd_resume
+        self._plant_question(tmp_path, "mutation")
+        rc = cmd_resume(argparse.Namespace(
+            project_path=str(tmp_path), answer_file="/tmp/a.json", verbose=False,
+        ))
+        assert rc == 1
+        assert "not yet wired" in capsys.readouterr().err
+
+    def test_answer_without_pending_question(self, tmp_path, capsys):
+        from src.lib.cli import cmd_resume
+        cmd_init(argparse.Namespace(
+            project_path=str(tmp_path), name=None, description="", tech="java-spring",
+        ))
+        rc = cmd_resume(argparse.Namespace(
+            project_path=str(tmp_path), answer_file="/tmp/a.json", verbose=False,
+        ))
+        assert rc == 1
+        assert "no pending question" in capsys.readouterr().err

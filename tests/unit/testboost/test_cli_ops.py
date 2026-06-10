@@ -137,3 +137,47 @@ class TestMetricsEmission:
 # ============================================================================
 # Phase 6 — batched questions, scoped answers, no-regeneration resume
 # ============================================================================
+
+
+class TestCmdInstall:
+    def test_install_success_with_shell_type(self, tmp_path, capsys):
+        from src.lib.cli import cmd_install
+        with patch("src.lib.installer.install_commands",
+                   return_value={"success": True, "message": "ok", "details": ["a", "b"]}) as mock_install:
+            rc = cmd_install(argparse.Namespace(
+                project_path=str(tmp_path), shell_type="bash",
+            ))
+        assert rc == 0
+        assert mock_install.call_args.kwargs["shell_type"] == "bash"
+        out = capsys.readouterr().out
+        assert "ok" in out and "a" in out
+
+    def test_install_failure(self, tmp_path, capsys):
+        from src.lib.cli import cmd_install
+        with patch("src.lib.installer.install_commands",
+                   return_value={"success": False, "message": "boom"}):
+            rc = cmd_install(argparse.Namespace(
+                project_path=str(tmp_path), shell_type="powershell",
+            ))
+        assert rc == 1
+        assert "boom" in capsys.readouterr().err
+
+    def test_install_nonexistent_path(self, capsys):
+        from src.lib.cli import cmd_install
+        rc = cmd_install(argparse.Namespace(
+            project_path="/nonexistent/xyz", shell_type="bash",
+        ))
+        assert rc == 1
+        assert "does not exist" in capsys.readouterr().err
+
+    def test_prompts_for_shell_type_when_omitted(self, tmp_path):
+        from src.lib.cli import cmd_install
+        with patch("src.lib.installer.install_commands",
+                   return_value={"success": True, "message": "ok"}) as mock_install, \
+             patch("builtins.input", side_effect=["3", "2"]):
+            rc = cmd_install(argparse.Namespace(
+                project_path=str(tmp_path), shell_type=None,
+            ))
+        assert rc == 0
+        # "3" is rejected, "2" selects powershell
+        assert mock_install.call_args.kwargs["shell_type"] == "powershell"

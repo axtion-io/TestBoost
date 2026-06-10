@@ -30,7 +30,7 @@ git clone https://github.com/axtion-io/TestBoost.git
 cd TestBoost
 pip install poetry
 poetry install
-poetry shell                   # activate the virtual environment
+eval "$(poetry env activate)"  # Poetry 2.x (on 1.x: poetry shell)
 
 # Configure your LLM (copy and edit .env)
 cp .env.example .env
@@ -48,7 +48,7 @@ git clone https://github.com/axtion-io/TestBoost.git
 cd TestBoost
 pip install poetry
 poetry install
-poetry shell                   # activate the virtual environment
+Invoke-Expression (poetry env activate)  # Poetry 2.x (on 1.x: poetry shell)
 
 # Configure your LLM (copy and edit .env)
 Copy-Item .env.example .env

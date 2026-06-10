@@ -265,3 +265,34 @@ class TestBareMarkerAccepted:
             client=httpx.Client(transport=httpx.MockTransport(handler)),
         )
         assert out.exists()
+
+
+class TestUntaggedFenceAccepted:
+    """A fence without the `json` language tag is the most common reply
+    mistake — json.loads still validates the content."""
+
+    def test_fetch_answer_accepts_untagged_fence(self, tmp_path, monkeypatch):
+        from src.lib.gitlab_mr import fetch_answer
+
+        ctx = _make_session_with_question(tmp_path)
+        qid = ctx["question"]["question_id"]
+        _ci_env(monkeypatch)
+
+        notes = [{
+            "author": {"username": "devuser"},
+            "body": (
+                "```\n{\"test_requirements\": {}}\n```\n"
+                f"testboost:question_id={qid}"
+            ),
+        }]
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            if request.url.path.endswith("/notes"):
+                return httpx.Response(200, json=notes)
+            return httpx.Response(200, json={"author": {"username": "devuser"}})
+
+        out = fetch_answer(
+            str(tmp_path), output=tmp_path / "a.json",
+            client=httpx.Client(transport=httpx.MockTransport(handler)),
+        )
+        assert out.exists()

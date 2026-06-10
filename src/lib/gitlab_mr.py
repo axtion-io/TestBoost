@@ -26,7 +26,9 @@ from typing import Any
 import httpx
 
 QUESTION_MARKER_TEMPLATE = "<!-- testboost:question_id={qid} -->"
-ANSWER_JSON_BLOCK = re.compile(r"```json\s*\n(.*?)\n```", re.DOTALL)
+# Accept untagged fences too: a forgotten `json` language tag is the most
+# common reply mistake, and the json.loads() parse below still validates.
+ANSWER_JSON_BLOCK = re.compile(r"```(?:json)?\s*\n(.*?)\n```", re.DOTALL)
 
 
 class GitLabConfigError(RuntimeError):

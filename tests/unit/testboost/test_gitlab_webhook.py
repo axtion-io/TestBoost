@@ -39,14 +39,17 @@ _USER_IDS = {"alice": 11, "bob": 22, "tb-bot": 99}
 
 
 def _note_payload(commenter: str = "alice", author: str = "alice", body: str = "") -> dict:
-    """Mirror the REAL GitLab Note Hook shape: the commenter is the top-level
-    `user` object (with id), the MR author is `merge_request.author_id`
-    (an integer — there is NO nested merge_request.author object)."""
+    """Mirror the REAL GitLab Note Hook shape: the comment text lives in
+    `object_attributes.note` (NOT `body` — that's the REST API field), the
+    commenter is the top-level `user` object (with id), and the MR author
+    is `merge_request.author_id` (an integer — there is NO nested
+    merge_request.author object)."""
     return {
         "object_kind": "note",
         "object_attributes": {
             "noteable_type": "MergeRequest",
-            "body": body,
+            "note": body,
+            "description": body,
         },
         "user": {"id": _USER_IDS.get(commenter, 1), "username": commenter},
         "merge_request": {

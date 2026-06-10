@@ -145,8 +145,8 @@ In your project (or group) → Settings → CI/CD → Variables. Enable the
 > ⚠️ **Don't mark these variables "protected"** unless your MR source
 > branches are protected: GitLab only injects protected variables into
 > pipelines on protected refs, so MR pipelines on feature branches would
-> see them **empty** — an empty `GITLAB_TOKEN` or API key fails loudly,
-> an empty `TESTBOOST_TB_SECRET` silently weakens signing.
+> see them **empty**. The template fails fast with an explicit error when
+> `TESTBOOST_TB_SECRET` or `GITLAB_TOKEN` come up empty.
 
 ## Step 2 — Include the template in your `.gitlab-ci.yml`
 
@@ -211,7 +211,11 @@ In your project → Settings → Webhooks → Add new webhook:
 - Trigger: **Comments** only
 - SSL verification: on
 
-Click "Test → Comments" to verify connectivity.
+Click "Test → Comments" to verify connectivity (the project needs at
+least one existing comment for GitLab to send a sample). Any HTTP 200 —
+typically `{"ignored": "not a MR note"}`, since the sample is usually a
+commit note — proves the webhook is reachable and the secret token
+matches; a 401 means the secret token doesn't.
 
 > **No cleanup schedule needed**: paused sessions live on MR source
 > branches, which die when the MR merges. (`testboost cleanup` exists
@@ -266,10 +270,23 @@ Click "Test → Comments" to verify connectivity.
 5. On completion, the remaining tests are committed to the MR branch:
    the MR now contains all generated tests, ready for review.
 
-If the developer answers **after the 24h TTL**, the resume pipeline
-fails red with a clear signature/TTL error — re-run `testboost:generate`
-(e.g. push a trivial commit or re-run the MR pipeline) to get a fresh
-question.
+### When the resume pipeline fails red
+
+The webhook triggers on any comment carrying a `testboost:question_id=`
+marker — validation happens in the `testboost:resume` job, which fails
+**red** (exit 2 is not in `allow_failure`) when the answer can't be
+used. Causes, in rough order of likelihood:
+
+- **JSON typo** in the fenced block (the block is then skipped, and
+  `fetch-answer` reports "no matching answer note found");
+- **stale `question_id`** — the marker references a question that was
+  superseded (e.g. a new push re-ran generate) or already consumed;
+- **answered after the 24h TTL** (fixed, not configurable from CI) —
+  clear signature/TTL error in the job log.
+
+Recovery is always the same: post a **new** comment (don't rely on
+editing the old one — whether edits re-fire the webhook depends on the
+GitLab version), or re-run the MR pipeline to get a fresh question.
 
 ## Security notes
 
@@ -322,5 +339,6 @@ round-trip under 5 minutes?
 - The webhook triggers one pipeline per comment, with no debouncing. If
   the dev edits their comment, multiple pipelines may run. (Tolerable
   for the MVP; add a 30s debouncer in production.)
-- Self-managed GitLab instances older than 14.x have not been tested
-  (`allow_failure: exit_codes` requires GitLab 13.8+).
+- Requires GitLab **14.2+** (same-stage `needs:`; `allow_failure:
+  exit_codes` needs 13.8+). Older self-managed instances fail YAML
+  validation on the template.

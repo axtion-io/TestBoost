@@ -103,6 +103,11 @@
     when: always
     paths:
       - .testboost/
+      # Generated tests must travel to downstream jobs (testboost:validate
+      # checks out the pipeline's ORIGINAL sha — the delivery commit pushed
+      # by generate is not in its workspace). Single path only: if you set
+      # several TESTBOOST_COMMIT_PATHS, override artifacts in your own job.
+      - $TESTBOOST_COMMIT_PATHS
     exclude:
       # artifacts ignore .gitignore — never upload the HMAC secret
       - .testboost/.tb_secret
@@ -150,9 +155,16 @@
           # CI_SERVER_PROTOCOL/PORT keep self-managed non-443 setups working.
           git config credential.helper store
           echo "${CI_SERVER_PROTOCOL}://oauth2:${GITLAB_TOKEN}@${CI_SERVER_HOST}:${CI_SERVER_PORT}" > ~/.git-credentials
-          git push "${CI_SERVER_PROTOCOL}://${CI_SERVER_HOST}:${CI_SERVER_PORT}/${CI_PROJECT_PATH}.git" \
-            "HEAD:${CI_COMMIT_REF_NAME}" -o ci.skip \
-            || echo "WARNING: could not push to the MR branch (tests/state not delivered)"
+          PUSH_URL="${CI_SERVER_PROTOCOL}://${CI_SERVER_HOST}:${CI_SERVER_PORT}/${CI_PROJECT_PATH}.git"
+          # A previous job of this pipeline may already have moved the branch
+          # (e.g. generate's delivery commit before validate runs) — on a
+          # non-fast-forward rejection, rebase onto the remote tip and retry.
+          if ! git push "$PUSH_URL" "HEAD:${CI_COMMIT_REF_NAME}" -o ci.skip; then
+            git fetch "$PUSH_URL" "${CI_COMMIT_REF_NAME}" \
+              && git rebase FETCH_HEAD \
+              && git push "$PUSH_URL" "HEAD:${CI_COMMIT_REF_NAME}" -o ci.skip \
+              || echo "WARNING: could not push to the MR branch (tests/state not delivered)"
+          fi
           rm -f ~/.git-credentials
         fi
       fi

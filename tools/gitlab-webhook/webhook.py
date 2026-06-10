@@ -82,7 +82,10 @@ async def gitlab_note(
     mr = payload.get("merge_request") or {}
     user = payload.get("user") or {}
 
-    body = note.get("body", "") or ""
+    # Real Note Hook payloads carry the comment text in
+    # `object_attributes.note` (duplicated in `description`) — there is NO
+    # `body` field in webhook payloads (that's the Notes REST API shape).
+    body = note.get("note") or note.get("description") or ""
     if not QUESTION_MARKER.search(body):
         return {"ignored": "no testboost question_id marker"}
 

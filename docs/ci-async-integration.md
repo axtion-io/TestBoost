@@ -21,8 +21,9 @@ python -m testboost generate ./my-project --fail-on-uncertainty
 # → stdout marker: [TESTBOOST_AWAITING_INPUT:step=generation:question=…]
 # → exit code 78 (sysexits EX_CONFIG, reused as "human action required")
 
-# Your CI script posts question.json to the MR; the developer replies;
-# a webhook (your code) builds answer.json and relaunches the pipeline.
+# Your CI posts question.json to the MR; the developer replies; the
+# shipped webhook (tools/gitlab-webhook/) triggers a resume pipeline,
+# whose CI job fetches the reply and builds the signed answer.json.
 
 # 2nd run — resumes with the answer
 python -m testboost generate ./my-project --answer-file ./answer.json
@@ -235,8 +236,10 @@ python -m testboost resume ./my-project
 python -m testboost resume ./my-project --answer-file /tmp/signed_answer.json
 ```
 
-`resume` exits 0 if the answer is accepted, 1 on signature/TTL failure,
-or 2 if no question is pending.
+`resume` exit codes: **0** answer accepted (or pending question shown),
+**1** signature/TTL failure — or no pending question when an
+`--answer-file` was given, **2** no question pending in display mode
+(without `--answer-file`).
 
 ## Pause triggers — supported steps (Phase 2)
 
@@ -296,10 +299,12 @@ python -m testboost cleanup ./my-project --ttl-hours 24
 ```
 
 Sessions in `awaiting_input` older than the TTL are flipped to status
-`abandoned`. The files are **preserved** (audit trail). Run periodically
-from a scheduled CI job, or manually. `emit_question` flips the
-session-level status in `spec.md` (and a resumed step flips it back), so
-cleanup detects real pauses without any manual bookkeeping.
+`abandoned`. The files are **preserved** (audit trail). This is a tool
+for **local, long-lived checkouts** — in the GitLab CI flow there is
+nothing to schedule: paused sessions live on MR source branches and die
+with them at merge. `emit_question` flips the session-level status in
+`spec.md` (and a resumed step flips it back), so cleanup detects real
+pauses without any manual bookkeeping.
 
 ### Health check
 

@@ -380,6 +380,10 @@ class TestHintsMode:
         gen_args = argparse.Namespace(
             project_path=str(initialized_project),
             verbose=False, files=None,
+            # This test isolates compile-fix hint injection; opt out of the
+            # orthogonal `mvn test` runtime-fix loop so subprocess.run is only
+            # called for the two compile checks the test stubs.
+            no_runtime_fix=True,
             fail_on_uncertainty=True, answer_file=str(answer),
         )
         with patch("src.lib.startup_checks.check_llm_connection", new_callable=AsyncMock), \

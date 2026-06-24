@@ -7,7 +7,7 @@ TestBoost uses LLMs for project analysis and test generation. It supports three 
 | Provider | Recommended Model | Cost (1M tokens) | Typical Latency |
 |----------|-------------------|-------------------|-----------------|
 | **Google Gemini** | `gemini-2.5-flash` | $0.075 input / $0.30 output | 1-3s |
-| **Anthropic Claude** | `claude-sonnet-4-20250514` | $3.00 input / $15.00 output | 2-5s |
+| **Anthropic Claude** | `claude-sonnet-4-6` | $3.00 input / $15.00 output | 2-5s |
 | **OpenAI GPT-4o** | `gpt-4o` | $2.50 input / $10.00 output | 2-4s |
 
 ## Configuration
@@ -76,16 +76,6 @@ Change the `MODEL` variable and make sure the corresponding API key is set. No c
 | Gemini | ~$3 - $10 |
 | Claude | ~$50 - $150 |
 | GPT-4o | ~$40 - $100 |
-
-## Observability
-
-To trace LLM calls with LangSmith:
-
-```bash
-export LANGSMITH_TRACING=true
-export LANGSMITH_API_KEY="lsv2_..."
-export LANGSMITH_PROJECT="testboost"
-```
 
 ## Error Handling
 

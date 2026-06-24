@@ -150,8 +150,9 @@ pytest -k "test_session"
 
 - **New features**: 80% minimum coverage for new code
 - **Bug fixes**: Must include a regression test covering the bug path
-- **TestBoost CLI**: Tests in `testboost/tests/`
-- **Core functions**: Tests in `tests/`
+- **CLI and session tests**: `tests/unit/testboost/`
+- **Plugin tests**: `tests/unit/lib/plugins/`
+- **Integration tests**: `tests/integration/`
 
 ### Test Naming
 
@@ -170,7 +171,7 @@ def test_analyze_fails_when_no_session():
 When testing CLI commands, mock functions at the bridge level:
 
 ```python
-@patch("testboost.lib.testboost_bridge.analyze_project_context")
+@patch("src.lib.bridge.analyze_project_context")
 async def test_analyze_success(mock_analyze):
     mock_analyze.return_value = '{"success": true, ...}'
     ...

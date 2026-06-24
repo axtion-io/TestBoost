@@ -7,7 +7,6 @@ Patterns checked:
 - Anthropic: sk-ant-[A-Za-z0-9-]{32,}
 - Google: AIza[A-Za-z0-9_-]{35}
 - OpenAI: sk-[A-Za-z0-9]{32,}
-- LangSmith: ls__[A-Za-z0-9]{32,}
 """
 
 import re
@@ -19,7 +18,6 @@ API_KEY_PATTERNS = {
     "anthropic": r"sk-ant-[A-Za-z0-9-]{32,}",
     "google": r"AIza[A-Za-z0-9_-]{35}",
     "openai": r"sk-[A-Za-z0-9]{32,}",
-    "langsmith": r"ls__[A-Za-z0-9]{32,}",
 }
 
 # Directories to scan
@@ -153,22 +151,6 @@ class TestNoHardcodedAPIKeys:
                 pass
 
         assert len(violations) == 0, f"OpenAI API keys found in: {violations}"
-
-    def test_no_langsmith_keys_in_source(self):
-        """Test no LangSmith API keys in source code."""
-        pattern = re.compile(API_KEY_PATTERNS["langsmith"])
-        violations = []
-
-        for file_path in get_files_to_scan():
-            try:
-                content = file_path.read_text(encoding="utf-8", errors="ignore")
-                if pattern.search(content):
-                    if "ls__[" not in content:  # Not a pattern definition
-                        violations.append(str(file_path))
-            except Exception:
-                pass
-
-        assert len(violations) == 0, f"LangSmith API keys found in: {violations}"
 
 
 class TestEnvFileNotCommitted:

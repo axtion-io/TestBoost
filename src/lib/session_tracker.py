@@ -31,6 +31,17 @@ STATUS_PENDING = "pending"
 STATUS_IN_PROGRESS = "in_progress"
 STATUS_COMPLETED = "completed"
 STATUS_FAILED = "failed"
+STATUS_AWAITING_INPUT = "awaiting_input"
+STATUS_ABANDONED = "abandoned"
+
+# Exit code used when a step pauses waiting for human input (sysexits-style).
+# 78 maps to EX_CONFIG; we reuse it to signal "human action required" so a CI
+# job can treat it as neutral rather than a hard failure.
+EXIT_AWAITING_INPUT = 78
+
+QUESTION_FILENAME = "question.json"
+ANSWER_CONSUMED_FILENAME = "answer.json.consumed"
+GENERATION_CURSOR_FILENAME = "generation_cursor.json"
 
 
 def get_testboost_dir(project_path: str) -> Path:
@@ -338,6 +349,388 @@ def get_session_status(project_path: str) -> str:
     return "\n".join(lines)
 
 
+# ---------------------------------------------------------------------------
+# Human-in-the-loop interruption (spike)
+# ---------------------------------------------------------------------------
+
+
+class AwaitingInputError(Exception):
+    """Raised by a step when it needs human input to continue.
+
+    The caller catches this and returns EXIT_AWAITING_INPUT so a CI runner
+    can treat the job as neutral and post `question.json` to the MR.
+    """
+
+    def __init__(self, question_path: Path, step_name: str):
+        self.question_path = question_path
+        self.step_name = step_name
+        super().__init__(f"{step_name} awaiting input — see {question_path}")
+
+
+def emit_question(
+    session_dir: str,
+    step_name: str,
+    payload: dict[str, Any],
+    project_path: str | None = None,
+    session_id: str | None = None,
+) -> Path:
+    """Write a structured, signed question.json and flip status to awaiting_input.
+
+    The payload is a free-form dict but the caller SHOULD include:
+      - "kind": short tag (e.g. "missing_business_context")
+      - "subject": what the question is about (file, class, error)
+      - "question": human-readable question text
+      - "answer_schema": hint about the shape expected back in answer.json
+
+    If project_path is supplied, the payload is HMAC-signed via
+    integrity.sign_question() so a matching answer can be verified.
+    Backwards-compatible: callers that don't pass project_path skip signing.
+    """
+    from src.lib.integrity import sign_question
+
+    session_path = Path(session_dir)
+    question_path = session_path / QUESTION_FILENAME
+
+    import secrets
+
+    enriched = dict(payload)
+    enriched.setdefault("step", step_name)
+    if session_id:
+        enriched.setdefault("session_id", session_id)
+    enriched.setdefault("created_at", _now_iso())
+    # Pre-allocate the question_id so it shows up in markdown_preview
+    enriched.setdefault("question_id", secrets.token_hex(16))
+
+    # markdown_preview must be added BEFORE signing so it is included in
+    # the HMAC and survives round-trip verification
+    enriched["markdown_preview"] = _render_question_markdown(enriched)
+
+    if project_path:
+        enriched = sign_question(enriched, project_path)
+
+    question_path.write_text(
+        json.dumps(enriched, indent=2, default=str), encoding="utf-8"
+    )
+
+    update_step_file(
+        session_dir,
+        step_name,
+        STATUS_AWAITING_INPUT,
+        f"# {step_name} — awaiting input\n\n"
+        f"**Question**: {enriched.get('question', '(no question text)')}\n\n"
+        f"Resume with: `python -m testboost resume <project> "
+        f"--answer-file <signed_answer.json>`\n",
+        data={"question": enriched},
+    )
+
+    return question_path
+
+
+def load_and_verify_answer(
+    session_dir: str,
+    answer_file: str | Path,
+    project_path: str | None = None,
+    ttl_hours: int | None = None,
+) -> dict[str, Any]:
+    """Load an answer payload and verify it against the pending question.
+
+    Unlike consume_answer(), question.json is left in place and no consumed
+    marker is written — call finalize_answer() once the answered work has
+    actually succeeded, so a crashed resume run can be retried with the
+    same answer file.
+
+    Returns the parsed payload (with question_id/signature fields preserved).
+
+    Raises:
+      - FileNotFoundError: answer_file does not exist
+      - ValueError: malformed JSON or non-object payload
+      - integrity.SignatureError: signature missing/invalid/tampered
+      - integrity.ExpiredQuestionError: question is older than ttl_hours
+    """
+    from src.lib.integrity import QUESTION_TTL_HOURS_DEFAULT, verify_answer
+
+    src_path = Path(answer_file)
+    if not src_path.exists():
+        raise FileNotFoundError(f"answer file not found: {src_path}")
+
+    raw = src_path.read_text(encoding="utf-8")
+    try:
+        payload = json.loads(raw)
+    except json.JSONDecodeError as e:
+        raise ValueError(f"answer file is not valid JSON: {e}") from e
+
+    if not isinstance(payload, dict):
+        raise ValueError("answer payload must be a JSON object at the top level")
+
+    question_path = Path(session_dir) / QUESTION_FILENAME
+
+    if project_path:
+        if not question_path.exists():
+            raise ValueError(
+                "no pending question in this session; cannot verify the answer"
+            )
+        question_payload = json.loads(question_path.read_text(encoding="utf-8"))
+        verify_answer(
+            payload,
+            question_payload,
+            project_path,
+            ttl_hours=ttl_hours if ttl_hours is not None else QUESTION_TTL_HOURS_DEFAULT,
+        )
+
+    return payload
+
+
+def finalize_answer(session_dir: str, payload: dict[str, Any]) -> None:
+    """Mark a verified answer as consumed and clear the pending question.
+
+    Call this only after the answered work has succeeded (or when a new
+    question supersedes the old one) — see load_and_verify_answer().
+    """
+    session_path = Path(session_dir)
+    consumed_path = session_path / ANSWER_CONSUMED_FILENAME
+    consumed_path.write_text(json.dumps(payload, indent=2, default=str), encoding="utf-8")
+
+    question_path = session_path / QUESTION_FILENAME
+    if question_path.exists():
+        question_path.unlink()
+
+
+def consume_answer(
+    session_dir: str,
+    answer_file: str | Path,
+    project_path: str | None = None,
+    ttl_hours: int | None = None,
+) -> dict[str, Any]:
+    """Load, verify and immediately consume an answer (one-shot helper).
+
+    Equivalent to load_and_verify_answer() + finalize_answer(). Prefer the
+    two-step form in step implementations so a crashed run keeps the
+    question/answer pair retryable.
+    """
+    payload = load_and_verify_answer(
+        session_dir, answer_file, project_path=project_path, ttl_hours=ttl_hours
+    )
+    finalize_answer(session_dir, payload)
+    return payload
+
+
+def _render_question_markdown(payload: dict[str, Any]) -> str:
+    """Render an MR-comment-ready markdown preview of a question payload.
+
+    Payloads with an `items` list (batch questions — several files needing
+    input in one run) render each item as a numbered section followed by a
+    single combined answer schema.
+    """
+    items = payload.get("items")
+    if items:
+        return _render_batch_markdown(payload, items)
+
+    kind = payload.get("kind", "question")
+    subject = payload.get("subject", {})
+    question = payload.get("question", "(no question text)")
+    answer_schema = payload.get("answer_schema", {})
+
+    lines = [
+        f"### 🤖 TestBoost needs input ({kind})",
+        "",
+        f"**Question**: {question}",
+        "",
+    ]
+    if subject:
+        lines.append("**Subject**:")
+        lines.append("")
+        lines.append("```json")
+        lines.append(json.dumps(subject, indent=2, default=str))
+        lines.append("```")
+        lines.append("")
+    if answer_schema:
+        lines.append("**Reply with this shape**:")
+        lines.append("")
+        lines.append("```json")
+        lines.append(json.dumps(answer_schema, indent=2, default=str))
+        lines.append("```")
+        lines.append("")
+    lines.extend(_reply_instructions(payload))
+    return "\n".join(lines)
+
+
+def _reply_instructions(payload: dict[str, Any]) -> list[str]:
+    """How-to-reply block appended to every MR-posted question.
+
+    The marker line is what the resume webhook and `testboost gitlab
+    fetch-answer` look for in the reply — it MUST be stated visibly in the
+    comment, because the machine-readable copy appended by post_question
+    is an invisible HTML comment a human would never discover.
+    """
+    qid = payload.get("question_id")
+    if not qid:
+        return []
+    return [
+        "**How to reply** (as the MR author, in a new comment):",
+        "",
+        "1. Paste your answer as ONE fenced ```json block (raw JSON — do NOT sign it, the CI signs accepted answers itself);",
+        f"2. Include this exact line anywhere in the same comment: `testboost:question_id={qid}`",
+        "",
+        f"_Question ID: `{qid}`_",
+    ]
+
+
+def _render_batch_markdown(payload: dict[str, Any], items: list[dict[str, Any]]) -> str:
+    """Render a multi-item question as one MR-ready comment."""
+    lines = [
+        f"### 🤖 TestBoost needs input — {len(items)} item(s)",
+        "",
+        f"**Summary**: {payload.get('question', '(no summary)')}",
+        "",
+    ]
+    for idx, item in enumerate(items, 1):
+        subject = item.get("subject", {})
+        title = subject.get("class_name") or subject.get("source_file") or ""
+        lines.append(f"#### {idx}. {item.get('kind', 'question')}{' — `' + title + '`' if title else ''}")
+        lines.append("")
+        lines.append(f"**Question**: {item.get('question', '(no question text)')}")
+        lines.append("")
+        if subject:
+            lines.append("```json")
+            lines.append(json.dumps(subject, indent=2, default=str))
+            lines.append("```")
+            lines.append("")
+    answer_schema = payload.get("answer_schema", {})
+    if answer_schema:
+        lines.append("**Reply with ONE fenced JSON block combining your answers**:")
+        lines.append("")
+        lines.append("```json")
+        lines.append(json.dumps(answer_schema, indent=2, default=str))
+        lines.append("```")
+        lines.append("")
+    lines.extend(_reply_instructions(payload))
+    return "\n".join(lines)
+
+
+# --- session cleanup helpers (Phase 3) ---
+
+
+def list_sessions(project_path: str) -> list[dict[str, Any]]:
+    """Return all sessions with id, dir, status, awaiting age (hours).
+
+    Used by `cleanup` and `doctor` to enumerate state without loading
+    individual session content.
+    """
+    sessions_dir = get_sessions_dir(project_path)
+    if not sessions_dir.exists():
+        return []
+    out: list[dict[str, Any]] = []
+    for sdir in sorted(sessions_dir.iterdir()):
+        if not sdir.is_dir():
+            continue
+        spec = sdir / "spec.md"
+        if not spec.exists():
+            continue
+        fm = _parse_frontmatter(spec.read_text(encoding="utf-8"))
+        info: dict[str, Any] = {
+            "session_id": sdir.name,
+            "session_dir": str(sdir),
+            "status": fm.get("status", STATUS_PENDING),
+            "step": fm.get("step", ""),
+            "started_at": fm.get("started_at", ""),
+            "updated_at": fm.get("updated_at", ""),
+        }
+        # Age (hours) since updated_at, or started_at if no update yet
+        ts = info["updated_at"] or info["started_at"]
+        if ts:
+            try:
+                t = datetime.strptime(ts, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=UTC)
+                info["age_hours"] = (datetime.now(UTC) - t).total_seconds() / 3600
+            except ValueError:
+                info["age_hours"] = None
+        else:
+            info["age_hours"] = None
+        out.append(info)
+    return out
+
+
+def mark_abandoned(session_dir: str) -> None:
+    """Flip a session's spec.md status to 'abandoned'.
+
+    Used by cleanup() to mark sessions stuck in awaiting_input past TTL.
+    Not destructive: files are preserved for audit, only frontmatter changes.
+    """
+    spec = Path(session_dir) / "spec.md"
+    if not spec.exists():
+        return
+    content = spec.read_text(encoding="utf-8")
+    content = re.sub(
+        r"(?m)^status:.*$", f"status: {STATUS_ABANDONED}", content, count=1
+    )
+    spec.write_text(content, encoding="utf-8")
+
+
+def find_abandoned_sessions(
+    project_path: str, ttl_hours: int = 24
+) -> list[dict[str, Any]]:
+    """Return sessions in awaiting_input older than ttl_hours."""
+    sessions = list_sessions(project_path)
+    return [
+        s for s in sessions
+        if s["status"] == STATUS_AWAITING_INPUT
+        and s["age_hours"] is not None
+        and s["age_hours"] > ttl_hours
+    ]
+
+
+# --- generation cursor helpers (per-file resumability) ---
+
+
+def save_generation_cursor(
+    session_dir: str,
+    *,
+    target_files: list[str],
+    current_index: int,
+    completed_files: list[str],
+    files_filter: list[str] | None = None,
+    deferred: list[dict[str, Any]] | None = None,
+) -> Path:
+    """Persist progress through the generate per-file loop.
+
+    files_filter: the original `--files` patterns, so `resume` can replay
+      the exact same scope instead of recomputing target_files from gaps.
+    deferred: files awaiting human input, as dicts with at least
+      source_file / class_name / reason (+ test_path for compile fixes,
+      so a `fixed_code` answer can be applied without regenerating).
+    """
+    path = Path(session_dir) / GENERATION_CURSOR_FILENAME
+    payload: dict[str, Any] = {
+        "target_files": target_files,
+        "current_index": current_index,
+        "completed_files": completed_files,
+        "updated_at": _now_iso(),
+    }
+    if files_filter is not None:
+        payload["files_filter"] = files_filter
+    if deferred is not None:
+        payload["deferred"] = deferred
+    path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    return path
+
+
+def load_generation_cursor(session_dir: str) -> dict[str, Any] | None:
+    """Read the cursor, or None if no resume state exists."""
+    path = Path(session_dir) / GENERATION_CURSOR_FILENAME
+    if not path.exists():
+        return None
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return None
+
+
+def clear_generation_cursor(session_dir: str) -> None:
+    """Drop the cursor file once generate has run to completion."""
+    path = Path(session_dir) / GENERATION_CURSOR_FILENAME
+    if path.exists():
+        path.unlink()
+
+
 # --- Private helpers ---
 
 def _now_iso() -> str:
@@ -395,6 +788,15 @@ def _update_spec_progress(session_dir: Path, step_name: str, status: str, timest
 
     if status in (STATUS_COMPLETED, STATUS_FAILED) and step_name == "validation":
         new_content = re.sub(r"(?<=status: )\S+", status, new_content)
+    elif status == STATUS_AWAITING_INPUT:
+        # Session-level status must reflect the pause so cleanup/doctor can
+        # find paused sessions by scanning spec.md alone.
+        new_content = re.sub(r"(?<=status: )\S+", STATUS_AWAITING_INPUT, new_content, count=1)
+    elif status == STATUS_IN_PROGRESS:
+        # A resumed step lifts the session out of awaiting_input
+        new_content = re.sub(
+            rf"(?<=status: ){STATUS_AWAITING_INPUT}\b", STATUS_IN_PROGRESS, new_content, count=1
+        )
 
     spec_path.write_text(new_content, encoding="utf-8")
 
@@ -441,6 +843,42 @@ def write_project_analysis(project_path: str, content: str, data: dict[str, Any]
 
     analysis_path.write_text(md, encoding="utf-8")
     return analysis_path
+
+
+def get_session_technology(session_dir: Path) -> str:
+    """Read the technology field from session spec.md frontmatter.
+
+    Args:
+        session_dir: Path to the session directory.
+
+    Returns:
+        Technology identifier string. Returns 'java-spring' when the field
+        is absent (backward compatibility for existing sessions).
+    """
+    spec_path = Path(session_dir) / "spec.md"
+    if not spec_path.exists():
+        return "java-spring"
+    frontmatter = _parse_frontmatter(spec_path.read_text(encoding="utf-8"))
+    return frontmatter.get("technology", "java-spring")
+
+
+def set_session_technology(session_dir: Path, technology: str) -> None:
+    """Write the technology field to session spec.md frontmatter.
+
+    Args:
+        session_dir: Path to the session directory.
+        technology: Technology identifier to write (e.g. 'java-spring').
+    """
+    spec_path = Path(session_dir) / "spec.md"
+    if not spec_path.exists():
+        return
+    content = spec_path.read_text(encoding="utf-8")
+    if re.search(r"^technology:", content, re.MULTILINE):
+        content = re.sub(r"(?m)^technology:.*$", f"technology: {technology}", content)
+    else:
+        # Insert before the closing --- of the frontmatter block
+        content = re.sub(r"\n---\n\n", f"\ntechnology: {technology}\n---\n\n", content, count=1)
+    spec_path.write_text(content, encoding="utf-8")
 
 
 def read_project_analysis_data(project_path: str) -> dict[str, Any] | None:

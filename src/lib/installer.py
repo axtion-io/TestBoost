@@ -21,10 +21,6 @@ import stat
 from pathlib import Path
 from typing import Any
 
-# Template placeholders
-TESTBOOST_ROOT_PLACEHOLDER = "{{TESTBOOST_ROOT}}"
-SCRIPT_PATH_PLACEHOLDER = "scripts/tb-"
-
 VALID_SHELL_TYPES = ("bash", "powershell")
 
 

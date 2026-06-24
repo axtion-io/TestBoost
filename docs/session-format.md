@@ -1,22 +1,24 @@
 # Session Format
 
-TestBoost tracks all state in markdown files inside a `.testboost/` directory created in your Java project. No database is needed.
+TestBoost tracks all state in markdown files inside a `.testboost/` directory created in your project. No database is needed.
 
 ## Directory Structure
 
 ```
-your-java-project/
+your-project/
 +-- .testboost/
 |   +-- config.yaml                       # Project-level settings
 |   +-- analysis.md                       # Project-level class index (shared across sessions)
 |   +-- .gitignore                        # Ignores large log files
 |   +-- .tb_secret                        # Integrity token secret (git-ignored)
-|   +-- scripts/                          # Wrapper scripts (created by install)
+|   +-- scripts/                          # Wrapper scripts (created by install; .ps1 on Windows)
 |   |   +-- tb-init.sh
 |   |   +-- tb-analyze.sh
 |   |   +-- tb-gaps.sh
 |   |   +-- tb-generate.sh
 |   |   +-- tb-validate.sh
+|   |   +-- tb-mutate.sh
+|   |   +-- tb-killer.sh
 |   |   +-- tb-status.sh
 |   |   +-- tb-verify.sh
 |   +-- sessions/
@@ -26,24 +28,30 @@ your-java-project/
 |       |   +-- coverage-gaps.md          # Gap analysis
 |       |   +-- generation.md             # Test generation results
 |       |   +-- validation.md             # Compilation + test results
+|       |   +-- question.json             # Pending HITL question (only while paused)
+|       |   +-- answer.json.consumed      # Last consumed answer (after a resume)
+|       |   +-- generation_cursor.json    # Per-file resume cursor (cleared on completion)
 |       |   +-- logs/
 |       |       +-- 2026-03-09.md         # Daily execution log
 |       +-- 002-test-generation/          # Second session (if any)
 |           +-- ...
 ```
 
+The three JSON files implement the human-in-the-loop pause/resume cycle —
+see [Async CI Integration](./ci-async-integration.md).
+
 ## Project-Level Analysis File
 
 `.testboost/analysis.md` is created by `analyze` and **shared across all sessions**. It contains:
 
-- A full class index for every Java source file (class name, package, category, extends/implements, annotations, fields with exact types, public methods)
-- Up to 3 representative test examples extracted from the project (one service, one controller, one repository)
+- A full index of source files (for Java: class name, package, category, extends/implements, annotations, fields with exact types, public methods)
+- Up to 3 representative test examples extracted from the project
 - Detected test conventions
-- Maven compile and test commands
+- Compile and test commands for the project's build tool
 
-This file persists between runs of `analyze`. The `generate` command reads it to give the LLM precise context about the whole project — not just the class being tested.
+This file persists between runs of `analyze`. The `generate` command reads it to give the LLM precise context about the whole project — not just the file being tested.
 
-The **session-level** `analysis.md` (under `sessions/<id>/`) is intentionally lightweight: it only stores Maven command overrides (`maven_compile_cmd`, `maven_test_cmd`). Edit those values to add profiles (`-P`) or properties (`-D`) that are specific to this session, without affecting other sessions.
+The **session-level** `analysis.md` (under `sessions/<id>/`) is intentionally lightweight: it only stores build command overrides (`maven_compile_cmd`, `maven_test_cmd`). Edit those values to add profiles (`-P`) or properties (`-D`) that are specific to this session, without affecting other sessions.
 
 See [Architecture](./architecture.md#project-level-analysis) for the full design rationale.
 
@@ -81,8 +89,8 @@ completed_at: 2026-03-09T10:05:23Z
 
 | Field | Values | Description |
 |-------|--------|-------------|
-| `status` | `pending`, `in_progress`, `completed`, `failed` | Current step status |
-| `step` | `analysis`, `coverage-gaps`, `generation`, `validation` | Step name |
+| `status` | `pending`, `in_progress`, `completed`, `failed`, `awaiting_input`, `abandoned` | Current step status. `awaiting_input` = paused on a HITL question (also reflected in `spec.md` so `cleanup` can find stale pauses); `abandoned` = flipped by `cleanup` past the TTL |
+| `step` | `analysis`, `coverage-gaps`, `generation`, `validation`, `mutation`, `killer-tests` | Step name |
 | `started_at` | ISO 8601 timestamp | When the step started |
 | `updated_at` | ISO 8601 timestamp | Last update |
 | `completed_at` | ISO 8601 timestamp | When the step finished |
@@ -108,12 +116,13 @@ The `spec.md` file tracks overall session progress:
 
 ```markdown
 ---
-session_id: "001"
-session_name: test-generation
-created_at: 2026-03-09T10:00:00Z
+status: in_progress
+started_at: 2026-03-09T10:00:00Z
+step: generation
+technology: java-spring
 ---
 
-# Session 001 - Test Generation
+# Test Generation Session: 001-test-generation
 
 ## Progress
 
@@ -124,6 +133,10 @@ created_at: 2026-03-09T10:00:00Z
 | generation | in_progress | 2026-03-09T10:07:00Z | - |
 | validation | pending | - | - |
 ```
+
+The frontmatter `status` mirrors the active step (including
+`awaiting_input` while paused on a question); `technology` stores the
+plugin identifier.
 
 ## Log Files
 

@@ -20,9 +20,6 @@ Set at least one LLM API key:
 |----------|---------|-------------|
 | `MODEL` | `claude-sonnet-4-6` | LLM model to use (default provider is `anthropic`). Examples: `gemini-2.5-flash`, `openai/gpt-4o` |
 | `LLM_TIMEOUT` | `120` | Timeout in seconds for LLM requests |
-| `LANGSMITH_TRACING` | `false` | Enable LangSmith tracing for LLM observability |
-| `LANGSMITH_API_KEY` | -- | LangSmith API key (required if tracing is enabled) |
-| `LANGSMITH_PROJECT` | `testboost` | LangSmith project name |
 
 You can set these in a `.env` file at the TestBoost root.
 
@@ -73,6 +70,8 @@ Most commands accept these flags:
 |------|-------------|
 | `--verbose` / `-v` | Show detailed output during execution |
 | `--files FILE1 FILE2` | (generate only) Limit generation to specific source files |
-| `--no-llm` | (generate only) Use template-based generation instead of LLM |
 | `--name NAME` | (init only) Custom session name |
 | `--description TEXT` | (init only) Description of what to test and why |
+| `--tech IDENTIFIER` | (init only) Override auto-detected technology plugin (e.g. `java-spring`, `python-pytest`) |
+| `--min-score FLOAT` | (mutate only) Minimum mutation score threshold (default: 80) |
+| `--max-tests INT` | (killer only) Maximum number of killer tests to generate (default: 10) |

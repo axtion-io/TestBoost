@@ -314,6 +314,30 @@ Be clear about what protects what in the CI flow:
   failing push cannot print the token into CI logs.
 - The state/tests commits are pushed with `-o ci.skip` so they cannot
   trigger recursive pipelines.
+- **Fork MRs cannot resume a member's branch.** The resume pipeline runs
+  on `source_branch` *in the target project*, so the webhook ignores MRs
+  whose source project is not the target project (and MRs that are not
+  open), and `fetch-answer` refuses a MR whose source project/branch is
+  not the pipeline's. Without this, a fork whose branch merely shares the
+  name of a paused member branch could have its own answer applied and
+  pushed there.
+- **The jobs execute project code with the CI secrets in scope.**
+  `generate`/`validate`/`mutate` run `mvn` — i.e. the MR's `pom.xml`
+  plugins and the LLM-generated tests — in a job that also holds
+  `GITLAB_TOKEN` (api + write_repository), the LLM key and
+  `TESTBOOST_TB_SECRET`. Anyone who can push a branch (or hide a prompt
+  injection in the sources the LLM reads) can therefore reach those
+  secrets. Use a dedicated, ephemeral runner with restricted egress, a
+  Project Access Token scoped to this project only, and an LLM key with a
+  spending cap; do not run TestBoost on MRs from untrusted contributors.
+- **Pin the TestBoost version.** `TESTBOOST_PACKAGE` defaults to the
+  `main` branch: a change there runs in every consumer pipeline with its
+  secrets. Override it with a tag or commit SHA
+  (`git+https://…/TestBoost.git@<sha>`).
+- **Integrity tokens are a guardrail, not a proof.** `.tb_secret` lives in
+  the project directory that the driving LLM CLI can read, and a token
+  binds (step, session, timestamp) but not the step's output: a token
+  shows that the CLI printed it, not that an agent did not compute one.
 
 ## User test ("P4-USR")
 

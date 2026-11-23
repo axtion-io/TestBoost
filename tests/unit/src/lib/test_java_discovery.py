@@ -58,3 +58,16 @@ class TestFindExistingTests:
         found = find_existing_tests(str(java_project), get_registry().get("java-spring"), [user, order])
         # the fixture keeps its test one package up: found by name, not only by mirror path
         assert found == {user: "src/test/java/com/example/UserServiceTest.java"}
+
+
+class TestClassifyByName:
+    """Outside the conventional packages the suffix decides; gaps uses the
+    category to prioritise services/controllers."""
+
+    @pytest.mark.parametrize(("name", "expected"), [
+        ("OrderResource", "controller"), ("OrderServiceImpl", "service"), ("OrderDao", "repository"),
+        ("OrderMapper", "mapper"), ("AppConfiguration", "config"), ("DateUtils", "util"),
+        ("OrderBuilder", "builder"), ("OrderValidator", "validator"), ("Thing", "other"),
+    ])
+    def test_suffix(self, name, expected):
+        assert classify_source_file(f"src/main/java/com/acme/{name}.java") == expected

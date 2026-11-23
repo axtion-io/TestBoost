@@ -40,13 +40,11 @@ bash scripts/tb-killer.sh <project_path> --max-tests 15 --verbose
 
 - Reads surviving mutants from the mutation testing step
 - Groups mutants by class
-- When source code is available, uses LLM with a specialized prompt to generate targeted tests
-- Falls back to template-based generation with mutation-specific strategies:
-  - Boundary mutants → boundary value tests
-  - Negated conditionals → both-branches tests
-  - Return value mutants → exact value assertions
-  - Void method mutants → side-effect verification
-- Generated files are named `*KillerTest.java`
+- Uses the LLM with a specialized prompt (mutants + source code) to generate targeted tests
+- A class whose source file cannot be found (single- or multi-module layout), or for which
+  the LLM returns no `@Test`, is listed under **Skipped Classes** — no placeholder test is
+  ever written (it would not compile)
+- Generated files are named `*KillerTest.java`, in the module of the class under test
 
 ## Improvement Loop
 

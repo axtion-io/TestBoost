@@ -24,6 +24,10 @@
 #   ⚠️ Don't mark variables "protected" unless your MR source branches are
 #   protected — protected variables are NOT injected into pipelines on
 #   unprotected branches (the job then sees them empty).
+#   ⚠️ These jobs run `mvn` on the MR's code and on LLM-generated tests WITH
+#   the variables above in scope: anyone who can push a branch can read
+#   them. Use an isolated runner and scoped, capped credentials (see
+#   "Security notes" in docs/gitlab-integration.md).
 #
 # Optional variables (override the YAML defaults below):
 #   TESTBOOST_IMAGE       — job image. The default python:3.11-slim has NO
@@ -33,7 +37,8 @@
 #                           3.11+ and python3-venv (see the Dockerfile in
 #                           docs/gitlab-integration.md "Prerequisites").
 #   TESTBOOST_PACKAGE     — pip requirement for TestBoost. Defaults to the
-#                           GitHub repo at main; if your runners have no
+#                           GitHub repo at main — PIN a tag or commit SHA
+#                           (supply chain: main runs with your secrets); if your runners have no
 #                           GitHub egress, point it at your mirror:
 #                           git+https://<your-gitlab>/your-group/testboost.git@<tag>
 #   TESTBOOST_COMMIT_PATHS — workspace paths committed back to the MR branch

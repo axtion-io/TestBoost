@@ -20,7 +20,7 @@ Creates the `.testboost/` directory structure in your project and starts a new s
 
 **What it does:**
 - Verifies the project path exists
-- **Auto-detects** the project technology using the plugin registry (checks for `pom.xml`, `pyproject.toml`, `go.mod`, etc.)
+- **Auto-detects** the project technology using the plugin registry (`pom.xml`/`build.gradle` → java-spring, `pyproject.toml`/`setup.py`/`setup.cfg` → python-pytest; Java wins when both are present)
 - If `--tech <identifier>` is provided, uses that plugin directly instead of auto-detecting
 - Prints a notice if multiple technologies are detected (e.g. both `pom.xml` and `pyproject.toml`)
 - Creates `.testboost/config.yaml` with default settings
@@ -62,12 +62,15 @@ Scans the project to understand its structure, frameworks, and testing conventio
 
 **Command:** `python -m src.lib.cli gaps <project_path>`
 
-Identifies which source files are missing test coverage.
+Identifies which source files have no test file (file-level, not line coverage).
 
 **What it does:**
 - Reads the source file list from the analysis step
-- Scans for existing test files using technology-appropriate patterns
-- Matches source files to test files by name
+- Uses the session's technology plugin: a source is covered when the test it
+  would generate exists (`plugin.test_file_name()`), or when a test matching
+  the plugin's globs is named after it (`FooTest`/`FooTests`/`TestFoo` for Java,
+  `test_foo.py`/`foo_test.py` for Python). `analyze` uses the same rule for its
+  *Has Test* column.
 - Assigns priority: services and controllers are **high**, others are **medium**
 
 **Output:** `.testboost/sessions/<id>/coverage-gaps.md`
@@ -84,7 +87,8 @@ Generates unit tests for files identified as lacking coverage.
 - Uses the plugin's `prompt_template_dir` to load technology-specific prompts (Java prompts for Java projects, pytest prompts for Python projects)
 - Passes project conventions (naming, assertions, mocking) to the LLM prompt
 - Writes generated test files to the project
-- Runs compile-and-fix loop: compiles tests, sends errors to LLM for fixing, retries up to 3 times
+- Runs compile-and-fix loop: compiles tests, sends errors to LLM for fixing, within the `max_correction_retries` budget of `config.yaml` (default: 3 compile checks = up to 2 LLM fixes)
+- Java: runs the compiled test once (`mvn test -Dtest=<Class>`) and lets the LLM fix runtime failures once (`--no-runtime-fix` to skip)
 
 **Output:** `.testboost/sessions/<id>/generation.md` + test files on disk
 
@@ -137,7 +141,8 @@ Generates targeted tests to kill surviving mutants.
 
 **What it does:**
 - Reads surviving mutants from the mutation step
-- Generates killer tests via LLM
+- Generates killer tests via LLM (classes whose source can't be found, or with
+  no usable LLM answer, are reported as skipped — never templated)
 - Runs compile-and-fix loop on generated tests
 
 **Output:** `.testboost/sessions/<id>/killer-tests.md` + test files on disk

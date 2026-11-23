@@ -27,7 +27,6 @@ TestBoost is a Python toolkit that generates tests for software projects using L
 |  | Plugin System (src/lib/plugins/)            |  |
 |  |   JavaSpringPlugin -> src/java/*            |  |
 |  |   PythonPytestPlugin -> stdlib ast          |  |
-|  |   GoTestingPlugin (stub)                    |  |
 |  +---------------------+----------------------+  |
 |                         | calls                   |
 |  +---------------------v----------------------+  |
@@ -106,7 +105,6 @@ which used to overwrite production files with generated tests).
 **Registered plugins** (in `__init__.py`, priority order):
 1. `JavaSpringPlugin` — detects `pom.xml`, `build.gradle`, `build.gradle.kts`; delegates to `src.java.*`
 2. `PythonPytestPlugin` — detects `pyproject.toml`, `setup.py`, `setup.cfg`; uses stdlib `ast`
-3. `GoTestingPlugin` — detects `go.mod` (stub proving extensibility)
 
 **Adding a new plugin**: Create `src/lib/plugins/<name>.py` implementing `TechnologyPlugin`, add one `register()` call in `__init__.py`. No other files need to change.
 
@@ -164,10 +162,9 @@ See [Session Format](./session-format.md) for details.
 |----------------|---------------|
 | `get_plugin_for_session()` | `src/lib/plugins/` + `src/lib/session_tracker.py` |
 | `find_source_files()` | Routed through session plugin |
-| `classify_file()` | Routed through session plugin (fallback: `src/java/discovery.py`) |
+| `classify_file()` | Routed through session plugin |
 | `analyze_project_context()` | `src/test_generation/analyze.py` |
 | `detect_test_conventions()` | `src/test_generation/conventions.py` |
-| `find_test_for_source()` | `src/java/discovery.py` |
 | `build_class_index()` | `src/java/class_analyzer.py` |
 | `extract_test_examples()` | `src/java/class_analyzer.py` |
 | `generate_adaptive_tests()` | `src/test_generation/generate_unit.py` |
@@ -241,7 +238,6 @@ TestBoost/
 |   |   |   +-- __init__.py     # Plugin registration (priority order)
 |   |   |   +-- java_spring.py  # Java/Spring plugin
 |   |   |   +-- python_pytest.py # Python/pytest plugin
-|   |   |   +-- go_testing_stub.py # Go stub (extensibility demo)
 |   |   +-- llm.py              # LLM provider abstraction
 |   |   +-- maven_error_parser.py
 |   |   +-- prompt_utils.py     # Shared template load + render

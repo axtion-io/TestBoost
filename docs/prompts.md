@@ -82,7 +82,7 @@ Used by `MavenErrorParser.format_for_llm()` to produce a structured error report
 
 **File:** `src/prompts/testing/mutation_killer.md`
 
-Used by `_generate_killer_tests_llm()` in `killer_tests.py`. Replaces the static template-based killer test generation with LLM-powered tests that use real parameter values computed from the source code.
+Used by `_generate_killer_tests_llm()` in `killer_tests.py`: LLM-powered tests that use real parameter values computed from the source code. There is no template fallback (placeholder tests do not compile); unresolvable classes are reported as skipped.
 
 | Placeholder | Description |
 |-------------|-------------|

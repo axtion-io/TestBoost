@@ -4,7 +4,7 @@
 
 - **Python 3.11+**
 - **Git**
-- **Build tool** for your project: Maven/Gradle (Java), pytest (Python), or go test (Go)
+- **Build tool** for your project: Maven (Java — Gradle projects are detected but compiled with Maven commands) or pytest (Python)
 - **LLM API key** -- at least one of: Google Gemini, Anthropic Claude, or OpenAI
 
 You do **not** need Docker, PostgreSQL, or any database.
@@ -164,7 +164,7 @@ your-project/
 |           +-- validation.md
 |           +-- logs/
 +-- src/
-+-- pom.xml (or pyproject.toml, go.mod, etc.)
++-- pom.xml (or pyproject.toml, setup.py, setup.cfg)
 ```
 
 Generated test files are written directly to the appropriate test directory in your project (e.g. `src/test/java/...` for Java, `tests/...` for Python). Review them before committing.

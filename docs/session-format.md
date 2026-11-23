@@ -159,10 +159,6 @@ Logs are appended throughout the session. The `--verbose` flag on CLI commands a
 Project-level configuration created during `init`:
 
 ```yaml
-coverage_target: 80
-max_complexity: 20
-mock_framework: mockito
-assertion_library: assertj
 max_correction_retries: 3
 test_timeout_seconds: 300
 ```

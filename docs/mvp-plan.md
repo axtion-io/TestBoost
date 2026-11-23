@@ -29,10 +29,10 @@
   Acceptance: round-trip < 5 min, recorded 5-minute screencast usable
   for onboarding. **Next step: find a volunteer dev with a real GitLab
   project.**
-- **E2E suite** (cross-cutting): `tests/e2e/` is an empty placeholder —
-  the old e2e file tested deleted agent modules and was removed. Add
-  fixtures that cross the seams unit tests mock (cross-pipeline state,
-  GitLab variables, script distribution).
+- **E2E suite** (cross-cutting): `tests/e2e/test_workflow_e2e.py` now runs
+  init → analyze → gaps → generate with only the LLM and Maven faked. Still
+  missing: fixtures crossing the CI seams (cross-pipeline state, GitLab
+  variables, script distribution) and a run against a real Maven/PIT build.
 - GitLab.com vs Self-Managed validation (both must run the template).
 
 ## Key decisions (user-validated)

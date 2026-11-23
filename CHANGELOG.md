@@ -36,7 +36,37 @@ GitLab CI template to the new tag.
   the whole repo, and a packaging sanity job (wheel built and
   smoke-tested in a clean venv).
 
+### Security
+- Resume webhook and `gitlab fetch-answer` refuse fork MRs and MRs of
+  another branch (a fork branch named like a paused member branch could
+  resume and push to it with the fork author's answer).
+- Generated / killer / validate-fix test writes are confined to the project;
+  PIT class names are validated before becoming paths.
+- `.tb_secret` is created `0600`; `.testboost/.gitignore` entries are
+  idempotent (the logs entry was lost when CI seeded the secret first).
+- CI security model documented (project code runs with the CI secrets in
+  scope; pin `TESTBOOST_PACKAGE`; integrity tokens are a guardrail).
+
 ### Fixed
+- `pom.xml` parsing on real (namespaced) POMs: java.version, coordinates
+  and `activeByDefault` profiles were silently lost (falsy-Element bug).
+- `spring-boot-starter-test` implies Mockito/AssertJ: the prompt told the
+  LLM "Mockito is NOT available" on standard Spring Boot projects.
+- `gaps` uses the session plugin's test naming (shared with `analyze`):
+  `TestDataBuilder` looked untested and its test was overwritten; every
+  Python file was reported untested.
+- Convention detection: `@Nested`/`@ParameterizedTest` never reached the
+  prompt (wrong key); the dominant naming pattern was always camelCase.
+- Controller prompt sent a literal `{class_name}` to the LLM.
+- Compile fixes use the plugin's prompt (pytest prompt was never used) and
+  strip fences of any language (` ```python ` left `python` in the code).
+- `validate`: a compile timeout crashed with UnboundLocalError.
+- `killer`: no non-compiling template fallback; skipped classes reported;
+  multi-module source lookup.
+- Python plugin classified files relative to the CWD.
+- `config.yaml` is read: `max_correction_retries`, `test_timeout_seconds`
+  (the four keys nothing read are no longer written).
+- `install` ships the `mutate`, `killer` and `verify` commands.
 - Plugin prompt resolution: `generate` crashed on a doubled
   `config/prompts/config/prompts/...` path whenever a plugin supplied its
   prompt directory (introduced with the plugin system, masked by mocked
@@ -49,6 +79,12 @@ GitLab CI template to the new tag.
   CI logs.
 
 ### Removed
+- Go stub plugin (it handled `go.mod` projects with the Java prompts).
+- Dead code found in review: logging taxonomy and unused helpers, unread
+  settings (`debug`, `log_level`, `max_retries`), `consume_answer`,
+  unreachable generation fallbacks, fake `estimated_coverage` metric.
+- Tests that tested nothing (mocked "load tests", `assert callable(...)`,
+  assertions on literal dicts) and the duplicate `ci-tests.yml` workflow.
 - Dead survivors of the 001 simplification: the orphaned agent workflow,
   broken e2e suite, server-era config fields, Prometheus/Grafana/
   Alertmanager configs, LangSmith settings, and ~1,900 lines of

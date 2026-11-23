@@ -47,7 +47,7 @@ bash scripts/tb-generate.sh <project_path> --files ServiceA.java ServiceB.java
 
 ## Auto-correction
 
-If compilation fails during generation, the system retries up to 3 times with error feedback to the LLM. This happens automatically within the generation step.
+If compilation fails during generation, the errors are fed back to the LLM. The budget is `max_correction_retries` compile checks (default 3, i.e. up to 2 LLM fixes) from `.testboost/config.yaml`. Once the test compiles, it is run once (`mvn test -Dtest=<Class>`) and runtime failures get one LLM fix (`--no-runtime-fix` to skip). This happens automatically within the generation step.
 
 ## Output
 

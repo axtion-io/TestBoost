@@ -25,42 +25,31 @@ You can set these in a `.env` file at the TestBoost root.
 
 ## Project Configuration (config.yaml)
 
-When you run `testboost init`, a `config.yaml` file is created in your Java project at `.testboost/config.yaml`. This file controls test generation behavior for that project.
-
-### Default Settings
+`testboost init` creates `.testboost/config.yaml` in your project. It holds the
+budgets of the generation loops — the only two settings TestBoost reads:
 
 ```yaml
-coverage_target: 80
-max_complexity: 20
-mock_framework: mockito
-assertion_library: assertj
 max_correction_retries: 3
 test_timeout_seconds: 300
 ```
 
-### Settings Reference
+| Setting | Default | Read by | Description |
+|---------|---------|---------|-------------|
+| `max_correction_retries` | `3` | `generate`, `killer` | Compile checks per generated test; at most `N - 1` LLM fixes run (a developer hint caps it to one fix) |
+| `test_timeout_seconds` | `300` | `generate` (runtime check), `validate` | Timeout of one test run (`mvn test`, `pytest`) |
 
-| Setting | Default | Description |
-|---------|---------|-------------|
-| `coverage_target` | `80` | Target code coverage percentage for generated tests |
-| `max_complexity` | `20` | Maximum cyclomatic complexity threshold for analysis |
-| `mock_framework` | `mockito` | Mocking framework to use in generated tests |
-| `assertion_library` | `assertj` | Assertion library to use (`assertj`, `junit`, `hamcrest`) |
-| `max_correction_retries` | `3` | Number of auto-correction retries during generation |
-| `test_timeout_seconds` | `300` | Maven test execution timeout in seconds |
+Unknown keys, non-integer or non-positive values are ignored (the default
+applies), so a typo never breaks a run.
 
-### Customizing for Your Project
+Test *style* is not configured: `analyze` detects your project's conventions
+(naming pattern, assertion library, Mockito vs `@MockBean`, `@Nested`,
+`@ParameterizedTest`) and the test dependencies declared in `pom.xml`
+(JUnit 4/5, Mockito, AssertJ — implied by `spring-boot-starter-test`), and the
+generation prompt follows them.
 
-Edit `.testboost/config.yaml` after initialization to match your project's preferences:
-
-```yaml
-# Example: project using Hamcrest assertions with strict coverage
-coverage_target: 90
-assertion_library: hamcrest
-test_timeout_seconds: 600
-```
-
-TestBoost also detects your project's existing conventions during the `analyze` step (naming patterns, assertion styles, mocking usage) and uses them when generating tests. Manual configuration is only needed to override or supplement the auto-detected settings.
+Build flags (Maven profiles, `-D` properties) are set per session in
+`sessions/<id>/analysis.md` (`maven_compile_cmd` / `maven_test_cmd`);
+`activeByDefault` profiles and `.mvn/maven.config` are picked up automatically.
 
 ## CLI Options
 

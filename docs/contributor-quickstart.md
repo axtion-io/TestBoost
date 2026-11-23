@@ -113,7 +113,6 @@ TestBoost/
 |   |   |   +-- registry.py     # PluginRegistry
 |   |   |   +-- java_spring.py  # Java/Spring plugin
 |   |   |   +-- python_pytest.py # Python/pytest plugin
-|   |   |   +-- go_testing_stub.py # Go stub (extensibility demo)
 |   |   +-- llm.py              # LLM provider abstraction
 |   |   +-- maven_error_parser.py
 |   |   +-- prompt_utils.py     # Shared template load + render

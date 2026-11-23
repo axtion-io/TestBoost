@@ -120,3 +120,33 @@ class TestConventionsReachThePrompt:
         assert "**Uses @Nested classes**: yes" in prompt
         assert "**Uses @ParameterizedTest**: yes" in prompt
         assert "**Naming pattern**: should" in prompt
+
+
+class TestStyleDetection:
+    @pytest.mark.parametrize(("imports", "body", "style"), [
+        ("import static org.hamcrest.MatcherAssert.assertThat;", "assertThat(a, is(b));", "hamcrest"),
+        ("import static org.junit.jupiter.api.Assertions.*;", "assertEquals(1, x); assertTrue(y);", "junit_assertions"),
+        ("import static com.google.common.truth.Truth.assertThat;", "assertThat(x).isTrue();", "truth"),
+    ])
+    @pytest.mark.asyncio
+    async def test_dominant_assertion_style(self, tmp_path, imports, body, style):
+        (tmp_path / "pom.xml").write_text("<project/>")
+        test = tmp_path / "src/test/java/a/XTest.java"
+        test.parent.mkdir(parents=True)
+        test.write_text(f"{imports}\nclass XTest {{\n @Test\n void given_a_when_b_then_c() {{ {body} }}\n}}")
+        result = json.loads(await detect_test_conventions(str(tmp_path)))
+        assert result["assertions"]["dominant_style"] == style
+        assert result["naming"]["dominant_pattern"] == "given_when_then"
+        assert result["naming"]["uses_snake_case"] is True
+
+    @pytest.mark.asyncio
+    async def test_spring_mock_bean_and_inline_mocks(self, tmp_path):
+        (tmp_path / "pom.xml").write_text("<project/>")
+        test = tmp_path / "src/test/java/a/WebTest.java"
+        test.parent.mkdir(parents=True)
+        test.write_text("class WebTest { @MockBean Svc s; Repo r = Mockito.mock(Repo.class); "
+                        "@Test void testGet() { verify(r).find(); } }")
+        mocking = json.loads(await detect_test_conventions(str(tmp_path)))["mocking"]
+        assert mocking["uses_mockito"] is True
+        assert mocking["uses_spring_mock_bean"] is True
+        assert mocking["prefers_annotations"] is False

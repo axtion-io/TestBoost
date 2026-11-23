@@ -106,6 +106,41 @@ class TestPythonGenerationDoesNotClobberSources:
         assert "| `app.py` | `app.py` |" not in gen_md
 
 
+class TestPythonValidate:
+    """validate runs the plugin's per-file commands (py_compile, then pytest
+    on each generated file) — for real, no subprocess mock."""
+
+    async def _validate(self, project):
+        from src.lib.cli import _cmd_validate_async
+        return await _cmd_validate_async(argparse.Namespace(project_path=str(project), verbose=False))
+
+    def _validation_md(self, project):
+        from src.lib.session_tracker import get_current_session
+        return (Path(get_current_session(str(project))["session_dir"]) / "validation.md").read_text()
+
+    @pytest.mark.asyncio
+    async def test_generated_tests_compile_and_pass(self, python_project):
+        assert await _run_pipeline(python_project) == 0
+        (python_project / "tests/services/test_user_service.py").write_text("def test_ok():\n    pass\n")
+        assert await self._validate(python_project) == 0
+        report = self._validation_md(python_project)
+        assert "## Compilation: PASSED" in report and "## Tests: PASSED" in report
+
+    @pytest.mark.asyncio
+    async def test_syntax_error_fails_compilation_for_that_file(self, python_project):
+        assert await _run_pipeline(python_project) == 0
+        (python_project / "tests/test_app.py").write_text("def test_app(:\n")
+        assert await self._validate(python_project) == 1
+        assert "## Compilation: FAILED (`tests/test_app.py`)" in self._validation_md(python_project)
+
+    @pytest.mark.asyncio
+    async def test_one_failing_file_fails_the_run(self, python_project):
+        assert await _run_pipeline(python_project) == 0
+        (python_project / "tests/test_app.py").write_text("def test_app():\n    assert 1 == 2\n")
+        assert await self._validate(python_project) == 1
+        assert "## Tests: FAILED" in self._validation_md(python_project)
+
+
 class TestSafeTestTarget:
     def test_refuses_source_target_collision(self, tmp_path):
         from src.lib.commands.generate_cmd import _safe_test_target

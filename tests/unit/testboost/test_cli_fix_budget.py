@@ -132,3 +132,59 @@ class TestValidateTimeouts:
         content = (session_dir / "validation.md").read_text()
         assert f"status: {STATUS_FAILED}" in content
         assert "mvn test-compile" in content
+
+
+class _RecordingLogger:
+    def __init__(self):
+        self.warnings: list[str] = []
+
+    def warn(self, msg):
+        self.warnings.append(msg)
+
+    def __getattr__(self, _name):
+        return lambda *a, **k: None
+
+
+class TestCompileFailuresNotCausedByTheTest:
+    @pytest.mark.asyncio
+    async def test_project_config_error_is_not_sent_to_the_llm(self, tmp_path):
+        """Maven fails without naming the generated test (missing profile,
+        corporate repo…): no LLM fix, and the user is told where to set the
+        Maven flags (analysis.md maven_compile_cmd)."""
+        logger = _RecordingLogger()
+        fix = AsyncMock()
+        broken_build = MagicMock(returncode=1, stdout="", stderr="[ERROR] Non-resolvable parent POM")
+        with patch("src.lib.bridge.fix_compilation_errors", new=fix), \
+             patch("subprocess.run", return_value=broken_build):
+            code, exhausted = await _attempt_compile_fix(
+                str(tmp_path), tmp_path / "OrderServiceTest.java", "code", "OrderService",
+                logger, session_dir=str(tmp_path / "s1"),
+            )
+        fix.assert_not_called()
+        assert (code, exhausted) == ("code", None)
+        text = "\n".join(logger.warnings)
+        assert "maven_compile_cmd" in text and str(tmp_path / "s1" / "analysis.md") in text
+        assert "Non-resolvable parent POM" in text
+
+    @pytest.mark.asyncio
+    async def test_missing_maven_skips_the_check(self, tmp_path):
+        logger = _RecordingLogger()
+        with patch("subprocess.run", side_effect=FileNotFoundError("mvn")):
+            code, exhausted = await _attempt_compile_fix(
+                str(tmp_path), tmp_path / "XTest.java", "code", "X", logger,
+            )
+        assert (code, exhausted) == ("code", None)
+        assert any("Compile check skipped" in w for w in logger.warnings)
+
+    @pytest.mark.asyncio
+    async def test_invalid_maven_command_override_falls_back_to_mvn(self, tmp_path):
+        """analysis.md is user-editable: a non-Maven binary is refused."""
+        logger = _RecordingLogger()
+        ok = MagicMock(returncode=0, stdout="", stderr="")
+        with patch("subprocess.run", return_value=ok) as run:
+            await _attempt_compile_fix(
+                str(tmp_path), tmp_path / "XTest.java", "code", "X", logger,
+                maven_compile_cmd="rm -rf /",
+            )
+        assert run.call_args.args[0][1] == "test-compile"
+        assert any("Invalid maven_compile_cmd" in w for w in logger.warnings)

@@ -54,3 +54,60 @@ class TestAnalyzeProjectContext:
         result = json.loads(await analyze_project_context(str(tmp_path)))
         assert result["success"] is True
         assert result["build_system"] == "unknown"
+
+
+def _java(root, rel, body):
+    path = root / rel
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(body)
+
+
+class TestMultiModuleAndFrameworks:
+    @pytest.mark.asyncio
+    async def test_multi_module_sources_tests_and_frameworks(self, tmp_path):
+        (tmp_path / "pom.xml").write_text("<project/>")
+        for module in ("api", "core"):
+            (tmp_path / module).mkdir()
+            (tmp_path / module / "pom.xml").write_text("<project/>")
+        _java(tmp_path, "api/src/main/java/a/Resource.java",
+              "package a;\nimport jakarta.ws.rs.GET;\nimport io.quarkus.runtime.Startup;\nclass Resource {}")
+        _java(tmp_path, "core/src/main/java/c/Repo.java",
+              "package c;\nimport jakarta.persistence.Entity;\nimport org.hibernate.Session;\nclass Repo {}")
+        _java(tmp_path, "core/src/test/java/c/RepoTest.java",
+              "package c;\nimport org.junit.jupiter.api.Test;\nimport org.testcontainers.Testcontainers;\n"
+              "import static org.assertj.core.api.Assertions.*;\n@DataJpaTest class RepoTest {}")
+
+        result = json.loads(await analyze_project_context(str(tmp_path)))
+
+        assert result["source_structure"]["class_count"] == 2
+        assert result["source_structure"]["packages"] == ["a", "c"]
+        assert result["test_structure"] == {
+            "test_sources": [str(tmp_path / "core/src/test/java")],
+            "test_count": 1, "test_packages": ["c"],
+        }
+        assert result["frameworks"] == ["hibernate", "jax-rs", "jpa", "quarkus"]
+        assert result["project_type"] == "quarkus"
+        assert result["test_frameworks"] == ["assertj", "junit5", "spring-test-slices", "testcontainers"]
+
+    @pytest.mark.asyncio
+    async def test_gradle_java_version(self, tmp_path):
+        (tmp_path / "build.gradle").write_text("sourceCompatibility = '21'\n")
+        result = json.loads(await analyze_project_context(str(tmp_path)))
+        assert result["java_version"] == "21"
+
+    @pytest.mark.asyncio
+    async def test_spring_boot_application_type(self, tmp_path):
+        (tmp_path / "pom.xml").write_text("<project/>")
+        _java(tmp_path, "src/main/java/a/App.java",
+              "package a;\nimport org.springframework.boot.SpringApplication;\n@SpringBootApplication class App {}")
+        _java(tmp_path, "src/test/java/a/AppTest.java", "import org.junit.Test;\nclass AppTest {}")
+        result = json.loads(await analyze_project_context(str(tmp_path)))
+        assert result["project_type"] == "spring-boot"
+        assert result["test_frameworks"] == ["junit4"]
+
+    @pytest.mark.asyncio
+    async def test_malformed_pom_is_reported_not_fatal(self, tmp_path):
+        (tmp_path / "pom.xml").write_text("<project><unclosed>")
+        result = json.loads(await analyze_project_context(str(tmp_path)))
+        assert result["success"] is True
+        assert "pom_parse_error" in result

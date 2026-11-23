@@ -75,8 +75,10 @@ class TestDetectTestConventions:
         result = json.loads(await detect_test_conventions(str(project)))
         assert result["success"] is True
         assert result["sample_size"] == 2
-        # camelCase naming dominates and should-methods are sampled
-        assert result["naming"]["dominant_pattern"] == "camelCase"
+        # shouldXxx naming dominates (the case style is reported separately:
+        # it used to win the "dominant pattern" vote on every project)
+        assert result["naming"]["dominant_pattern"] == "should"
+        assert result["naming"]["uses_snake_case"] is False
         assert any("should" in m for m in result["naming"]["sample_methods"])
         # assertj is the dominant assertion style
         assert result["assertions"]["dominant_style"] == "assertj"
@@ -85,5 +87,36 @@ class TestDetectTestConventions:
         assert result["mocking"]["uses_mockito"] is True
         assert result["mocking"]["prefers_annotations"] is True
         # @BeforeEach setup detected
-        assert result["setup"]["uses_setup"] is True
-        assert result["setup"]["patterns"]["before_each"] == 1
+        assert result["setup_patterns"]["uses_setup"] is True
+        assert result["setup_patterns"]["patterns"]["before_each"] == 1
+
+
+class TestConventionsReachThePrompt:
+    """The generate prompt reads conventions["setup_patterns"]: the detector
+    used to store them under "setup", so @Nested/@ParameterizedTest
+    conventions never reached the LLM."""
+
+    @pytest.mark.asyncio
+    async def test_nested_and_parameterized_are_announced(self, tmp_path):
+        from types import SimpleNamespace
+        from unittest.mock import AsyncMock, patch
+
+        from src.test_generation.generate_unit import _generate_test_code_with_llm
+
+        project = _make_java_project(tmp_path)
+        (project / "src/test/java/com/example/MoreTest.java").write_text(
+            "import org.junit.jupiter.api.Nested;\n@Nested class Inner {\n"
+            "  @ParameterizedTest void given_x_when_y_then_z(int v) {}\n}\n"
+        )
+        conventions = json.loads(await detect_test_conventions(str(project)))
+
+        llm = SimpleNamespace(ainvoke=AsyncMock(return_value=SimpleNamespace(
+            content="class T { @Test void t() {} }")))
+        context = {"class_name": "A", "package": "p", "class_type": "service", "methods": [],
+                   "dependencies": [], "conventions": conventions, "project_path": ""}
+        with patch("src.test_generation.generate_unit.get_llm", return_value=llm):
+            await _generate_test_code_with_llm(context, "class A {}")
+        prompt = llm.ainvoke.await_args.args[0]
+        assert "**Uses @Nested classes**: yes" in prompt
+        assert "**Uses @ParameterizedTest**: yes" in prompt
+        assert "**Naming pattern**: should" in prompt

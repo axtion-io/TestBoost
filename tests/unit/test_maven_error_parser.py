@@ -305,3 +305,31 @@ class TestMavenErrorParser:
         assert summary["total_errors"] == 5
         assert summary["errors_by_type"]["incompatible_types"] == 4
         assert summary["errors_by_type"]["cannot_find_symbol"] == 1
+
+
+class TestOtherJavacErrors:
+    """validation.md turns these into fix instructions (docs/workflow.md §5)."""
+
+    OUTPUT = (
+        "[ERROR] src/test/java/a/FooTest.java:[3,8] cannot find symbol\n"
+        "[ERROR] /p/src/test/java/a/BarTest.java:[12,20] secret has private access in a.Bar\n"
+        "[ERROR] /p/src/test/java/a/BazTest.java:[7,1] class, interface, enum, or record expected\n"
+    )
+
+    def test_each_error_is_classified_once(self):
+        errors = MavenErrorParser().parse(self.OUTPUT)
+        assert [(e.file_path.name, e.line, e.error_type) for e in errors] == [
+            ("FooTest.java", 3, "cannot_find_symbol"),
+            ("BarTest.java", 12, "private_access"),
+            ("BazTest.java", 7, "other"),
+        ]
+        private = errors[1]
+        assert private.symbol == "secret"
+        assert "ReflectionTestUtils" in private.suggestion
+
+    def test_llm_report_explains_each_kind(self):
+        parser = MavenErrorParser()
+        report = parser.format_for_llm(parser.parse(self.OUTPUT))
+        assert "**Issue**: Symbol not found" in report
+        assert "**Issue**: Private field access" in report
+        assert "class, interface, enum, or record expected" in report

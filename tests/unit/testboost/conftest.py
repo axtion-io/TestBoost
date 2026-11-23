@@ -2,23 +2,10 @@
 """Shared fixtures for the testboost CLI test suite."""
 
 import argparse
-import shutil
-from pathlib import Path
 
 import pytest
 
 from src.lib.cli import cmd_init
-
-# Path to the Java sample project fixture
-FIXTURE_DIR = Path(__file__).parent.parent.parent / "fixtures" / "java-sample-project"
-
-
-@pytest.fixture
-def java_project(tmp_path):
-    """Copy the Java sample project fixture to a temp directory."""
-    dest = tmp_path / "java-project"
-    shutil.copytree(FIXTURE_DIR, dest)
-    return dest
 
 
 @pytest.fixture

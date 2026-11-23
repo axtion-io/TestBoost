@@ -78,10 +78,6 @@ class MavenErrorParser:
             r"\[ERROR\]\s+(.+\.java):\[(\d+),(\d+)\]\s+cannot find symbol(?:\n|$)",
             re.MULTILINE,
         ),
-        "class_not_public": re.compile(
-            r"\[ERROR\]\s+(.+\.java):\[(\d+),(\d+)\]\s+(.+?)\s+is not public",
-            re.MULTILINE,
-        ),
         "generic_error": re.compile(
             r"\[ERROR\]\s+(.+\.java):\[(\d+),(\d+)\]\s+(.+?)(?:\n|$)",
             re.MULTILINE,

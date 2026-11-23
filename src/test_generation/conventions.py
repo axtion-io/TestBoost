@@ -7,7 +7,6 @@ mock patterns, and other testing conventions used in the project.
 
 import json
 import re
-from collections import Counter
 from pathlib import Path
 from typing import Any
 
@@ -40,7 +39,7 @@ async def detect_test_conventions(project_path: str, sample_size: int = 20) -> s
         # Strip leading **/ prefix if present — rglob already searches recursively
         glob_pattern = pattern.removeprefix("**/")
         test_files.extend(project_dir.rglob(glob_pattern))
-    test_files = list(set(test_files))[:sample_size]
+    test_files = sorted(set(test_files))[:sample_size]  # deterministic sample
 
     if not test_files:
         return json.dumps({"success": False, "error": "No test files found"})
@@ -51,10 +50,7 @@ async def detect_test_conventions(project_path: str, sample_size: int = 20) -> s
         "naming": await _analyze_naming_conventions(test_files),
         "assertions": await _analyze_assertion_styles(test_files),
         "mocking": await _analyze_mock_patterns(test_files),
-        "setup": await _analyze_setup_patterns(test_files),
-        "organization": await _analyze_test_organization(test_files),
-        "annotations": await _analyze_annotation_usage(test_files),
-        "documentation": await _analyze_documentation_patterns(test_files),
+        "setup_patterns": await _analyze_setup_patterns(test_files),
     }
 
     return json.dumps(conventions, indent=2)
@@ -64,6 +60,7 @@ async def _analyze_naming_conventions(test_files: list[Path]) -> dict[str, Any]:
     """Analyze test method naming conventions."""
     naming_patterns = {
         "should_when": 0,
+        "should": 0,
         "given_when_then": 0,
         "test_description": 0,
         "method_state_result": 0,
@@ -84,6 +81,8 @@ async def _analyze_naming_conventions(test_files: list[Path]) -> dict[str, Any]:
             for method in test_methods:
                 if "should" in method.lower() and "when" in method.lower():
                     naming_patterns["should_when"] += 1
+                elif method.startswith("should"):
+                    naming_patterns["should"] += 1
                 elif "given" in method.lower() and "then" in method.lower():
                     naming_patterns["given_when_then"] += 1
                 elif method.startswith("test"):
@@ -98,9 +97,12 @@ async def _analyze_naming_conventions(test_files: list[Path]) -> dict[str, Any]:
         except Exception:
             pass
 
-    # Determine dominant pattern
-    total = sum(naming_patterns.values())
-    dominant_pattern = max(naming_patterns, key=lambda k: naming_patterns[k]) if total > 0 else "unknown"
+    # Dominant NAMING pattern: the case-style counters are tallied for every
+    # method and must not compete with it (camelCase always won).
+    styles = ("should_when", "should", "given_when_then", "test_description", "method_state_result")
+    dominant_pattern = max(styles, key=lambda k: naming_patterns[k])
+    if naming_patterns[dominant_pattern] == 0:
+        dominant_pattern = "unknown"
 
     return {
         "dominant_pattern": dominant_pattern,
@@ -234,120 +236,3 @@ async def _analyze_setup_patterns(test_files: list[Path]) -> dict[str, Any]:
         "uses_nested": setup_patterns["nested_classes"] > 0,
         "uses_parameterized": setup_patterns["parameterized"] > 0,
     }
-
-
-async def _analyze_test_organization(test_files: list[Path]) -> dict[str, Any]:
-    """Analyze how tests are organized."""
-    organization: dict[str, int | float] = {
-        "avg_tests_per_file": 0.0,
-        "uses_display_name": 0,
-        "uses_tags": 0,
-        "groups_by_method": 0,
-        "groups_by_scenario": 0,
-    }
-
-    total_tests = 0
-
-    for test_file in test_files:
-        try:
-            content = test_file.read_text(encoding="utf-8", errors="replace")
-
-            # Count tests per file
-            test_count = content.count("@Test")
-            total_tests += test_count
-
-            if "@DisplayName" in content:
-                organization["uses_display_name"] += 1
-            if "@Tag" in content:
-                organization["uses_tags"] += 1
-
-        except Exception:
-            pass
-
-    if test_files:
-        organization["avg_tests_per_file"] = round(total_tests / len(test_files), 1)
-
-    return organization
-
-
-async def _analyze_annotation_usage(test_files: list[Path]) -> dict[str, Any]:
-    """Analyze common test annotations used."""
-    annotations: Counter[str] = Counter()
-
-    for test_file in test_files:
-        try:
-            content = test_file.read_text(encoding="utf-8", errors="replace")
-
-            # Find all annotations
-            found_annotations = re.findall(r"@(\w+)", content)
-            annotations.update(found_annotations)
-
-        except Exception:
-            pass
-
-    # Get most common test-related annotations
-    test_annotations = [
-        "Test",
-        "BeforeEach",
-        "AfterEach",
-        "BeforeAll",
-        "AfterAll",
-        "Mock",
-        "InjectMocks",
-        "MockBean",
-        "Spy",
-        "Captor",
-        "ParameterizedTest",
-        "ValueSource",
-        "CsvSource",
-        "MethodSource",
-        "DisplayName",
-        "Nested",
-        "Tag",
-        "Disabled",
-        "SpringBootTest",
-        "WebMvcTest",
-        "DataJpaTest",
-        "ExtendWith",
-    ]
-
-    relevant = {k: annotations[k] for k in test_annotations if k in annotations}
-
-    return {"common_annotations": dict(annotations.most_common(15)), "test_specific": relevant}
-
-
-async def _analyze_documentation_patterns(test_files: list[Path]) -> dict[str, Any]:
-    """Analyze test documentation patterns."""
-    documentation: dict[str, int | float] = {
-        "has_javadoc": 0,
-        "has_comments": 0,
-        "uses_display_name": 0,
-        "avg_display_name_length": 0.0,
-    }
-
-    display_name_lengths: list[int] = []
-
-    for test_file in test_files:
-        try:
-            content = test_file.read_text(encoding="utf-8", errors="replace")
-
-            if "/**" in content:
-                documentation["has_javadoc"] += 1
-            if "//" in content:
-                documentation["has_comments"] += 1
-
-            # Extract display names
-            display_names = re.findall(r'@DisplayName\s*\(\s*"([^"]+)"\s*\)', content)
-            if display_names:
-                documentation["uses_display_name"] += 1
-                display_name_lengths.extend(len(dn) for dn in display_names)
-
-        except Exception:
-            pass
-
-    if display_name_lengths:
-        documentation["avg_display_name_length"] = round(
-            sum(display_name_lengths) / len(display_name_lengths), 1
-        )
-
-    return documentation

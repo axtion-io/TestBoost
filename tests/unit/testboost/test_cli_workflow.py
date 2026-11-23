@@ -240,18 +240,66 @@ class TestCmdGaps:
         assert "status: completed" in content
         assert "WITHOUT tests" in content
 
+    @staticmethod
+    def _gaps_data(project):
+        session = get_current_session(str(project))
+        content = (Path(session["session_dir"]) / "coverage-gaps.md").read_text()
+        return _extract_json_field(content, "gaps"), _extract_json_field(content, "covered")
+
     @pytest.mark.asyncio
     async def test_gaps_recognizes_existing_tests(self, initialized_project):
+        """The fixture ships UserServiceTest.java: UserService is covered,
+        the two other classes are gaps."""
+        await setup_gaps(initialized_project, files=[USER_SERVICE, ORDER_SERVICE, USER_CONTROLLER])
+        gaps, covered = self._gaps_data(initialized_project)
+        assert covered == [USER_SERVICE]
+        assert gaps == [ORDER_SERVICE, USER_CONTROLLER]
+
+    @pytest.mark.asyncio
+    async def test_class_named_test_prefix_keeps_its_existing_test(self, initialized_project):
+        """Regression: `stem.replace("Test", "")` mapped TestDataBuilderTest to
+        `DataBuilder`, so TestDataBuilder looked untested and `generate`
+        overwrote the developer's TestDataBuilderTest.java."""
+        builder = "src/main/java/com/example/service/TestDataBuilder.java"
+        test = initialized_project / "src/test/java/com/example/service/TestDataBuilderTest.java"
+        test.parent.mkdir(parents=True, exist_ok=True)
+        test.write_text("class TestDataBuilderTest {}")
+        await setup_gaps(initialized_project, files=[builder, ORDER_SERVICE])
+        gaps, covered = self._gaps_data(initialized_project)
+        assert covered == [builder]
+        assert gaps == [ORDER_SERVICE]
+
+    @pytest.mark.asyncio
+    async def test_source_matching_a_test_glob_is_not_a_test(self, initialized_project):
+        """`Test*.java` matches the production class TestUtils.java: it must
+        not mark a `Utils` class as tested."""
+        utils = "src/main/java/com/example/service/Utils.java"
+        test_utils = "src/main/java/com/example/service/TestUtils.java"
+        await setup_gaps(initialized_project, files=[utils, test_utils])
+        gaps, _covered = self._gaps_data(initialized_project)
+        assert utils in gaps
+
+    @pytest.mark.asyncio
+    async def test_python_project_gaps_use_pytest_naming(self, tmp_path):
+        """workflow.md: gaps scans tests with technology-appropriate patterns.
+        A Java-only scan reported every Python file as untested, and generate
+        then overwrote the existing tests/test_*.py files."""
         from src.lib.cli import _cmd_gaps_async
-        await setup_gaps(initialized_project, files=[USER_SERVICE, ORDER_SERVICE, USER_CONTROLLER], run_gaps=False)
 
-        args = argparse.Namespace(project_path=str(initialized_project), verbose=False)
-        await _cmd_gaps_async(args)
+        project = tmp_path / "py"
+        (project / "app").mkdir(parents=True)
+        (project / "tests").mkdir()
+        (project / "pyproject.toml").write_text("[project]\nname='x'\n")
+        (project / "app" / "billing.py").write_text("def total(): return 1\n")
+        (project / "app" / "users.py").write_text("def get(): return 1\n")
+        (project / "tests" / "test_billing.py").write_text("def test_total(): pass\n")
+        cmd_init(argparse.Namespace(project_path=str(project), name=None, description="", tech="python-pytest"))
+        await setup_gaps(project, files=["app/billing.py", "app/users.py"], run_gaps=False)
 
-        session = get_current_session(str(initialized_project))
-        content = (Path(session["session_dir"]) / "coverage-gaps.md").read_text()
-        # UserService has UserServiceTest, should be covered
-        assert "Already Covered" in content or "UserService" in content
+        assert await _cmd_gaps_async(argparse.Namespace(project_path=str(project), verbose=False)) == 0
+        gaps, covered = self._gaps_data(project)
+        assert covered == ["app/billing.py"]
+        assert gaps == ["app/users.py"]
 
     @pytest.mark.asyncio
     async def test_gaps_without_analysis(self, initialized_project):

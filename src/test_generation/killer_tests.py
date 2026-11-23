@@ -1,10 +1,13 @@
 """
 Generate killer tests tool.
 
-Generates tests specifically designed to kill surviving mutants
-based on mutation testing analysis. Uses LLM with the mutation_killer
-prompt when source code is available, falls back to template-based
-generation otherwise.
+Generates tests specifically designed to kill surviving mutants based on
+mutation testing analysis, with the LLM and the mutation_killer prompt.
+
+There is deliberately NO template fallback: a placeholder test
+(`assertThat(result).isEqualTo(/* expected */)`) does not compile and breaks
+the whole test suite. A class whose source cannot be found, or for which the
+LLM returns no test, is reported as skipped instead.
 """
 
 import json
@@ -14,15 +17,23 @@ from typing import Any
 
 from src.lib.llm import get_llm
 from src.lib.logging import get_logger
-from src.lib.prompt_utils import load_prompt_template, render_template
+from src.lib.prompt_utils import (
+    extract_code_block,
+    load_prompt_template,
+    render_template,
+    response_text,
+)
 
 logger = get_logger(__name__)
+
+# A fully-qualified Java class name as PIT reports it (nested: Outer$Inner).
+# Anything else is refused before it is turned into a file path.
+_JAVA_CLASS_NAME = re.compile(r"^[A-Za-z_$][\w$]*(\.[A-Za-z_$][\w$]*)*$")
 
 
 async def generate_killer_tests(
     project_path: str,
     surviving_mutants: list[dict[str, Any]],
-    source_file: str | None = None,
     max_tests: int = 10,
     hints: dict[str, str] | None = None,
 ) -> str:
@@ -32,7 +43,6 @@ async def generate_killer_tests(
     Args:
         project_path: Path to the Java project root directory
         surviving_mutants: List of surviving mutants to target
-        source_file: Path to the source file with surviving mutants
         max_tests: Maximum number of killer tests to generate
         hints: Developer-provided guidance keyed by "ClassName.methodName"
             (or just "ClassName"); matching hints are appended to the LLM
@@ -61,19 +71,17 @@ async def generate_killer_tests(
 
     # Generate killer tests for each class
     generated_tests: list[dict[str, Any]] = []
+    skipped: list[dict[str, str]] = []
 
     for class_name, mutants in by_class.items():
-        # Find source file if not provided
-        src_path: Path | None
-        if source_file:
-            src_path = Path(source_file)
-        else:
-            src_path = _find_source_file(project_dir, class_name)
-
-        if src_path is not None and src_path.exists():
-            source_code = src_path.read_text(encoding="utf-8", errors="replace")
-        else:
-            source_code = None
+        if not _JAVA_CLASS_NAME.match(class_name):
+            skipped.append({"class": class_name, "reason": "invalid class name"})
+            continue
+        src_path = _find_source_file(project_dir, class_name)
+        if src_path is None or not src_path.exists():
+            skipped.append({"class": class_name, "reason": "source file not found"})
+            continue
+        source_code = src_path.read_text(encoding="utf-8", errors="replace")
 
         # Hints matching this class (keys are "ClassName.methodName" or
         # "ClassName", with either the simple or fully-qualified name)
@@ -84,20 +92,17 @@ async def generate_killer_tests(
             or k.startswith((f"{class_name}.", f"{simple_name}."))
         }
 
-        # Generate test code — use LLM when source is available, else fall back to template
-        if source_code:
-            test_code = await _generate_killer_tests_llm(
-                class_name, mutants, source_code, hints=class_hints or None
-            )
-        else:
-            test_code = _generate_killer_test_class(class_name, mutants, source_code)
-
-        test_file_path = _get_killer_test_path(project_dir, class_name)
+        test_code = await _generate_killer_tests_llm(
+            class_name, mutants, source_code, hints=class_hints or None
+        )
+        if test_code is None:
+            skipped.append({"class": class_name, "reason": "LLM returned no @Test method"})
+            continue
 
         generated_tests.append(
             {
                 "class": class_name,
-                "test_file": str(test_file_path),
+                "test_file": str(_get_killer_test_path(project_dir, class_name, src_path)),
                 "test_code": test_code,
                 "mutants_targeted": len(mutants),
             }
@@ -108,6 +113,7 @@ async def generate_killer_tests(
         "generated_tests": generated_tests,
         "total_tests": sum(t["mutants_targeted"] for t in generated_tests),
         "total_mutants_targeted": len(surviving_mutants[:max_tests]),
+        "skipped": skipped,
     }
 
     return json.dumps(results, indent=2)
@@ -118,8 +124,11 @@ async def _generate_killer_tests_llm(
     mutants: list[dict[str, Any]],
     source_code: str,
     hints: dict[str, str] | None = None,
-) -> str:
-    """Use LLM with mutation_killer prompt to generate targeted killer tests."""
+) -> str | None:
+    """Use LLM with mutation_killer prompt to generate targeted killer tests.
+
+    Returns None when the response contains no @Test method.
+    """
     parts = class_name.rsplit(".", 1)
     package = parts[0] if len(parts) > 1 else ""
     simple_name = parts[-1]
@@ -141,18 +150,11 @@ async def _generate_killer_tests_llm(
 
     llm = get_llm()
     response = await llm.ainvoke(prompt)
-    raw = response.content if hasattr(response, "content") else str(response)
-    code = str(raw) if not isinstance(raw, str) else raw
-
-    # Clean markdown fences
-    if "```java" in code:
-        code = code.split("```java")[1].split("```")[0].strip()
-    elif "```" in code:
-        code = code.split("```")[1].split("```")[0].strip()
+    code = extract_code_block(response_text(response))
 
     if "@Test" not in code:
-        logger.warning("llm_killer_fallback", class_name=class_name)
-        return _generate_killer_test_class(class_name, mutants, source_code)
+        logger.warning("llm_killer_no_test", class_name=class_name)
+        return None
 
     logger.info(
         "llm_killer_generation_success",
@@ -163,209 +165,33 @@ async def _generate_killer_tests_llm(
 
 
 def _find_source_file(project_dir: Path, class_name: str) -> Path | None:
-    """Find source file for a class."""
-    # Convert class name to file path
-    class_path = class_name.replace(".", "/") + ".java"
+    """Find the source file of a class (single- or multi-module Maven layout)."""
+    outer = class_name.split("$", 1)[0]  # nested classes live in the outer file
+    class_path = outer.replace(".", "/") + ".java"
 
-    # Search in common source directories
-    search_paths = [
-        project_dir / "src" / "main" / "java" / class_path,
-        project_dir / "src" / class_path,
-    ]
-
-    for path in search_paths:
-        if path.exists():
-            return path
-
-    return None
+    direct = project_dir / "src" / "main" / "java" / class_path
+    if direct.exists():
+        return direct
+    for candidate in sorted(project_dir.glob(f"**/src/main/java/{class_path}")):
+        if "target" not in candidate.relative_to(project_dir).parts:
+            return candidate
+    flat = project_dir / "src" / class_path
+    return flat if flat.exists() else None
 
 
-def _get_killer_test_path(project_dir: Path, class_name: str) -> Path:
-    """Generate killer test file path."""
-    # Convert class name to path
-    parts = class_name.split(".")
+def _get_killer_test_path(project_dir: Path, class_name: str, source_path: Path | None = None) -> Path:
+    """Killer test path, next to the module of the class under test.
+
+    `<module>/src/main/java/a/b/Foo.java` -> `<module>/src/test/java/a/b/FooKillerTest.java`.
+    """
+    outer = class_name.split("$", 1)[0]
+    parts = outer.split(".")
     parts[-1] = f"{parts[-1]}KillerTest.java"
-
-    return project_dir / "src" / "test" / "java" / Path(*parts)
-
-
-def _generate_killer_test_class(
-    class_name: str, mutants: list[dict[str, Any]], source_code: str | None
-) -> str:
-    """Generate killer test class for surviving mutants."""
-    # Extract package and simple class name
-    parts = class_name.rsplit(".", 1)
-    package = parts[0] if len(parts) > 1 else ""
-    simple_name = parts[-1]
-
-    # Build imports
-    imports = []
-    if package:
-        imports.append(f"package {package};")
-        imports.append("")
-
-    imports.extend(
-        [
-            "import org.junit.jupiter.api.Test;",
-            "import org.junit.jupiter.api.DisplayName;",
-            "import org.junit.jupiter.api.BeforeEach;",
-            "import static org.assertj.core.api.Assertions.*;",
-            "import static org.mockito.Mockito.*;",
-            "",
-        ]
-    )
-
-    # Build test class
-    test_class_name = f"{simple_name}KillerTest"
-
-    class_body = [
-        f'@DisplayName("Killer Tests for {simple_name}")',
-        f"class {test_class_name} {{",
-        "",
-        f"    private {simple_name} {_to_camel_case(simple_name)};",
-        "",
-        "    @BeforeEach",
-        "    void setUp() {",
-        f"        {_to_camel_case(simple_name)} = new {simple_name}();",
-        "    }",
-        "",
-    ]
-
-    # Generate a test for each mutant
-    for i, mutant in enumerate(mutants):
-        test_methods = _generate_killer_test_method(mutant, simple_name, i + 1, source_code)
-        class_body.extend(test_methods)
-
-    class_body.append("}")
-
-    return "\n".join(imports + class_body)
-
-
-def _generate_killer_test_method(
-    mutant: dict[str, Any], class_name: str, index: int, source_code: str | None
-) -> list[str]:
-    """Generate a killer test for a specific mutant."""
-    method = mutant.get("method", "unknownMethod")
-    line = mutant.get("line", 0)
-    mutator = mutant.get("mutator", "").split(".")[-1]
-    description = mutant.get("description", "")
-    instance = _to_camel_case(class_name)
-
-    # Determine test strategy based on mutator type
-    test_strategy = _get_kill_strategy(mutator, description)
-
-    test_name = f"shouldKillMutant{index}_{_sanitize_method_name(method)}_line{line}"
-    display_name = f"Kill mutant: {method} line {line} ({mutator})"
-
-    test_code = [
-        "    @Test",
-        f'    @DisplayName("{display_name}")',
-        f"    void {test_name}() {{",
-        f"        // Target: {description}",
-        f"        // Strategy: {test_strategy['strategy']}",
-        "",
-        "        // Arrange",
-        f"        {test_strategy['arrange']}",
-        "",
-        "        // Act",
-        f"        var result = {instance}.{method}({test_strategy['params']});",
-        "",
-        "        // Assert - specifically targets the mutation",
-        f"        {test_strategy['assert']}",
-        "    }",
-        "",
-    ]
-
-    return test_code
-
-
-def _get_kill_strategy(mutator: str, description: str) -> dict[str, str]:
-    """Get test strategy to kill a specific mutator type."""
-    strategies = {
-        "ConditionalsBoundaryMutator": {
-            "strategy": "Test boundary conditions",
-            "arrange": "// Set up boundary value test case",
-            "params": "/* boundary value */",
-            "assert": "// Verify exact boundary behavior\n        assertThat(result).isEqualTo(/* expected boundary result */);",
-        },
-        "NegateConditionalsMutator": {
-            "strategy": "Test both branches of conditional",
-            "arrange": "// Set up to trigger specific branch",
-            "params": "/* value that triggers specific branch */",
-            "assert": "// Verify correct branch was taken\n        assertThat(result).isEqualTo(/* expected for this branch */);",
-        },
-        "MathMutator": {
-            "strategy": "Verify exact mathematical result",
-            "arrange": "// Set up values where math operations differ",
-            "params": "/* values where +1 vs -1 matters */",
-            "assert": "// Verify exact calculation result\n        assertThat(result).isEqualTo(/* exact expected value */);",
-        },
-        "IncrementsMutator": {
-            "strategy": "Verify increment/decrement operations",
-            "arrange": "// Set up counter/index test",
-            "params": "",
-            "assert": "// Verify exact count/index value\n        assertThat(result).isEqualTo(/* expected after increment */);",
-        },
-        "ReturnValuesMutator": {
-            "strategy": "Verify actual return value not just type",
-            "arrange": "// Set up specific return value scenario",
-            "params": "",
-            "assert": "// Verify actual value, not just non-null\n        assertThat(result).isEqualTo(/* specific expected value */);",
-        },
-        "VoidMethodCallMutator": {
-            "strategy": "Verify side effects of void method",
-            "arrange": "// Set up to detect side effects",
-            "params": "",
-            "assert": "// Verify side effects occurred\n        // Check state changes, mock interactions, etc.",
-        },
-        "EmptyReturnValuesMutator": {
-            "strategy": "Verify non-empty return value",
-            "arrange": "// Set up non-empty return scenario",
-            "params": "",
-            "assert": "// Verify return is not empty\n        assertThat(result).isNotEmpty();",
-        },
-        "NullReturnValuesMutator": {
-            "strategy": "Verify non-null return value",
-            "arrange": "// Set up non-null return scenario",
-            "params": "",
-            "assert": "// Verify return is not null\n        assertThat(result).isNotNull();",
-        },
-        "BooleanTrueReturnValsMutator": {
-            "strategy": "Verify false return scenario",
-            "arrange": "// Set up false return scenario",
-            "params": "/* input that should return false */",
-            "assert": "// Verify returns false\n        assertThat(result).isFalse();",
-        },
-        "BooleanFalseReturnValsMutator": {
-            "strategy": "Verify true return scenario",
-            "arrange": "// Set up true return scenario",
-            "params": "/* input that should return true */",
-            "assert": "// Verify returns true\n        assertThat(result).isTrue();",
-        },
-    }
-
-    # Default strategy if mutator not found
-    default = {
-        "strategy": f"Target {mutator}",
-        "arrange": "// Set up test data",
-        "params": "",
-        "assert": f"// Verify behavior affected by {mutator}\n        assertThat(result).isNotNull();",
-    }
-
-    return strategies.get(mutator, default)
-
-
-def _to_camel_case(name: str) -> str:
-    """Convert PascalCase to camelCase."""
-    if not name:
-        return name
-    return name[0].lower() + name[1:]
-
-
-def _sanitize_method_name(name: str) -> str:
-    """Sanitize method name for use in test method name."""
-    # Remove special characters and ensure valid Java identifier
-    sanitized = re.sub(r"[^a-zA-Z0-9]", "", name)
-    if sanitized and sanitized[0].isdigit():
-        sanitized = "_" + sanitized
-    return sanitized or "method"
+    module_root = project_dir
+    if source_path is not None:
+        src_parts = source_path.parts
+        for i in range(len(src_parts) - 2):
+            if src_parts[i:i + 3] == ("src", "main", "java"):
+                module_root = Path(*src_parts[:i])
+                break
+    return module_root / "src" / "test" / "java" / Path(*parts)

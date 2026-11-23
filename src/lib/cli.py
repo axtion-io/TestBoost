@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env python3
+#!/usr/bin/env python3
 # SPDX-License-Identifier: Apache-2.0
 """TestBoost CLI - Lightweight entry point.
 
@@ -11,7 +11,7 @@ Usage:
 
 This module is the stable facade: it owns the argument parser and
 re-exports every command implementation from `src.lib.commands.*` so
-existing imports and test patches (`src.lib.cli.cmd_generate`, â€¦) keep
+existing imports and test patches (`src.lib.cli.cmd_generate`, …) keep
 working. The implementations live one module per command group.
 """
 
@@ -185,7 +185,7 @@ def main() -> int:
     p_status = subparsers.add_parser("status", help="Show session status")
     p_status.add_argument("project_path", help="Path to the Java project")
 
-    # resume â€” display pending question or apply signed answer
+    # resume — display pending question or apply signed answer
     p_resume = subparsers.add_parser(
         "resume",
         help="Show the pending question, or resume a paused session with --answer-file",
@@ -197,7 +197,7 @@ def main() -> int:
     )
     p_resume.add_argument("--verbose", "-v", action="store_true")
 
-    # sign-answer â€” utility to bind a raw answer to a question and HMAC-sign it
+    # sign-answer — utility to bind a raw answer to a question and HMAC-sign it
     p_sign = subparsers.add_parser(
         "sign-answer",
         help="Sign a raw answer payload against a pending question",
@@ -207,7 +207,7 @@ def main() -> int:
     p_sign.add_argument("--answer-file", required=True, help="Path to raw answer JSON")
     p_sign.add_argument("--output", "-o", default=None, help="Write signed answer here (default: stdout)")
 
-    # gitlab â€” MR helpers for CI jobs
+    # gitlab — MR helpers for CI jobs
     p_gitlab = subparsers.add_parser(
         "gitlab",
         help="GitLab MR helpers (post pending question / fetch signed answer)",
@@ -226,7 +226,7 @@ def main() -> int:
         help="Where to write the signed answer (default ./answer.json)",
     )
 
-    # cleanup â€” mark abandoned sessions past TTL
+    # cleanup — mark abandoned sessions past TTL
     p_cleanup = subparsers.add_parser(
         "cleanup",
         help="Mark sessions in awaiting_input past TTL as abandoned",
@@ -235,7 +235,7 @@ def main() -> int:
     p_cleanup.add_argument("--ttl-hours", type=int, default=24, help="Abandon threshold (default 24)")
     p_cleanup.add_argument("--dry-run", action="store_true", help="Just list, don't modify")
 
-    # doctor â€” health check
+    # doctor — health check
     p_doctor = subparsers.add_parser(
         "doctor",
         help="Run health checks (LLM, .tb_secret, write perms, Maven)",

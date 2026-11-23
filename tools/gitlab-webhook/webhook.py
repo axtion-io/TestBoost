@@ -121,6 +121,15 @@ async def gitlab_note(
     if not (project_id and mr_iid and ref):
         raise HTTPException(status_code=400, detail="missing project/MR fields")
 
+    # Fork guard: the resume pipeline runs on `ref` IN THIS PROJECT. A MR
+    # opened from a fork whose branch merely shares the name of a member's
+    # paused branch would otherwise resume (and push to) the member's branch
+    # with the fork author's answer. Only same-project, open MRs may resume.
+    if mr.get("source_project_id") != project_id or mr.get("target_project_id") != project_id:
+        return {"ignored": "MR source branch is not in this project (fork MR)"}
+    if mr.get("state") not in (None, "opened"):
+        return {"ignored": f"MR is {mr.get('state')}, not opened"}
+
     try:
         pipe = await _trigger_pipeline(project_id, mr_iid, ref)
     except httpx.HTTPError as e:

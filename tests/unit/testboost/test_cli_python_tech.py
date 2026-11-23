@@ -119,3 +119,13 @@ class TestSafeTestTarget:
 
         target = _safe_test_target(str(tmp_path), "tests/test_app.py", "app.py")
         assert target == tmp_path / "tests/test_app.py"
+
+    def test_safe_target_refuses_paths_outside_the_project(self, tmp_path):
+        """test paths can come from committed session state (cursor, killer
+        step): a `../` must not write outside the project on the CI runner."""
+        from src.lib.commands.generate_cmd import _safe_test_target
+
+        with pytest.raises(RuntimeError, match="outside the project"):
+            _safe_test_target(str(tmp_path), "../../evil/Test.java")
+        with pytest.raises(RuntimeError, match="outside the project"):
+            _safe_test_target(str(tmp_path), "/etc/cron.d/x")

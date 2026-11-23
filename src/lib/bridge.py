@@ -70,15 +70,11 @@ def find_source_files(project_path: str) -> list[str]:
     return plugin.find_source_files(_Path(project_path))
 
 
-def classify_file(relative_path: str, project_path: str = "") -> str:
+def classify_file(relative_path: str, project_path: str) -> str:
     """Classify a source file by category using the current session's plugin."""
-    if project_path:
-        plugin = get_plugin_for_session(project_path)
-    else:
-        # Fallback: use Java plugin for backward compatibility
-        from src.java.discovery import classify_source_file
-        return classify_source_file(relative_path)
-    return plugin.classify_source_file(relative_path)
+    from pathlib import Path as _Path
+    plugin = get_plugin_for_session(project_path)
+    return plugin.classify_source_file(relative_path, _Path(project_path))
 
 
 def find_test_for_source(project_path: str, source_relative_path: str) -> str | None:
@@ -99,12 +95,18 @@ async def generate_adaptive_tests(project_path: str, source_file: str, **kwargs)
     return await _generate(project_path=project_path, source_file=source_file, **kwargs)
 
 
-async def fix_compilation_errors(test_code: str, compile_errors: str, class_name: str) -> str:
-    """Fix compilation errors in generated test code using LLM."""
+async def fix_compilation_errors(
+    test_code: str, compile_errors: str, class_name: str, prompt_template_dir: str | None = None,
+) -> str:
+    """Fix compilation errors in generated test code using LLM.
+
+    `prompt_template_dir` is the technology plugin's prompt directory, so a
+    Python test is fixed with the pytest prompt, not the Java one.
+    """
     from src.test_generation.generate_unit import (
         fix_compilation_errors as _fix,
     )
-    return await _fix(test_code, compile_errors, class_name)
+    return await _fix(test_code, compile_errors, class_name, prompt_template_dir=prompt_template_dir)
 
 
 async def fix_test_runtime_errors(test_code: str, test_errors: str, class_name: str) -> str:

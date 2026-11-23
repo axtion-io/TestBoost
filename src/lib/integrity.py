@@ -15,6 +15,7 @@ Token format printed to stdout:
 The LLM cannot forge this because it doesn't know the secret.
 """
 
+import contextlib
 import hashlib
 import hmac
 import json
@@ -65,6 +66,8 @@ def get_or_create_secret(project_path: str) -> str:
     secret = secrets.token_hex(32)
     tb_dir.mkdir(parents=True, exist_ok=True)
     secret_path.write_text(secret, encoding="utf-8")
+    with contextlib.suppress(OSError):  # e.g. filesystems without POSIX modes
+        secret_path.chmod(0o600)  # anyone who can read it can forge tokens
 
     # Ensure .tb_secret is in .gitignore
     _ensure_gitignored(tb_dir, SECRET_FILE)
@@ -253,16 +256,21 @@ def verify_answer(
         )
 
 
-def _ensure_gitignored(tb_dir: Path, filename: str) -> None:
-    """Make sure the file is in .testboost/.gitignore."""
+def _ensure_gitignored(
+    tb_dir: Path,
+    entry: str,
+    comment: str = "TestBoost installation secret (never commit)",
+) -> None:
+    """Make sure `entry` is a line of .testboost/.gitignore (idempotent).
+
+    Every writer of that file goes through here: the CI seeds the secret
+    BEFORE `init` runs, so an "only if the file is missing" writer would
+    silently lose its entries.
+    """
     gitignore = tb_dir / ".gitignore"
-    if gitignore.exists():
-        content = gitignore.read_text(encoding="utf-8")
-        if filename not in content:
-            with open(gitignore, "a", encoding="utf-8") as f:
-                f.write(f"\n# TestBoost installation secret (never commit)\n{filename}\n")
-    else:
-        gitignore.write_text(
-            f"# TestBoost installation secret (never commit)\n{filename}\n",
-            encoding="utf-8",
-        )
+    content = gitignore.read_text(encoding="utf-8") if gitignore.exists() else ""
+    if entry in (line.strip() for line in content.splitlines()):
+        return
+    prefix = "\n" if content and not content.endswith("\n\n") else ""
+    with open(gitignore, "a", encoding="utf-8") as f:
+        f.write(f"{prefix}# {comment}\n{entry}\n")

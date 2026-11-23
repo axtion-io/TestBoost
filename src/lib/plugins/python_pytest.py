@@ -74,37 +74,24 @@ class PythonPytestPlugin(TechnologyPlugin):
         result.sort()
         return result
 
-    def classify_source_file(self, relative_path: str) -> str:
+    def classify_source_file(self, relative_path: str, project_path: Path | None = None) -> str:
         """Classify a Python source file using ast.
 
         Returns:
             'class' if the file defines top-level classes,
-            'function' if it defines only module-level functions,
-            'module' otherwise.
+            'function' if it defines only module-level (async) functions,
+            'module' otherwise (or when the file is unreadable/invalid).
         """
-        # We need the absolute path — caller should pass it, but we fall back
-        # to attempting a relative read from CWD
-        file_path = Path(relative_path)
-        if not file_path.exists():
-            return "module"
-
+        file_path = Path(project_path) / relative_path if project_path else Path(relative_path)
         try:
-            source = file_path.read_text(encoding="utf-8", errors="replace")
-            tree = ast.parse(source, filename=str(file_path))
-        except SyntaxError:
+            tree = ast.parse(file_path.read_text(encoding="utf-8", errors="replace"))
+        except (OSError, SyntaxError, ValueError):
             return "module"
 
-        has_classes = any(isinstance(node, ast.ClassDef) for node in ast.walk(tree)
-                          if isinstance(node, ast.ClassDef) and _is_top_level(tree, node))
-        if has_classes:
+        if any(isinstance(node, ast.ClassDef) for node in tree.body):
             return "class"
-
-        has_functions = any(isinstance(node, ast.FunctionDef) for node in ast.walk(tree)
-                            if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef)
-                            and _is_top_level(tree, node))
-        if has_functions:
+        if any(isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef) for node in tree.body):
             return "function"
-
         return "module"
 
     # ------------------------------------------------------------------
@@ -149,11 +136,3 @@ class PythonPytestPlugin(TechnologyPlugin):
         """Run the generated test file with pytest."""
         return ["python", "-m", "pytest", "--tb=short", "--no-header", "{test_file}"]
 
-
-# ---------------------------------------------------------------------------
-# Private AST helpers
-# ---------------------------------------------------------------------------
-
-def _is_top_level(tree: ast.Module, node: ast.AST) -> bool:
-    """Return True if node is a direct child of the module (not nested)."""
-    return node in tree.body

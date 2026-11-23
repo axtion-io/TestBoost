@@ -145,7 +145,9 @@ def fetch_answer(
     try:
         mr_resp = client.get(base, headers=headers)
         mr_resp.raise_for_status()
-        author = ((mr_resp.json().get("author") or {}).get("username")) or ""
+        mr = mr_resp.json()
+        _check_mr_belongs_to_this_pipeline(mr, env["project_id"])
+        author = ((mr.get("author") or {}).get("username")) or ""
 
         notes_resp = client.get(
             f"{base}/notes",
@@ -168,6 +170,27 @@ def fetch_answer(
     out_path = Path(output)
     out_path.write_text(json.dumps(signed, indent=2), encoding="utf-8")
     return out_path
+
+
+def _check_mr_belongs_to_this_pipeline(mr: dict[str, Any], project_id: str) -> None:
+    """Refuse an answer from a MR whose source branch is not the branch this
+    pipeline runs on (defense in depth behind the webhook's fork guard).
+
+    Without it, a fork MR whose branch shares a member's paused branch name
+    could get its author's answer signed and applied on the member's branch.
+    """
+    src_project = mr.get("source_project_id")
+    if src_project is not None and str(src_project) != str(project_id):
+        raise GitLabConfigError(
+            f"MR source project {src_project} is not this project ({project_id}) — "
+            "refusing to resume from a fork MR"
+        )
+    ref = os.environ.get("CI_COMMIT_REF_NAME")
+    src_branch = mr.get("source_branch")
+    if ref and src_branch is not None and src_branch != ref:
+        raise GitLabConfigError(
+            f"MR source branch {src_branch!r} differs from the pipeline ref {ref!r}"
+        )
 
 
 def _extract_answer(

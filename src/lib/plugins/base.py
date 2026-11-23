@@ -65,11 +65,13 @@ class TechnologyPlugin(ABC):
         """
 
     @abstractmethod
-    def classify_source_file(self, relative_path: str) -> str:
+    def classify_source_file(self, relative_path: str, project_path: Path | None = None) -> str:
         """Classify a source file into a semantic category.
 
         Args:
             relative_path: Path relative to project root (from find_source_files).
+            project_path: Project root, for plugins that classify by reading
+                the file (relative paths are NOT resolved against the CWD).
 
         Returns:
             Non-empty string category. Returns 'other' for unrecognized files.

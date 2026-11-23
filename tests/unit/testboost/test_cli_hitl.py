@@ -198,7 +198,7 @@ class TestCompileFixInterruption:
             "package com.example;\n// fix 2\nclass OrderServiceTest {}",
         ])
 
-        async def fake_fix(code, errors, name):
+        async def fake_fix(code, errors, name, **_kw):
             try:
                 return next(fix_outputs)
             except StopIteration:
@@ -223,7 +223,10 @@ class TestCompileFixInterruption:
         payload = json.loads(qpath.read_text())
         assert payload["kind"] == "compilation_fix_exhausted"
         assert payload["subject"]["class_name"] == "OrderService"
-        assert payload["subject"]["attempts"] == 3
+        # Budget of 3 compile checks = 2 LLM fixes; the question must report
+        # the fixes that actually ran (it used to claim 3).
+        assert payload["subject"]["attempts"] == 2
+        assert "after 2 LLM fix attempt(s)" in payload["question"]
         assert "cannot find symbol" in payload["compile_errors"]
         assert "answer_schema" in payload
 
@@ -248,7 +251,7 @@ class TestCompileFixInterruption:
             "package com.example;\n// fix 2\nclass OrderServiceTest {}",
         ])
 
-        async def fake_fix(code, errors, name):
+        async def fake_fix(code, errors, name, **_kw):
             try:
                 return next(fix_outputs)
             except StopIteration:
@@ -373,7 +376,7 @@ class TestHintsMode:
             return next(compile_iter)
 
         fix_calls: list[tuple] = []
-        async def fake_fix(code, errors, class_name):
+        async def fake_fix(code, errors, class_name, **_kw):
             fix_calls.append((code, errors, class_name))
             return code + "\n// fixed by hint"
 

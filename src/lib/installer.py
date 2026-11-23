@@ -74,12 +74,20 @@ def install_commands(
     }
 
 
+def _command_steps(tb_root: Path) -> list[str]:
+    """Step names of the shipped slash commands (templates/commands/testboost.<step>.md)."""
+    templates_dir = tb_root / "templates" / "commands"
+    return sorted(f.name.split(".")[1] for f in templates_dir.glob("testboost.*.md"))
+
+
 def _install_scripts(project: Path, tb_root: Path, shell_type: str) -> list[str]:
     """Install wrapper shell scripts that point to the TestBoost installation."""
     scripts_dir = project / ".testboost" / "scripts"
     scripts_dir.mkdir(parents=True, exist_ok=True)
 
-    steps = ["init", "analyze", "gaps", "generate", "validate", "verify", "status"]
+    # One wrapper per slash-command template, so commands and scripts can't drift
+    # (mutate/killer used to ship as commands with no installed script).
+    steps = _command_steps(tb_root)
     details = []
 
     if shell_type == "powershell":

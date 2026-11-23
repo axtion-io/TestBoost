@@ -7,10 +7,9 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from src.test_generation.killer_tests import (
-    _get_kill_strategy,
+    _find_source_file,
+    _generate_killer_tests_llm,
     _get_killer_test_path,
-    _sanitize_method_name,
-    _to_camel_case,
     generate_killer_tests,
 )
 
@@ -34,8 +33,10 @@ class TestGenerateKillerTests:
         assert "No surviving mutants" in result["error"]
 
     @pytest.mark.asyncio
-    async def test_template_fallback_without_source(self, tmp_path):
-        """No source file on disk → template-based generation, zero LLM calls."""
+    async def test_class_without_source_is_skipped_not_templated(self, tmp_path):
+        """No source on disk → skipped. The former template fallback wrote
+        `isEqualTo(/* expected */)` placeholders that broke compilation of
+        the whole test suite."""
         with patch("src.test_generation.killer_tests._generate_killer_tests_llm",
                    new_callable=AsyncMock) as mock_llm:
             result = json.loads(await generate_killer_tests(
@@ -43,18 +44,34 @@ class TestGenerateKillerTests:
             ))
         mock_llm.assert_not_called()
         assert result["success"] is True
-        assert len(result["generated_tests"]) == 1  # grouped by class
-        test = result["generated_tests"][0]
-        assert test["class"] == "com.example.OrderService"
-        assert test["mutants_targeted"] == 2
-        assert "@Test" in test["test_code"]
-        assert "KillerTest" in test["test_file"]
+        assert result["generated_tests"] == []
+        assert result["skipped"] == [
+            {"class": "com.example.OrderService", "reason": "source file not found"}
+        ]
+
+    @pytest.mark.asyncio
+    async def test_llm_answer_without_test_is_skipped(self, tmp_path):
+        _write_source(tmp_path, "src/main/java/com/example/OrderService.java")
+        llm = AsyncMock()
+        llm.ainvoke.return_value = AsyncMock(content="Sorry, I cannot help.")
+        with patch("src.test_generation.killer_tests.get_llm", return_value=llm):
+            result = json.loads(await generate_killer_tests(str(tmp_path), [_mutant()]))
+        assert result["generated_tests"] == []
+        assert result["skipped"][0]["reason"] == "LLM returned no @Test method"
+
+    @pytest.mark.asyncio
+    async def test_class_name_from_pit_cannot_escape_the_project(self, tmp_path):
+        with patch("src.test_generation.killer_tests._generate_killer_tests_llm",
+                   new_callable=AsyncMock) as mock_llm:
+            result = json.loads(await generate_killer_tests(
+                str(tmp_path), [_mutant(cls="../../etc/passwd")],
+            ))
+        mock_llm.assert_not_called()
+        assert result["skipped"][0]["reason"] == "invalid class name"
 
     @pytest.mark.asyncio
     async def test_llm_path_with_source_and_hints(self, tmp_path):
-        src = tmp_path / "src/main/java/com/example/OrderService.java"
-        src.parent.mkdir(parents=True)
-        src.write_text("package com.example;\npublic class OrderService {}")
+        _write_source(tmp_path, "src/main/java/com/example/OrderService.java")
 
         captured = {}
         async def fake_llm(class_name, mutants, source_code, hints=None):
@@ -77,8 +94,10 @@ class TestGenerateKillerTests:
     @pytest.mark.asyncio
     async def test_max_tests_caps_mutants(self, tmp_path):
         mutants = [_mutant(cls=f"com.example.C{i}") for i in range(5)]
+        for i in range(5):
+            _write_source(tmp_path, f"src/main/java/com/example/C{i}.java")
         with patch("src.test_generation.killer_tests._generate_killer_tests_llm",
-                   new_callable=AsyncMock):
+                   new=AsyncMock(return_value="class K { @Test void k() {} }")):
             result = json.loads(await generate_killer_tests(
                 str(tmp_path), mutants, max_tests=2,
             ))
@@ -91,23 +110,32 @@ class TestKillerHelpers:
         path = _get_killer_test_path(tmp_path, "com.example.OrderService")
         assert path == tmp_path / "src/test/java/com/example/OrderServiceKillerTest.java"
 
-    def test_kill_strategies_cover_known_mutators(self):
-        for mutator, needle in [
-            ("MATH", ""), ("ConditionalsBoundaryMutator", "boundary"),
-            ("NegateConditionalsMutator", ""), ("VoidMethodCallMutator", ""),
-            ("UnknownMutator", ""),
-        ]:
-            strategy = _get_kill_strategy(mutator, "desc")
-            assert strategy["strategy"], mutator
-            assert strategy["assert"], mutator
-            if needle:
-                assert needle in json.dumps(strategy).lower()
+    def test_multi_module_source_and_test_stay_in_their_module(self, tmp_path):
+        src = _write_source(tmp_path, "billing/src/main/java/com/example/OrderService.java")
+        found = _find_source_file(tmp_path, "com.example.OrderService$Line")
+        assert found == src
+        assert _get_killer_test_path(tmp_path, "com.example.OrderService$Line", found) == (
+            tmp_path / "billing/src/test/java/com/example/OrderServiceKillerTest.java"
+        )
 
-    def test_to_camel_case_lowercases_first_letter(self):
-        assert _to_camel_case("CalculateTotal") == "calculateTotal"
-        assert _to_camel_case("") == ""
+    @pytest.mark.asyncio
+    async def test_llm_prompt_carries_mutants_source_and_hints(self):
+        llm = AsyncMock()
+        llm.ainvoke.return_value = AsyncMock(content="```java\nclass K { @Test void k() {} }\n```")
+        with patch("src.test_generation.killer_tests.get_llm", return_value=llm):
+            code = await _generate_killer_tests_llm(
+                "com.example.OrderService", [_mutant()], "class OrderService {}",
+                hints={"OrderService.calculateTotal": "round half-up"},
+            )
+        assert code == "class K { @Test void k() {} }"
+        prompt = llm.ainvoke.await_args.args[0]
+        assert "Replaced + with -" in prompt
+        assert "class OrderService {}" in prompt
+        assert "round half-up" in prompt
 
-    def test_sanitize_method_name(self):
-        assert _sanitize_method_name("a-b c") == "abc"
-        assert _sanitize_method_name("9lives").startswith("_")
-        assert _sanitize_method_name("@@@") == "method"
+
+def _write_source(root, rel):
+    path = root / rel
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("package com.example;\npublic class X {}")
+    return path

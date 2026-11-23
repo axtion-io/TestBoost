@@ -38,7 +38,10 @@ def webhook_app(monkeypatch):
 _USER_IDS = {"alice": 11, "bob": 22, "tb-bot": 99}
 
 
-def _note_payload(commenter: str = "alice", author: str = "alice", body: str = "") -> dict:
+def _note_payload(
+    commenter: str = "alice", author: str = "alice", body: str = "",
+    source_project_id: int = 100, state: str = "opened",
+) -> dict:
     """Mirror the REAL GitLab Note Hook shape: the comment text lives in
     `object_attributes.note` (NOT `body` — that's the REST API field), the
     commenter is the top-level `user` object (with id), and the MR author
@@ -56,6 +59,9 @@ def _note_payload(commenter: str = "alice", author: str = "alice", body: str = "
             "iid": 7,
             "source_branch": "feature/x",
             "author_id": _USER_IDS.get(author, 1),
+            "source_project_id": source_project_id,
+            "target_project_id": 100,
+            "state": state,
         },
         "project": {"id": 100},
     }
@@ -162,3 +168,32 @@ class TestWebhookLoopGuards:
         )
         assert r.status_code == 200
         assert "question comment" in r.json()["ignored"]
+
+
+class TestWebhookForkGuard:
+    """The resume pipeline runs on `source_branch` in the TARGET project, so a
+    fork MR whose branch shares a member's paused branch name must never
+    resume (and push to) the member's branch with the fork author's answer."""
+
+    def _post(self, webhook_app, payload):
+        from starlette.testclient import TestClient
+        with patch("webhook._trigger_pipeline", new=AsyncMock(return_value={"id": 1})) as trig:
+            r = TestClient(webhook_app).post(
+                "/gitlab/note",
+                headers={"X-Gitlab-Token": "test-secret", "X-Gitlab-Event": "Note Hook"},
+                json=payload,
+            )
+        return r, trig
+
+    def test_ignores_fork_mr_even_from_its_author(self, webhook_app):
+        body = "```json\n{}\n```\n<!-- testboost:question_id=" + "c" * 32 + " -->"
+        r, trig = self._post(webhook_app, _note_payload(body=body, source_project_id=555))
+        assert r.status_code == 200
+        assert "fork" in r.json()["ignored"]
+        trig.assert_not_called()
+
+    def test_ignores_closed_or_merged_mr(self, webhook_app):
+        body = "```json\n{}\n```\n<!-- testboost:question_id=" + "d" * 32 + " -->"
+        r, trig = self._post(webhook_app, _note_payload(body=body, state="merged"))
+        assert "not opened" in r.json()["ignored"]
+        trig.assert_not_called()

@@ -54,6 +54,38 @@ def get_sessions_dir(project_path: str) -> Path:
     return get_testboost_dir(project_path) / SESSIONS_DIR
 
 
+DEFAULT_PROJECT_CONFIG: dict[str, int] = {
+    "max_correction_retries": 3,
+    "test_timeout_seconds": 300,
+}
+
+
+def load_project_config(project_path: str) -> dict[str, int]:
+    """Read `.testboost/config.yaml` over DEFAULT_PROJECT_CONFIG.
+
+    Only the documented integer keys are honoured; unknown keys, comments and
+    malformed or non-positive values are ignored (the default wins), so a
+    typo in the file can never crash a run.
+    """
+    config = dict(DEFAULT_PROJECT_CONFIG)
+    path = get_testboost_dir(project_path) / "config.yaml"
+    if not path.exists():
+        return config
+    for raw in path.read_text(encoding="utf-8").splitlines():
+        line = raw.split("#", 1)[0].strip()
+        key, sep, value = line.partition(":")
+        key = key.strip()
+        if not sep or key not in config:
+            continue
+        try:
+            parsed = int(value.strip())
+        except ValueError:
+            continue
+        if parsed > 0:
+            config[key] = parsed
+    return config
+
+
 def init_project(project_path: str) -> dict[str, Any]:
     """Initialize .testboost/ in a project.
 
@@ -72,26 +104,19 @@ def init_project(project_path: str) -> dict[str, Any]:
     config_path = tb_dir / "config.yaml"
     if not config_path.exists():
         config_path.write_text(
-            "# TestBoost Configuration\n"
-            "# Override these values as needed\n"
+            "# TestBoost configuration (read by generate / validate / killer)\n"
             "\n"
-            "coverage_target: 80\n"
-            "max_complexity: 20\n"
-            "mock_framework: mockito\n"
-            "assertion_library: assertj\n"
-            "max_correction_retries: 3\n"
-            "test_timeout_seconds: 300\n",
+            "# LLM compile-fix budget: number of compile checks per generated test\n"
+            f"max_correction_retries: {DEFAULT_PROJECT_CONFIG['max_correction_retries']}\n"
+            "# Timeout of one test run (`mvn test`, pytest) in seconds\n"
+            f"test_timeout_seconds: {DEFAULT_PROJECT_CONFIG['test_timeout_seconds']}\n",
             encoding="utf-8",
         )
 
-    # Create .gitignore for logs
-    gitignore_path = tb_dir / ".gitignore"
-    if not gitignore_path.exists():
-        gitignore_path.write_text(
-            "# Ignore detailed logs (they can be large)\n"
-            "sessions/*/logs/*.md\n",
-            encoding="utf-8",
-        )
+    # Keep the (large) detailed logs out of git. Idempotent: in CI the
+    # .gitignore already exists (created when the secret is seeded).
+    from src.lib.integrity import _ensure_gitignored
+    _ensure_gitignored(tb_dir, "sessions/*/logs/*.md", "Ignore detailed logs (they can be large)")
 
     return {
         "success": True,

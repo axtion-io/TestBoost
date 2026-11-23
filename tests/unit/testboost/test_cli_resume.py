@@ -545,7 +545,7 @@ class TestBatchedQuestions:
             "package c;\n// fix 1\nclass OrderServiceTest {}",
             "package c;\n// fix 2\nclass OrderServiceTest {}",
         ])
-        async def fake_fix(code, errors, name):
+        async def fake_fix(code, errors, name, **_kw):
             try:
                 return next(fix_outputs)
             except StopIteration:

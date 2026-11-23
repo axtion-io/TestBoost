@@ -296,3 +296,44 @@ class TestUntaggedFenceAccepted:
             client=httpx.Client(transport=httpx.MockTransport(handler)),
         )
         assert out.exists()
+
+
+class TestFetchAnswerForkGuard:
+    """Defense in depth behind the webhook: an answer posted on a fork MR (or
+    a MR for another branch) must never be signed for this pipeline's branch."""
+
+    def _run(self, tmp_path, monkeypatch, mr_json):
+        from src.lib.gitlab_mr import fetch_answer
+
+        ctx = _make_session_with_question(tmp_path)
+        qid = ctx["question"]["question_id"]
+        _ci_env(monkeypatch)
+        monkeypatch.setenv("CI_COMMIT_REF_NAME", "feature/x")
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            if request.url.path.endswith("/notes"):
+                return httpx.Response(200, json=[{
+                    "author": {"username": "devuser"},
+                    "body": f"```json\n{{}}\n```\n<!-- testboost:question_id={qid} -->",
+                }])
+            return httpx.Response(200, json={"author": {"username": "devuser"}, **mr_json})
+
+        return fetch_answer(
+            str(tmp_path), output=tmp_path / "a.json",
+            client=httpx.Client(transport=httpx.MockTransport(handler)),
+        )
+
+    def test_rejects_fork_mr(self, tmp_path, monkeypatch):
+        from src.lib.gitlab_mr import GitLabConfigError
+        with pytest.raises(GitLabConfigError, match="fork"):
+            self._run(tmp_path, monkeypatch, {"source_project_id": 999, "source_branch": "feature/x"})
+        assert not (tmp_path / "a.json").exists()
+
+    def test_rejects_mr_of_another_branch(self, tmp_path, monkeypatch):
+        from src.lib.gitlab_mr import GitLabConfigError
+        with pytest.raises(GitLabConfigError, match="pipeline ref"):
+            self._run(tmp_path, monkeypatch, {"source_project_id": 123, "source_branch": "other"})
+
+    def test_accepts_same_project_same_branch(self, tmp_path, monkeypatch):
+        out = self._run(tmp_path, monkeypatch, {"source_project_id": 123, "source_branch": "feature/x"})
+        assert out.exists()

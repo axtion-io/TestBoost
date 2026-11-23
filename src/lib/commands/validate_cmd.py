@@ -36,6 +36,7 @@ async def _cmd_validate_async(args: argparse.Namespace) -> int:
         emit_question,
         finalize_answer,
         get_current_session,
+        load_project_config,
         update_step_file,
     )
 
@@ -65,6 +66,7 @@ async def _cmd_validate_async(args: argparse.Namespace) -> int:
         return abort
 
     fail_on_uncertainty = bool(getattr(args, "fail_on_uncertainty", False))
+    test_timeout = load_project_config(project_path)["test_timeout_seconds"]
     validate_fixes = (
         answer_payload.get("validate_fixes", {})
         if isinstance(answer_payload, dict) else {}
@@ -104,7 +106,8 @@ async def _cmd_validate_async(args: argparse.Namespace) -> int:
                 cls = g.get("class_name") or Path(g.get("path", "")).stem
                 fix = validate_fixes.get(cls)
                 if isinstance(fix, dict) and "fixed_code" in fix:
-                    target = Path(project_path) / g["path"]
+                    from src.lib.commands.generate_cmd import _safe_test_target
+                    target = _safe_test_target(project_path, g["path"], g.get("source_file"))
                     target.parent.mkdir(parents=True, exist_ok=True)
                     target.write_text(fix["fixed_code"], encoding="utf-8")
                     logger.info(f"Applied developer-provided validate fix for {cls}")
@@ -170,8 +173,6 @@ async def _cmd_validate_async(args: argparse.Namespace) -> int:
 
         # Step 2: Run tests
         has_test_placeholder = any("{test_file}" in part for part in test_run_cmd_tpl)
-        test_timeout = 300  # 5 minutes
-
         if has_test_placeholder:
             # Per-file test execution (Python, Go, etc.)
             all_output = ""
@@ -289,11 +290,15 @@ async def _cmd_validate_async(args: argparse.Namespace) -> int:
         logger.info(f"Validation paused — awaiting human input ({wait.question_path})")
         print(f"[TESTBOOST_AWAITING_INPUT:step=validation:question={wait.question_path}]")
         return EXIT_AWAITING_INPUT
-    except subprocess.TimeoutExpired:
-        logger.error(f"Maven timed out after {test_timeout}s")
+    except subprocess.TimeoutExpired as e:
+        # Raised by the compile step (120s) as well as by the test run
+        # (`test_timeout_seconds`): report the command that actually hung.
+        logger.error(f"Timed out after {e.timeout}s: {' '.join(map(str, e.cmd))}")
         update_step_file(
             session_dir, "validation", STATUS_FAILED,
-            "# Validation - FAILED\n\n**Error**: Maven timed out.\n",
+            f"# Validation - FAILED\n\n**Error**: timed out after {e.timeout}s "
+            f"(`{' '.join(map(str, e.cmd))}`). Raise `test_timeout_seconds` in "
+            f"`.testboost/config.yaml` if the suite is legitimately slow.\n",
         )
         return 1
     except Exception as e:

@@ -33,7 +33,7 @@ class _JavaLikePlugin(TechnologyPlugin):
     def find_source_files(self, project_path):
         return []
 
-    def classify_source_file(self, relative_path):
+    def classify_source_file(self, relative_path, project_path=None):
         return "other"
 
     def test_file_name(self, source_relative_path):
@@ -69,7 +69,7 @@ class _PythonLikePlugin(TechnologyPlugin):
     def find_source_files(self, project_path):
         return []
 
-    def classify_source_file(self, relative_path):
+    def classify_source_file(self, relative_path, project_path=None):
         return "module"
 
     def test_file_name(self, source_relative_path):

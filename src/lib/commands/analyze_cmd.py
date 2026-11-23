@@ -231,6 +231,35 @@ async def _cmd_analyze_async(args: argparse.Namespace) -> int:
             f"# Analysis - FAILED\n\n**Error**: {e}\n",
         )
         return 1
+# Directories never scanned for tests (build output, VCS, virtualenvs).
+_NON_PROJECT_DIRS = {".git", ".testboost", "target", "build", "node_modules", ".venv", "venv"}
+
+
+def _tested_stems(project_dir: Path, patterns: list[str], source_files: set[str]) -> set[str]:
+    """Return the source stems that already have a test, from the plugin's test globs.
+
+    Each glob's file name is read as prefix*suffix: `**/*Test.java` names
+    `FooTest.java` after `Foo`, `**/test_*.py` names `test_foo.py` after
+    `foo`. Only the affix is stripped (`TestDataBuilderTest` -> `TestDataBuilder`),
+    and files that are themselves sources (e.g. `TestUtils.java` under
+    src/main matched by `Test*.java`) are not tests.
+    """
+    stems: set[str] = set()
+    for pattern in patterns:
+        stem_pattern = pattern.rsplit("/", 1)[-1].rsplit(".", 1)[0]
+        prefix, star, suffix = stem_pattern.partition("*")
+        if not star:
+            continue
+        for test_file in project_dir.glob(pattern):
+            rel = test_file.relative_to(project_dir)
+            if _NON_PROJECT_DIRS.intersection(rel.parts) or rel.as_posix() in source_files:
+                continue
+            stem = test_file.stem
+            if len(stem) > len(prefix) + len(suffix) and stem.startswith(prefix) and stem.endswith(suffix):
+                stems.add(stem[len(prefix):len(stem) - len(suffix)])
+    return stems
+
+
 def cmd_gaps(args: argparse.Namespace) -> int:
     """Identify test coverage gaps."""
     return asyncio.run(_cmd_gaps_async(args))
@@ -282,29 +311,22 @@ async def _cmd_gaps_async(args: argparse.Namespace) -> int:
             logger.error("No source files found in analysis. Re-run analyze.")
             return 1
 
-        # Find existing test files
+        # Identify gaps with the session's technology plugin: a source file
+        # is covered when the test file the plugin would generate already
+        # exists, or when any test matching the plugin's test globs names it.
+        from src.lib.bridge import get_plugin_for_session
+        plugin = get_plugin_for_session(project_path)
         project_dir = Path(project_path)
-        existing_tests = set()
+        tested = _tested_stems(project_dir, plugin.test_file_pattern(), set(source_files))
 
-        test_dirs = list(project_dir.glob("**/src/test/java"))
-        for test_dir in test_dirs:
-            for test_file in test_dir.rglob("*Test.java"):
-                # Extract class name from test file name
-                class_name = test_file.stem.replace("Test", "")
-                existing_tests.add(class_name)
-            for test_file in test_dir.rglob("*Tests.java"):
-                class_name = test_file.stem.replace("Tests", "")
-                existing_tests.add(class_name)
-
-        # Identify gaps: source files without corresponding tests
         gaps = []
         covered = []
         for source_file in source_files:
-            source_name = Path(source_file).stem
-            if source_name in existing_tests:
-                covered.append(source_file)
-            else:
-                gaps.append(source_file)
+            has_test = (
+                Path(source_file).stem in tested
+                or (project_dir / plugin.test_file_name(source_file)).exists()
+            )
+            (covered if has_test else gaps).append(source_file)
 
         # Build the gaps report
         total = len(source_files)
@@ -315,7 +337,7 @@ async def _cmd_gaps_async(args: argparse.Namespace) -> int:
         content += f"**Total testable files**: {total}\n"
         content += f"**Files with tests**: {len(covered)}\n"
         content += f"**Files WITHOUT tests**: {gap_count}\n"
-        content += f"**Estimated coverage**: {coverage_pct:.0f}%\n\n"
+        content += f"**Files with a test**: {coverage_pct:.0f}% (file-level, not line coverage)\n\n"
 
         if gaps:
             content += "## Files Needing Tests\n\n"

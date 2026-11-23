@@ -35,19 +35,64 @@ class TestInitProject:
         init_project(str(tmp_path))
         assert (tmp_path / ".testboost" / "sessions").is_dir()
 
-    def test_creates_config_yaml(self, tmp_path):
+    def test_creates_config_yaml_with_the_read_settings_only(self, tmp_path):
+        """config.yaml must only advertise settings the CLI actually reads."""
+        from src.lib.session_tracker import DEFAULT_PROJECT_CONFIG, load_project_config
+
         init_project(str(tmp_path))
         config = tmp_path / ".testboost" / "config.yaml"
         assert config.exists()
-        content = config.read_text()
-        assert "coverage_target: 80" in content
-        assert "mock_framework: mockito" in content
+        assert load_project_config(str(tmp_path)) == DEFAULT_PROJECT_CONFIG
+        keys = {
+            ln.split(":")[0] for ln in config.read_text().splitlines()
+            if ln and not ln.startswith("#")
+        }
+        assert keys == set(DEFAULT_PROJECT_CONFIG)
 
     def test_creates_gitignore(self, tmp_path):
         init_project(str(tmp_path))
         gi = tmp_path / ".testboost" / ".gitignore"
         assert gi.exists()
-        assert "logs" in gi.read_text()
+        assert "sessions/*/logs/*.md" in gi.read_text().splitlines()
+
+    def test_gitignore_logs_entry_added_when_secret_seeded_first(self, tmp_path):
+        """CI seeds .tb_secret (creating .gitignore) BEFORE init: the logs
+        entry must still be added, or detailed logs get pushed to the MR."""
+        from src.lib.integrity import get_or_create_secret
+
+        get_or_create_secret(str(tmp_path))
+        init_project(str(tmp_path))
+        init_project(str(tmp_path))
+        lines = (tmp_path / ".testboost" / ".gitignore").read_text().splitlines()
+        assert lines.count("sessions/*/logs/*.md") == 1
+        assert lines.count(".tb_secret") == 1
+
+
+class TestLoadProjectConfig:
+    """`.testboost/config.yaml` overrides the generation budget and timeouts."""
+
+    def _write(self, tmp_path, text):
+        init_project(str(tmp_path))
+        (tmp_path / ".testboost" / "config.yaml").write_text(text)
+
+    def test_defaults_without_file(self, tmp_path):
+        from src.lib.session_tracker import DEFAULT_PROJECT_CONFIG, load_project_config
+        assert load_project_config(str(tmp_path)) == DEFAULT_PROJECT_CONFIG
+
+    def test_user_values_override_defaults(self, tmp_path):
+        from src.lib.session_tracker import load_project_config
+        self._write(tmp_path, "max_correction_retries: 5  # more budget\ntest_timeout_seconds: 900\n")
+        assert load_project_config(str(tmp_path)) == {
+            "max_correction_retries": 5, "test_timeout_seconds": 900,
+        }
+
+    def test_malformed_or_unknown_values_fall_back_to_defaults(self, tmp_path):
+        from src.lib.session_tracker import DEFAULT_PROJECT_CONFIG, load_project_config
+        self._write(
+            tmp_path,
+            "max_correction_retries: lots\ntest_timeout_seconds: -1\ncoverage_target: 90\nnot yaml\n",
+        )
+        assert load_project_config(str(tmp_path)) == DEFAULT_PROJECT_CONFIG
 
     def test_idempotent(self, tmp_path):
         """Calling init twice should not fail or overwrite config."""

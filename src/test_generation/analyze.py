@@ -11,6 +11,8 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Any
 
+from src.java.pom import pom_child, pom_findall, pom_text
+
 
 async def analyze_project_context(
     project_path: str, include_dependencies: bool = True, scan_depth: int = 10
@@ -93,70 +95,35 @@ async def _analyze_maven_project(
     try:
         tree = ET.parse(pom_file)
         root = tree.getroot()
-        ns = {"maven": "http://maven.apache.org/POM/4.0.0"}
-
         # Get project info
-        group_id = root.find("maven:groupId", ns) or root.find("groupId")
-        artifact_id = root.find("maven:artifactId", ns) or root.find("artifactId")
-        version = root.find("maven:version", ns) or root.find("version")
-
         results["module_info"] = {
-            "groupId": group_id.text if group_id is not None else "",
-            "artifactId": artifact_id.text if artifact_id is not None else "",
-            "version": version.text if version is not None else "",
+            "groupId": pom_text(root, "groupId") or "",
+            "artifactId": pom_text(root, "artifactId") or "",
+            "version": pom_text(root, "version") or "",
         }
 
         # Get Java version
-        props = root.find("maven:properties", ns) or root.find("properties")
-        if props is not None:
-            java_version = (
-                props.find("maven:java.version", ns)
-                or props.find("java.version")
-                or props.find("maven:maven.compiler.source", ns)
-                or props.find("maven.compiler.source")
-            )
-            if java_version is not None:
-                results["java_version"] = java_version.text
+        props = pom_child(root, "properties")
+        java_version = (
+            pom_text(props, "java.version")
+            or pom_text(props, "maven.compiler.release")
+            or pom_text(props, "maven.compiler.source")
+        )
+        if java_version:
+            results["java_version"] = java_version
 
         # Parse dependencies
         if include_dependencies:
-            dependencies = []
-            for dep in root.findall(".//maven:dependency", ns):
-                dep_group = dep.find("maven:groupId", ns)
-                dep_artifact = dep.find("maven:artifactId", ns)
-                dep_version = dep.find("maven:version", ns)
-                dep_scope = dep.find("maven:scope", ns)
-
-                if dep_group is not None and dep_artifact is not None:
-                    dependencies.append(
-                        {
-                            "groupId": dep_group.text,
-                            "artifactId": dep_artifact.text,
-                            "version": dep_version.text if dep_version is not None else "managed",
-                            "scope": dep_scope.text if dep_scope is not None else "compile",
-                        }
-                    )
-
-            # Also check without namespace
-            if not dependencies:
-                for dep in root.findall(".//dependency"):
-                    dep_group = dep.find("groupId")
-                    dep_artifact = dep.find("artifactId")
-                    dep_version = dep.find("version")
-                    dep_scope = dep.find("scope")
-
-                    if dep_group is not None and dep_artifact is not None:
-                        dependencies.append(
-                            {
-                                "groupId": dep_group.text,
-                                "artifactId": dep_artifact.text,
-                                "version": (
-                                    dep_version.text if dep_version is not None else "managed"
-                                ),
-                                "scope": dep_scope.text if dep_scope is not None else "compile",
-                            }
-                        )
-
+            dependencies = [
+                {
+                    "groupId": pom_text(dep, "groupId"),
+                    "artifactId": pom_text(dep, "artifactId"),
+                    "version": pom_text(dep, "version") or "managed",
+                    "scope": pom_text(dep, "scope") or "compile",
+                }
+                for dep in pom_findall(root, "dependency")
+                if pom_text(dep, "groupId") and pom_text(dep, "artifactId")
+            ]
             results["dependencies"] = dependencies
 
     except ET.ParseError as e:

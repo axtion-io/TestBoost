@@ -19,9 +19,15 @@ from src.java.parsing_utils import (
     _is_primitive_type,
     _parse_parameters,
 )
+from src.java.pom import pom_child, pom_findall, pom_text
 from src.lib.llm import get_llm
 from src.lib.logging import get_logger
-from src.lib.prompt_utils import load_prompt_template, render_template
+from src.lib.prompt_utils import (
+    extract_code_block,
+    load_prompt_template,
+    render_template,
+    response_text,
+)
 
 logger = get_logger(__name__)
 
@@ -114,6 +120,15 @@ async def generate_adaptive_tests(
     return json.dumps(results, indent=2)
 
 
+_KEY_DEPENDENCIES = (
+    "lombok", "junit", "mockito", "spring-boot-starter-test",
+    "spring-boot-starter-data-jpa", "spring-boot-starter-web", "h2",
+)
+
+# spring-boot-starter-test bundles JUnit 5, Mockito, AssertJ and Hamcrest.
+_SPRING_BOOT_STARTER_TEST_FLAGS = ("has_mockito", "has_assertj", "has_hamcrest", "has_spring_test")
+
+
 @lru_cache(maxsize=16)
 def _extract_project_context(project_path: str) -> str:
     """Extract key project info from pom.xml for LLM context (cached per project).
@@ -130,50 +145,30 @@ def _extract_project_context(project_path: str) -> str:
         return ""
 
     try:
-        tree = ET.parse(pom_file)
-        root = tree.getroot()
-        ns = {"m": "http://maven.apache.org/POM/4.0.0"}
-
+        root = ET.parse(pom_file).getroot()
         parts = ["## Project Technical Context\n"]
 
         # Java version
-        props = root.find("m:properties", ns) or root.find("properties")
-        if props is not None:
-            for tag in ["m:java.version", "java.version", "m:maven.compiler.source", "maven.compiler.source"]:
-                el = props.find(tag, ns) if tag.startswith("m:") else props.find(tag)
-                if el is not None and el.text:
-                    parts.append(f"- **Java version**: {el.text}")
-                    break
+        props = pom_child(root, "properties")
+        java_version = (
+            pom_text(props, "java.version")
+            or pom_text(props, "maven.compiler.release")
+            or pom_text(props, "maven.compiler.source")
+        )
+        if java_version:
+            parts.append(f"- **Java version**: {java_version}")
 
         # Spring Boot version from parent
-        parent = root.find("m:parent", ns)
-        if parent is None:
-            parent = root.find("parent")
-        if parent is not None:
-            parent_artifact = parent.find("m:artifactId", ns)
-            if parent_artifact is None:
-                parent_artifact = parent.find("artifactId")
-            parent_version = parent.find("m:version", ns)
-            if parent_version is None:
-                parent_version = parent.find("version")
-            if parent_artifact is not None and "spring-boot" in (parent_artifact.text or ""):
-                parts.append(f"- **Spring Boot version**: {parent_version.text if parent_version is not None else 'unknown'}")
+        parent = pom_child(root, "parent")
+        if "spring-boot" in (pom_text(parent, "artifactId") or ""):
+            parts.append(f"- **Spring Boot version**: {pom_text(parent, 'version') or 'unknown'}")
 
         # Key dependencies
-        key_deps = []
-        for dep_path in [".//m:dependency", ".//dependency"]:
-            use_ns = ns if dep_path.startswith(".//m:") else {}
-            for dep in root.findall(dep_path, use_ns) if use_ns else root.findall(dep_path):
-                artifact = dep.find("m:artifactId", ns) if use_ns else dep.find("artifactId")
-                version = dep.find("m:version", ns) if use_ns else dep.find("version")
-                if artifact is not None and artifact.text is not None and any(k in artifact.text for k in [
-                    "lombok", "junit", "mockito", "spring-boot-starter-test",
-                    "spring-boot-starter-data-jpa", "spring-boot-starter-web", "h2",
-                ]):
-                    ver = version.text if version is not None else "managed"
-                    key_deps.append(f"  - {artifact.text} ({ver})")
-            if key_deps:
-                break
+        key_deps = [
+            f"  - {pom_text(dep, 'artifactId')} ({pom_text(dep, 'version') or 'managed'})"
+            for dep in pom_findall(root, "dependency")
+            if any(k in (pom_text(dep, "artifactId") or "") for k in _KEY_DEPENDENCIES)
+        ]
 
         if key_deps:
             parts.append("- **Key dependencies**:")
@@ -208,44 +203,32 @@ def _detect_test_dependencies(project_path: str) -> dict[str, Any]:
         return result
 
     try:
-        tree = ET.parse(pom_file)
-        root = tree.getroot()
-        ns = {"m": "http://maven.apache.org/POM/4.0.0"}
-
+        root = ET.parse(pom_file).getroot()
         has_junit4 = False
         has_junit5 = False
 
-        for dep_path, use_ns in [(".//m:dependency", ns), (".//dependency", {})]:
-            deps = root.findall(dep_path, use_ns) if use_ns else root.findall(dep_path)
-            for dep in deps:
-                artifact = dep.find("m:artifactId", ns) if use_ns else dep.find("artifactId")
-                if artifact is None or not artifact.text:
-                    continue
-                aid = artifact.text
-
-                if aid in ("junit", "junit-dep"):
-                    has_junit4 = True
-                    result["available_deps"].append(aid)
-                elif aid in ("junit-jupiter", "junit-jupiter-api", "junit-jupiter-engine"):
-                    has_junit5 = True
-                    result["available_deps"].append(aid)
-                elif aid == "spring-boot-starter-test":
-                    # Spring Boot 2.2+ bundles JUnit 5; explicit junit dep overrides
-                    has_junit5 = True
-                    result["has_spring_test"] = True
-                    result["available_deps"].append(aid)
-                elif "mockito" in aid:
-                    result["has_mockito"] = True
-                    result["available_deps"].append(aid)
-                elif aid == "assertj-core":
-                    result["has_assertj"] = True
-                    result["available_deps"].append(aid)
-                elif "hamcrest" in aid:
-                    result["has_hamcrest"] = True
-                    result["available_deps"].append(aid)
-
-            if result["available_deps"]:
-                break
+        for dep in pom_findall(root, "dependency"):
+            aid = pom_text(dep, "artifactId")
+            if not aid:
+                continue
+            if aid in ("junit", "junit-dep"):
+                has_junit4 = True
+            elif aid in ("junit-jupiter", "junit-jupiter-api", "junit-jupiter-engine"):
+                has_junit5 = True
+            elif aid == "spring-boot-starter-test":
+                # Spring Boot 2.2+ bundles JUnit 5; explicit junit dep overrides
+                has_junit5 = True
+                for flag in _SPRING_BOOT_STARTER_TEST_FLAGS:
+                    result[flag] = True
+            elif "mockito" in aid:
+                result["has_mockito"] = True
+            elif aid == "assertj-core":
+                result["has_assertj"] = True
+            elif "hamcrest" in aid:
+                result["has_hamcrest"] = True
+            else:
+                continue
+            result["available_deps"].append(aid)
 
         # JUnit 5 wins when both are present
         if has_junit5:
@@ -538,8 +521,7 @@ async def fix_compilation_errors(
     )
 
     response = await llm.ainvoke(prompt)
-    raw = response.content if hasattr(response, "content") else str(response)
-    code = str(raw) if not isinstance(raw, str) else raw
+    raw = response_text(response)
 
     usage = _extract_token_usage(response)
     logger.debug(
@@ -549,11 +531,7 @@ async def fix_compilation_errors(
         **usage,
     )
 
-    if "```java" in code:
-        code = code.split("```java")[1].split("```")[0].strip()
-    elif "```" in code:
-        code = code.split("```")[1].split("```")[0].strip()
-    return code
+    return extract_code_block(raw)
 
 
 async def fix_test_runtime_errors(test_code: str, test_errors: str, class_name: str) -> str:
@@ -575,8 +553,7 @@ async def fix_test_runtime_errors(test_code: str, test_errors: str, class_name: 
     )
 
     response = await llm.ainvoke(prompt)
-    raw = response.content if hasattr(response, "content") else str(response)
-    code = str(raw) if not isinstance(raw, str) else raw
+    raw = response_text(response)
 
     usage = _extract_token_usage(response)
     logger.debug(
@@ -586,11 +563,7 @@ async def fix_test_runtime_errors(test_code: str, test_errors: str, class_name: 
         **usage,
     )
 
-    if "```java" in code:
-        code = code.split("```java")[1].split("```")[0].strip()
-    elif "```" in code:
-        code = code.split("```")[1].split("```")[0].strip()
-    return code
+    return extract_code_block(raw)
 
 
 async def _generate_test_code_with_llm(context: dict[str, Any], source_code: str, *, prompt_template_dir: str | None = None) -> str:
@@ -771,9 +744,7 @@ async def _generate_test_code_with_llm(context: dict[str, Any], source_code: str
         response = await llm.ainvoke(prompt)
 
         # Extract the test code from response
-        raw_content = response.content if hasattr(response, 'content') else str(response)
-        # Ensure test_code is a string (LangChain content can be str or list)
-        test_code: str = str(raw_content) if not isinstance(raw_content, str) else raw_content
+        test_code = response_text(response)
 
         usage = _extract_token_usage(response)
         logger.debug(
@@ -783,13 +754,7 @@ async def _generate_test_code_with_llm(context: dict[str, Any], source_code: str
             **usage,
         )
 
-        # Clean up any markdown code blocks if present
-        if "```java" in test_code:
-            test_code = test_code.split("```java")[1].split("```")[0].strip()
-        elif "```python" in test_code:
-            test_code = test_code.split("```python")[1].split("```")[0].strip()
-        elif "```" in test_code:
-            test_code = test_code.split("```")[1].split("```")[0].strip()
+        test_code = extract_code_block(test_code)
 
         # Validate that we got actual test code (technology-aware)
         has_java_tests = "@Test" in test_code and "class" in test_code
@@ -1006,14 +971,8 @@ async def analyze_edge_cases(source_code: str, class_name: str, class_type: str)
 
     llm = get_llm()
     response = await llm.ainvoke(prompt)
-    raw = response.content if hasattr(response, "content") else str(response)
-    text = str(raw) if not isinstance(raw, str) else raw
-
-    # Extract JSON from response (may be wrapped in markdown fences)
-    if "```json" in text:
-        text = text.split("```json")[1].split("```")[0].strip()
-    elif "```" in text:
-        text = text.split("```")[1].split("```")[0].strip()
+    # JSON may be wrapped in markdown fences
+    text = extract_code_block(response_text(response))
 
     try:
         scenarios = json.loads(text)

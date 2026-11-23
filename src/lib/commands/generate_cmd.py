@@ -34,6 +34,7 @@ async def _cmd_generate_async(args: argparse.Namespace) -> int:
         finalize_answer,
         get_current_session,
         load_generation_cursor,
+        load_project_config,
         save_generation_cursor,
         update_step_file,
     )
@@ -64,6 +65,9 @@ async def _cmd_generate_async(args: argparse.Namespace) -> int:
         return abort
 
     fail_on_uncertainty = bool(getattr(args, "fail_on_uncertainty", False))
+    project_config = load_project_config(project_path)
+    fix_budget = project_config["max_correction_retries"]
+    test_timeout = project_config["test_timeout_seconds"]
 
     try:
         # Extract gaps from the coverage-gaps.md
@@ -239,7 +243,7 @@ async def _cmd_generate_async(args: argparse.Namespace) -> int:
                         test_code, exhausted = await _attempt_compile_fix(
                             project_path, full_path, test_code,
                             fix_key, logger, session_dir, maven_compile_cmd,
-                            plugin=plugin,
+                            plugin=plugin, max_attempts=fix_budget,
                         )
                         if exhausted and fail_on_uncertainty:
                             uncertainties.append(
@@ -256,6 +260,7 @@ async def _cmd_generate_async(args: argparse.Namespace) -> int:
                             test_code = await _attempt_test_runtime_fix(
                                 project_path, full_path, test_code,
                                 fix_key, logger, session_dir, maven_test_cmd,
+                                timeout=test_timeout,
                             )
                         generated.append({
                             "path": test_path,
@@ -374,6 +379,7 @@ async def _cmd_generate_async(args: argparse.Namespace) -> int:
                         cls, logger, session_dir, maven_compile_cmd,
                         hints=dev_hints,
                         plugin=plugin,
+                        max_attempts=fix_budget,
                     )
                     if exhausted and fail_on_uncertainty:
                         uncertainties.append(
@@ -392,6 +398,7 @@ async def _cmd_generate_async(args: argparse.Namespace) -> int:
                         test_code = await _attempt_test_runtime_fix(
                             project_path, full_path, test_code,
                             cls, logger, session_dir, maven_test_cmd,
+                            timeout=test_timeout,
                         )
 
                     generated.append({
@@ -516,7 +523,7 @@ def _compile_fix_item(
     class_name: str, test_file: str, exhausted: dict, current_code: str
 ) -> dict:
     """Build a question item for a compile-fix budget exhaustion."""
-    attempts = exhausted.get("attempts", _MAX_COMPILE_FIX_ATTEMPTS)
+    attempts = exhausted.get("attempts", _MAX_COMPILE_FIX_ATTEMPTS - 1)
     return {
         "kind": "compilation_fix_exhausted",
         "subject": {
@@ -526,7 +533,7 @@ def _compile_fix_item(
         },
         "question": (
             f"Could not fix compilation of `{class_name}` after "
-            f"{attempts} LLM attempts. Please review the "
+            f"{attempts} LLM fix attempt(s). Please review the "
             f"errors and provide either the corrected test code or hints."
         ),
         "compile_errors": exhausted.get("errors", ""),
@@ -554,21 +561,21 @@ def _merge_answer_schemas(items: list[dict]) -> dict:
     return merged
 
 
-def _safe_test_target(project_path: str, test_path: str, source_file: str) -> Path:
-    """Resolve the absolute target for a generated test, refusing to clobber
-    the source under test.
+def _safe_test_target(project_path: str, test_path: str, source_file: str | None = None) -> Path:
+    """Resolve the absolute target for a generated test, refusing to write
+    outside the project or over the source under test.
 
-    Defense in depth behind the plugin's test_file_name(): whatever the
-    mapping (or a future bug in it) produces, a generated test must never
-    land on the production file it was generated FOR.
+    `test_path` can come from committed session state (the generation
+    cursor, the killer step) — a `../` there must not let a push to the MR
+    branch write anywhere on the CI runner. And whatever the plugin's
+    test_file_name() mapping produces, a generated test must never land on
+    the production file it was generated FOR.
     """
-    full_path = Path(project_path) / test_path
-    source_abs = Path(project_path) / source_file
-    try:
-        collision = full_path.resolve() == source_abs.resolve()
-    except OSError:
-        collision = str(full_path) == str(source_abs)
-    if collision:
+    root = Path(project_path).resolve()
+    full_path = (root / test_path).resolve()
+    if not full_path.is_relative_to(root):
+        raise RuntimeError(f"refusing to write generated test outside the project: {test_path}")
+    if source_file and full_path == (root / source_file).resolve():
         raise RuntimeError(
             f"refusing to write generated test over its own source file "
             f"({source_file}) — test path mapping returned the source path"
@@ -586,8 +593,12 @@ async def _attempt_compile_fix(
     maven_compile_cmd: str | None = None,
     hints: list[str] | None = None,
     plugin=None,
+    max_attempts: int = _MAX_COMPILE_FIX_ATTEMPTS,
 ) -> tuple[str, dict | None]:
-    """Compile-check the test file and use the LLM to fix errors, retrying up to N times.
+    """Compile-check the test file and use the LLM to fix errors.
+
+    `max_attempts` is the number of compile checks (config.yaml
+    `max_correction_retries`), so at most `max_attempts - 1` LLM fixes run.
 
     The compile command comes from the technology plugin when one is
     supplied (e.g. `py_compile {test_file}` for Python); the Java path
@@ -621,7 +632,9 @@ async def _attempt_compile_fix(
 
     # When the developer provides natural-language hints, cap to a single
     # LLM retry so we don't burn budget on hint-guided iterations.
-    max_attempts = 2 if hints else _MAX_COMPILE_FIX_ATTEMPTS
+    if hints:
+        max_attempts = min(max_attempts, 2)
+    prompt_dir = plugin.prompt_template_dir if plugin is not None else None
     hint_text = "\n".join(f"- {h}" for h in hints) if hints else ""
 
     for attempt in range(1, max_attempts + 1):
@@ -660,7 +673,7 @@ async def _attempt_compile_fix(
 
         if attempt == max_attempts:
             logger.info(f"Max fix attempts reached for {class_name}")
-            return current_code, {"errors": relevant_errors, "attempts": max_attempts}
+            return current_code, {"errors": relevant_errors, "attempts": max_attempts - 1}
 
         # --- ask LLM to fix ---
         try:
@@ -672,10 +685,12 @@ async def _attempt_compile_fix(
                     f"Developer hints (please follow):\n{hint_text}"
                 )
                 logger.info(f"Applying {len(hints)} developer hint(s) to LLM fix")
-            fixed = await fix_compilation_errors(current_code, errors_with_hints, class_name)
+            fixed = await fix_compilation_errors(
+                current_code, errors_with_hints, class_name, prompt_template_dir=prompt_dir,
+            )
             if fixed == current_code:
                 logger.info(f"LLM returned identical code for {class_name} — stopping retries")
-                return current_code, {"errors": relevant_errors, "attempts": attempt}
+                return current_code, {"errors": relevant_errors, "attempts": attempt - 1}
             test_file.write_text(fixed, encoding="utf-8")
             current_code = fixed
             logger.info(f"Applied fix attempt {attempt} for {class_name}, recompiling...")
@@ -699,6 +714,7 @@ async def _attempt_test_runtime_fix(
     logger,
     session_dir: str | None = None,
     maven_test_cmd: str | None = None,
+    timeout: int = _TEST_FIX_TIMEOUT_SECONDS,
 ) -> str:
     """Run `mvn test -Dtest=<class>` and use LLM to fix runtime failures, retrying up to N times.
 
@@ -728,7 +744,7 @@ async def _attempt_test_runtime_fix(
         try:
             result = subprocess.run(
                 cmd, cwd=project_path, capture_output=True, text=True,
-                timeout=_TEST_FIX_TIMEOUT_SECONDS,
+                timeout=timeout,
             )
         except (subprocess.TimeoutExpired, FileNotFoundError) as e:
             logger.warn(f"Test run skipped ({class_name}): {e}")

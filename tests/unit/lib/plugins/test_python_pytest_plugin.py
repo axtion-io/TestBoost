@@ -110,3 +110,35 @@ class TestTestFileName:
     def test_backslash_separator(self, plugin):
         result = plugin.test_file_name("src\\services\\order.py")
         assert result == "tests/services/test_order.py"
+
+
+# ---------------------------------------------------------------------------
+# classify_source_file() — reads the file relative to the PROJECT, not the CWD
+# ---------------------------------------------------------------------------
+
+class TestClassifySourceFile:
+    """analyze passes paths relative to the project: resolving them against
+    the CWD classified every file as 'module'."""
+
+    def _write(self, root, rel, code):
+        path = root / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(code)
+
+    def test_categories_from_top_level_definitions(self, plugin, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path.parent)  # CWD is NOT the project
+        self._write(tmp_path, "app/models.py", "class User:\n    def name(self): ...\n")
+        self._write(tmp_path, "app/utils.py", "async def fetch(): ...\ndef parse(): ...\n")
+        self._write(tmp_path, "app/settings.py", "DEBUG = True\n")
+        assert plugin.classify_source_file("app/models.py", tmp_path) == "class"
+        assert plugin.classify_source_file("app/utils.py", tmp_path) == "function"
+        assert plugin.classify_source_file("app/settings.py", tmp_path) == "module"
+
+    def test_nested_definitions_do_not_count(self, plugin, tmp_path):
+        self._write(tmp_path, "m.py", "if True:\n    class Hidden: ...\n")
+        assert plugin.classify_source_file("m.py", tmp_path) == "module"
+
+    def test_unreadable_or_invalid_file_is_module(self, plugin, tmp_path):
+        self._write(tmp_path, "broken.py", "def (:\n")
+        assert plugin.classify_source_file("broken.py", tmp_path) == "module"
+        assert plugin.classify_source_file("missing.py", tmp_path) == "module"

@@ -4,8 +4,10 @@
 Centralises the load + render pattern used across test_generator and maven tools.
 """
 
+import re
 from functools import lru_cache
 from pathlib import Path
+from typing import Any
 
 _PROMPTS_DIR = Path(__file__).parent.parent / "prompts"
 
@@ -33,4 +35,30 @@ def render_template(template: str, **kwargs: object) -> str:
     return template
 
 
-__all__ = ["load_prompt_template", "render_template"]
+# First fenced block, whatever its language tag (```java, ```python, ```json, ```).
+_CODE_FENCE = re.compile(r"```[\w+#-]*[ \t]*\n(.*?)```", re.DOTALL)
+
+
+def response_text(response: Any) -> str:
+    """Text of a LangChain chat response.
+
+    `content` is a str for plain answers but a list of content blocks for
+    some providers/modes (e.g. Anthropic with thinking) — str() of that list
+    would feed a Python repr to the compiler.
+    """
+    content = getattr(response, "content", response)
+    if isinstance(content, list):
+        return "".join(
+            block.get("text", "") if isinstance(block, dict) else str(block)
+            for block in content
+        )
+    return str(content)
+
+
+def extract_code_block(text: str) -> str:
+    """Return the body of the first fenced block, or the whole text if unfenced."""
+    match = _CODE_FENCE.search(text)
+    return (match.group(1) if match else text).strip()
+
+
+__all__ = ["extract_code_block", "load_prompt_template", "render_template", "response_text"]

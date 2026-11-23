@@ -12,6 +12,7 @@ import shutil
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
+from src.java.pom import pom_child, pom_findall, pom_text
 from src.lib.plugins.base import TechnologyPlugin
 
 
@@ -50,8 +51,8 @@ class JavaSpringPlugin(TechnologyPlugin):
         from src.java.discovery import find_source_files
         return find_source_files(str(project_path))
 
-    def classify_source_file(self, relative_path: str) -> str:
-        """Classify a Java source file by semantic category."""
+    def classify_source_file(self, relative_path: str, project_path: Path | None = None) -> str:
+        """Classify a Java source file by semantic category (path-based)."""
         from src.java.discovery import classify_source_file
         return classify_source_file(relative_path)
 
@@ -141,32 +142,21 @@ def _detect_maven_build_config(project_path: Path) -> dict:
     active_profiles: list[str] = []
     if pom_file.exists():
         try:
-            tree = ET.parse(pom_file)
-            root = tree.getroot()
-            ns = {"maven": "http://maven.apache.org/POM/4.0.0"}
-
-            profiles = root.findall(".//maven:profile", ns) or root.findall(".//profile")
-            for profile in profiles:
-                activation = (
-                    profile.find("maven:activation", ns)
-                    or profile.find("activation")
-                )
-                if activation is not None:
-                    active_by_default = (
-                        activation.find("maven:activeByDefault", ns)
-                        or activation.find("activeByDefault")
+            root = ET.parse(pom_file).getroot()
+            for profile in pom_findall(root, "profile"):
+                activation = pom_child(profile, "activation")
+                if pom_text(activation, "activeByDefault") != "true":
+                    continue
+                pid = pom_text(profile, "id")
+                if not pid:
+                    continue
+                if re.match(r"^[a-zA-Z0-9_.\-]+$", pid):
+                    active_profiles.append(pid)
+                else:
+                    notes.append(
+                        f"Skipped profile with invalid ID: {pid!r} "
+                        f"(only alphanumeric, _, ., - allowed)"
                     )
-                    if active_by_default is not None and active_by_default.text == "true":
-                        profile_id = profile.find("maven:id", ns) or profile.find("id")
-                        if profile_id is not None and profile_id.text:
-                            pid = profile_id.text.strip()
-                            if re.match(r"^[a-zA-Z0-9_.\-]+$", pid):
-                                active_profiles.append(pid)
-                            else:
-                                notes.append(
-                                    f"Skipped profile with invalid ID: {pid!r} "
-                                    f"(only alphanumeric, _, ., - allowed)"
-                                )
         except ET.ParseError:
             pass
 

@@ -13,7 +13,7 @@ from src.lib.commands._shared import (
     _read_step_status,
     load_answer_for_step,
 )
-from src.lib.commands.generate_cmd import _attempt_compile_fix
+from src.lib.commands.generate_cmd import _attempt_compile_fix, _safe_test_target
 
 
 def cmd_mutate(args: argparse.Namespace) -> int:
@@ -304,6 +304,9 @@ async def _cmd_killer_async(args: argparse.Namespace) -> int:
             return 1
 
         generated_tests = result.get("generated_tests", [])
+        skipped = result.get("skipped", [])
+        for item in skipped:
+            logger.warn(f"Killer tests skipped for {item.get('class')}: {item.get('reason')}")
 
         # --- HITL trigger: no killer tests produced + flag on → pause.
         # Pauses again even when hints were provided (the hints didn't work);
@@ -348,6 +351,11 @@ async def _cmd_killer_async(args: argparse.Namespace) -> int:
         content += f"**Surviving mutants targeted**: {result.get('total_mutants_targeted', 0)}\n"
         content += f"**Test classes generated**: {len(generated_tests)}\n"
         content += f"**Total test methods**: {result.get('total_tests', 0)}\n\n"
+        if skipped:
+            content += "## Skipped Classes\n\n"
+            for item in skipped:
+                content += f"- `{item.get('class')}`: {item.get('reason')}\n"
+            content += "\n"
 
         if generated_tests:
             content += "## Generated Killer Tests\n\n"
@@ -365,7 +373,7 @@ async def _cmd_killer_async(args: argparse.Namespace) -> int:
 
                 # Write test file to disk
                 if test_path and test_code:
-                    full_path = Path(project_path) / test_path
+                    full_path = _safe_test_target(project_path, test_path)
                     full_path.parent.mkdir(parents=True, exist_ok=True)
                     full_path.write_text(test_code, encoding="utf-8")
                     logger.info(f"Wrote killer test: {test_path}")
@@ -380,11 +388,16 @@ async def _cmd_killer_async(args: argparse.Namespace) -> int:
             if project_data:
                 maven_compile_cmd = project_data.get("maven_compile_cmd")
 
+            from src.lib.bridge import get_plugin_for_session
+            from src.lib.session_tracker import load_project_config
+            plugin = get_plugin_for_session(project_path)
+            fix_budget = load_project_config(project_path)["max_correction_retries"]
             for full_path, test in written_files:
                 class_name = test.get("class", "").split(".")[-1]
                 fixed, _exhausted = await _attempt_compile_fix(
                     project_path, full_path, test.get("test_code", ""),
                     class_name, logger, session_dir, maven_compile_cmd,
+                    plugin=plugin, max_attempts=fix_budget,
                 )
                 if fixed != test.get("test_code", ""):
                     test["test_code"] = fixed
@@ -402,6 +415,7 @@ async def _cmd_killer_async(args: argparse.Namespace) -> int:
                 ],
                 "total_mutants_targeted": result.get("total_mutants_targeted", 0),
                 "total_tests": result.get("total_tests", 0),
+                "skipped": skipped,
             },
         )
 

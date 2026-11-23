@@ -11,7 +11,6 @@ To add a new plugin:
 """
 
 from src.lib.plugins.base import TechnologyPlugin
-from src.lib.plugins.go_testing_stub import GoTestingPlugin
 from src.lib.plugins.java_spring import JavaSpringPlugin
 from src.lib.plugins.python_pytest import PythonPytestPlugin
 from src.lib.plugins.registry import PluginRegistry
@@ -19,7 +18,6 @@ from src.lib.plugins.registry import PluginRegistry
 _registry = PluginRegistry()
 _registry.register(JavaSpringPlugin())    # priority 1 — checked first
 _registry.register(PythonPytestPlugin())  # priority 2
-_registry.register(GoTestingPlugin())     # priority 3 (stub — demonstrates extensibility)
 
 
 def get_registry() -> PluginRegistry:

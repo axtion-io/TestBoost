@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 """Unit tests for the pure helpers of src.test_generation.generate_unit."""
 
-from pathlib import Path
 from types import SimpleNamespace
 
 from src.test_generation.generate_unit import (
@@ -10,7 +9,6 @@ from src.test_generation.generate_unit import (
     _detect_class_type,
     _detect_test_dependencies,
     _extract_token_usage,
-    _get_test_file_path,
     _validate_generated_imports,
 )
 
@@ -182,10 +180,3 @@ class TestExtractTokenUsage:
     def test_missing_everywhere(self):
         usage = _extract_token_usage(object())
         assert usage == {"prompt_tokens": None, "completion_tokens": None, "total_tokens": None}
-
-
-class TestGetTestFilePath:
-    def test_maps_main_to_test_and_suffixes(self, tmp_path):
-        src = tmp_path / "src/main/java/com/x/OrderService.java"
-        result = _get_test_file_path(tmp_path, src)
-        assert result == Path("src/test/java/com/x/OrderServiceTest.java")

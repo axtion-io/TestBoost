@@ -15,7 +15,6 @@ from typing import Any
 from src.java.parsing_utils import (
     _analyze_jpa_fields,
     _extract_balanced_parens,
-    _extract_public_signatures,
     _is_primitive_type,
     _parse_parameters,
 )
@@ -37,7 +36,6 @@ async def generate_adaptive_tests(
     source_file: str,
     class_type: str | None = None,
     conventions: dict[str, Any] | None = None,
-    coverage_target: float = 80,
     test_requirements: list[dict[str, Any]] | None = None,
     class_index: dict[str, dict[str, Any]] | None = None,
     test_examples: list[dict[str, str]] | None = None,
@@ -51,11 +49,14 @@ async def generate_adaptive_tests(
         source_file: Path to the source file to generate tests for
         class_type: Classification of the class (controller, service, etc.)
         conventions: Test conventions to follow
-        coverage_target: Target code coverage percentage
-        test_requirements: Optional list of specific test requirements from impact analysis
+        test_requirements: Scenarios the tests must cover (edge cases, answers)
+        class_index: Project class index built by `analyze` (dependency types)
+        test_examples: Existing project tests used as style references
+        prompt_template_dir: The technology plugin's prompt directory
 
     Returns:
-        JSON string with generated test code and metadata
+        JSON string: success, test_code, class_type and context
+        (class_name, package). Where the test is written is the plugin's call.
     """
     project_dir = Path(project_path)
     source_path = Path(source_file)
@@ -79,9 +80,6 @@ async def generate_adaptive_tests(
     if not class_type:
         class_type = _detect_class_type(source_code, class_info)
 
-    # Generate test file path
-    test_file_path = _get_test_file_path(project_dir, source_path)
-
     # Build test generation context
     context = {
         "class_name": class_info["class_name"],
@@ -91,7 +89,6 @@ async def generate_adaptive_tests(
         "dependencies": class_info["dependencies"],
         "annotations": class_info["annotations"],
         "conventions": conventions or {},
-        "coverage_target": coverage_target,
         "test_requirements": test_requirements or [],
         "imports": class_info.get("imports", []),
         "is_record": class_info.get("is_record", False),
@@ -105,19 +102,12 @@ async def generate_adaptive_tests(
     logger.info("generating_tests_with_llm", class_name=class_info["class_name"])
     test_code = await _generate_test_code_with_llm(context, source_code, prompt_template_dir=prompt_template_dir)
 
-    results = {
+    return json.dumps({
         "success": True,
-        "source_file": str(source_path),
-        "test_file": str(test_file_path),
         "class_type": class_type,
         "test_code": test_code,
-        "methods_covered": len(class_info["methods"]),
-        "estimated_coverage": min(coverage_target, 85),
-        "test_count": test_code.count("@Test") or test_code.count("def test_"),
-        "context": context,
-    }
-
-    return json.dumps(results, indent=2)
+        "context": {"class_name": context["class_name"], "package": context["package"]},
+    })
 
 
 _KEY_DEPENDENCIES = (
@@ -314,64 +304,6 @@ def _build_framework_instructions(test_deps: dict[str, Any]) -> str:
     return "\n".join(parts) + "\n"
 
 
-@lru_cache(maxsize=32)
-def _find_existing_test_example(
-    project_path: str, package: str, skip_class: str = "",
-) -> str:
-    """Find an existing test file in the project as a style reference.
-
-    Returns formatted prompt section, or empty string if none found.
-    """
-    project_dir = Path(project_path)
-    test_dir = project_dir / "src" / "test" / "java"
-
-    if not test_dir.exists():
-        return ""
-
-    package_path = package.replace(".", "/")
-    skip_filename = f"{skip_class}Test.java" if skip_class else ""
-
-    test_files: list[Path] = []
-
-    # Look in same package first
-    same_pkg = test_dir / package_path
-    if same_pkg.exists():
-        test_files = sorted(same_pkg.glob("*Test.java"))
-
-    # Fallback: parent package
-    if not test_files:
-        parent_parts = package_path.split("/")[:-1]
-        if parent_parts:
-            parent_pkg = test_dir / "/".join(parent_parts)
-            if parent_pkg.exists():
-                test_files = sorted(parent_pkg.glob("*Test.java"))[:3]
-
-    # Fallback: any test file in the project
-    if not test_files:
-        test_files = sorted(test_dir.rglob("*Test.java"))[:5]
-
-    if not test_files:
-        return ""
-
-    for test_file in test_files:
-        if skip_filename and test_file.name == skip_filename:
-            continue
-        try:
-            content = test_file.read_text(encoding="utf-8", errors="replace")
-            lines = content.split("\n")[:80]
-            truncated = "\n".join(lines)
-            if len(content.split("\n")) > 80:
-                truncated += "\n// ... (truncated)"
-            return (
-                "\n## Existing Test Example (follow this style and imports):\n"
-                f"```java\n{truncated}\n```\n"
-            )
-        except Exception:
-            continue
-
-    return ""
-
-
 def _validate_generated_imports(test_code: str, test_deps: dict[str, Any]) -> list[str]:
     """Check that generated test imports match available dependencies."""
     warnings: list[str] = []
@@ -398,36 +330,12 @@ def _validate_generated_imports(test_code: str, test_deps: dict[str, Any]) -> li
     return warnings
 
 
-def _extract_dependency_signatures(project_path: str, dependencies: list[dict[str, Any]]) -> str:
-    """Find source files for dependency classes and extract their public method signatures."""
-    if not dependencies or not project_path:
-        return ""
-    project_dir = Path(project_path)
-    results = []
-    for dep in dependencies:
-        dep_type = dep.get("type", "").split("<")[0].strip()
-        if not dep_type or _is_primitive_type(dep_type):
-            continue
-        matches = list(project_dir.rglob(f"{dep_type}.java"))
-        if not matches:
-            continue
-        try:
-            source = matches[0].read_text(encoding="utf-8", errors="replace")
-            sigs = _extract_public_signatures(source)
-            if sigs:
-                results.append(f"**{dep_type}** (field: `{dep.get('name', dep_type)}`):\n{sigs}")
-        except Exception:
-            pass
-    return "\n".join(results)
-
-
 def _resolve_dependency_signatures_from_index(
     dependencies: list[dict[str, Any]], class_index: dict[str, dict[str, Any]]
 ) -> str:
     """Resolve dependency method signatures from the pre-built class index.
 
-    Replaces _extract_dependency_signatures() when a class_index is available.
-    Provides richer context: field types (fixes BigDecimal vs Double problems),
+    Provides precise context: field types (fixes BigDecimal vs Double problems),
     inheritance chain, and all public method signatures — without filesystem I/O.
     """
     results = []
@@ -465,11 +373,7 @@ def _resolve_dependency_signatures_from_index(
 
 
 def _build_test_examples_section(test_examples: list[dict[str, str]]) -> str:
-    """Build the test style examples section from pre-extracted examples.
-
-    Replaces _find_existing_test_example() (1 file, 80 lines) with
-    up to 3 complete examples (150 lines each).
-    """
+    """Build the test style examples section (up to 3 examples extracted by `analyze`)."""
     if not test_examples:
         return ""
     parts = ["\n## Existing Test Examples (follow this style and imports exactly):\n"]
@@ -600,23 +504,12 @@ async def _generate_test_code_with_llm(context: dict[str, Any], source_code: str
     }
     framework_instructions = _build_framework_instructions(test_deps)
 
-    # Test style examples: use pre-extracted multi-examples when available,
-    # fall back to lazy single-file lookup.
-    existing_test_example = (
-        _build_test_examples_section(test_examples)
-        if test_examples
-        else (
-            _find_existing_test_example(project_path, package, class_name)
-            if project_path else ""
-        )
+    # Context built once by `analyze` (.testboost/analysis.md)
+    existing_test_example = _build_test_examples_section(test_examples or [])
+    dep_signatures = (
+        _resolve_dependency_signatures_from_index(dependencies, class_index)
+        if class_index else ""
     )
-
-    # Dependency signatures: use pre-built class index when available,
-    # fall back to lazy filesystem lookup.
-    if class_index:
-        dep_signatures = _resolve_dependency_signatures_from_index(dependencies, class_index)
-    else:
-        dep_signatures = _extract_dependency_signatures(project_path, dependencies)
     dep_section = ""
     if dep_signatures:
         dep_section = (
@@ -677,7 +570,7 @@ async def _generate_test_code_with_llm(context: dict[str, Any], source_code: str
     if class_type == "controller":
         class_type_instructions = f"""
 ## Controller-Specific Instructions:
-- Use {spring_runner}@WebMvcTest({{class_name}}.class) for test class annotation
+- Use {spring_runner}@WebMvcTest({class_name}.class) for test class annotation
 - Use @MockBean for service dependencies (NOT @Mock)
 - Use MockMvc for HTTP request testing
 - Test HTTP status codes, response body, and content type
@@ -937,22 +830,6 @@ def _detect_class_type(source_code: str, class_info: dict[str, Any]) -> str:
         return "model"
     else:
         return "utility"
-
-
-def _get_test_file_path(project_dir: Path, source_path: Path) -> Path:
-    """Generate test file path from source file path."""
-    relative = source_path.relative_to(project_dir)
-    parts = list(relative.parts)
-
-    if "main" in parts:
-        idx = parts.index("main")
-        parts[idx] = "test"
-
-    filename = parts[-1]
-    if filename.endswith(".java"):
-        parts[-1] = filename.replace(".java", "Test.java")
-
-    return Path(*parts)
 
 
 async def analyze_edge_cases(source_code: str, class_name: str, class_type: str) -> list[dict[str, Any]]:

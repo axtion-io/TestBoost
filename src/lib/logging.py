@@ -12,12 +12,7 @@ from pathlib import Path
 from typing import Any
 
 import structlog
-from structlog.types import EventDict, Processor, WrappedLogger
-
-from src.lib.log_taxonomy import (
-    categorize_event,
-    map_log_level_to_severity,
-)
+from structlog.types import Processor
 
 # Configure once flag
 _configured = False
@@ -26,39 +21,6 @@ _configured = False
 # working directory (NOT the install dir — a pip-installed TestBoost must
 # never write into site-packages).
 LOG_DIR = Path(os.environ.get("TESTBOOST_LOG_DIR", "") or Path.cwd() / "logs")
-
-
-def add_log_categorization(
-    logger: WrappedLogger, method_name: str, event_dict: EventDict
-) -> EventDict:
-    """Structlog processor that adds category and severity classification.
-
-    This processor enriches log events with:
-    - category: Semantic category based on event name (business, access, system, etc.)
-    - severity: Log4j-style severity level (critical, error, warn, info, debug, trace)
-
-    Args:
-        logger: The wrapped logger instance
-        method_name: The name of the method called (e.g., "info", "error")
-        event_dict: The event dictionary being logged
-
-    Returns:
-        Enriched event dictionary with category and severity fields
-    """
-    # Add severity based on log level
-    log_level = event_dict.get("level", "info")
-    if isinstance(log_level, str):
-        severity = map_log_level_to_severity(log_level)
-        event_dict["severity"] = severity.value
-
-    # Add category based on event name
-    event_name = event_dict.get("event")
-    if event_name:
-        category = categorize_event(event_name)
-        if category:
-            event_dict["category"] = category.value
-
-    return event_dict
 
 
 def _configure_structlog() -> None:
@@ -88,24 +50,6 @@ def _configure_structlog() -> None:
     console_handler.setFormatter(logging.Formatter("%(message)s"))
     root_logger.addHandler(console_handler)
 
-    # Add filter to suppress SQLAlchemy connection termination errors with closed event loops
-    # These occur when cleaning up stale connections from previous server instances
-    class SupressSQLAlchemyEventLoopErrors(logging.Filter):
-        """Filter out harmless SQLAlchemy connection cleanup errors."""
-
-        def filter(self, record: logging.LogRecord) -> bool:
-            # Suppress "Exception terminating/closing connection" with "Event loop is closed"
-            if "Exception terminating connection" in record.getMessage():
-                return False
-            if "Exception closing connection" in record.getMessage():
-                return False
-            return not (
-                "RuntimeWarning: coroutine" in record.getMessage()
-                and "_cancel" in record.getMessage()
-            )
-
-    sqlalchemy_filter = SupressSQLAlchemyEventLoopErrors()
-
     # File handler with rotation (JSON format for log analysis)
     log_file = LOG_DIR / f"testboost_{datetime.now().strftime('%Y%m%d')}.log"
     file_handler = RotatingFileHandler(
@@ -116,11 +60,7 @@ def _configure_structlog() -> None:
     )
     file_handler.setLevel(log_level)
     file_handler.setFormatter(logging.Formatter("%(message)s"))
-    file_handler.addFilter(sqlalchemy_filter)
     root_logger.addHandler(file_handler)
-
-    # Also add filter to console handler
-    console_handler.addFilter(sqlalchemy_filter)
 
     # Determine if we're in development or production
     # In development, use colored console output
@@ -134,7 +74,6 @@ def _configure_structlog() -> None:
         structlog.stdlib.add_logger_name,
         structlog.stdlib.PositionalArgumentsFormatter(),
         structlog.processors.TimeStamper(fmt="iso"),
-        add_log_categorization,  # Add category and severity classification
         structlog.processors.StackInfoRenderer(),
         structlog.processors.UnicodeDecoder(),
     ]
@@ -192,115 +131,4 @@ def get_logger(name: str | None = None, **initial_context: Any) -> structlog.std
     return logger
 
 
-def bind_context(**context: Any) -> None:
-    """
-    Bind context variables that will be included in all log messages.
-
-    Useful for request-scoped context like request_id, session_id, etc.
-
-    Args:
-        **context: Key-value pairs to bind to the context
-
-    Example:
-        >>> bind_context(request_id="req-123", user_id="user-456")
-        >>> logger.info("processing")  # Will include request_id and user_id
-    """
-    structlog.contextvars.bind_contextvars(**context)
-
-
-def clear_context() -> None:
-    """
-    Clear all bound context variables.
-
-    Call this at the end of a request or workflow to clean up context.
-    """
-    structlog.contextvars.clear_contextvars()
-
-
-def configure_logging() -> None:
-    """
-    Configure structured logging for the application.
-
-    This function ensures structlog is properly configured.
-    Safe to call multiple times (idempotent).
-
-    Example:
-        >>> configure_logging()  # Called at startup
-    """
-    _configure_structlog()
-
-
-def log_data_source_decision(
-    step_code: str,
-    data_source: str,
-    reason: str,
-    reused_from_step: str | None = None,
-    **extra_context: Any,
-) -> None:
-    """
-    Log a data source decision (reuse vs fresh compute) in workflow steps.
-
-    This helper emits a structured log event when a workflow step decides whether
-    to reuse data from previous step outputs or perform fresh computation.
-
-    Args:
-        step_code: Code of the current step making the decision
-        data_source: Either "previous_outputs" (reused) or "fresh_compute" (computed)
-        reason: Human-readable explanation of why this source was chosen
-        reused_from_step: If data_source="previous_outputs", the step code data was reused from
-        **extra_context: Additional context to include in the log
-
-    Example:
-        >>> # Step reuses previous data
-        >>> log_data_source_decision(
-        ...     step_code="identify_coverage_gaps",
-        ...     data_source="previous_outputs",
-        ...     reason="source_files found in previous step outputs (250 files)",
-        ...     reused_from_step="analyze_project",
-        ... )
-
-        >>> # Step performs fresh computation
-        >>> log_data_source_decision(
-        ...     step_code="identify_coverage_gaps",
-        ...     data_source="fresh_compute",
-        ...     reason="source_files not found in previous_outputs",
-        ... )
-
-    Structured Log Format:
-        {
-            "event": "data_source_decision",
-            "step_code": str,              # Step making the decision
-            "data_source": str,            # "previous_outputs" or "fresh_compute"
-            "reason": str,                 # Explanation for the decision
-            "reused_from_step": str|None,  # Source step if reused (optional)
-            "timestamp": str,              # ISO timestamp
-            "level": "info",
-            "category": "business",         # Auto-categorized
-            "severity": "info",            # Auto-categorized
-            **extra_context                # Any additional context
-        }
-    """
-    logger = get_logger(__name__)
-
-    log_data = {
-        "step_code": step_code,
-        "data_source": data_source,
-        "reason": reason,
-    }
-
-    if reused_from_step is not None:
-        log_data["reused_from_step"] = reused_from_step
-
-    if extra_context:
-        log_data.update(extra_context)
-
-    logger.info("data_source_decision", **log_data)
-
-
-__all__ = [
-    "get_logger",
-    "bind_context",
-    "clear_context",
-    "configure_logging",
-    "log_data_source_decision",
-]
+__all__ = ["get_logger"]

@@ -6,7 +6,9 @@ from pathlib import Path
 
 import pytest
 
-from src.java.discovery import classify_source_file, find_existing_test, find_source_files
+from src.java.discovery import classify_source_file, find_source_files
+from src.lib.commands.analyze_cmd import find_existing_tests
+from src.lib.plugins import get_registry
 
 FIXTURE_DIR = Path(__file__).parent.parent.parent.parent / "fixtures" / "java-sample-project"
 
@@ -47,16 +49,12 @@ class TestClassifySourceFile:
             assert classify_source_file(path) == expected, path
 
 
-class TestFindExistingTest:
-    def test_finds_matching_test(self, java_project):
-        result = find_existing_test(
-            str(java_project), "src/main/java/com/example/service/UserService.java"
-        )
-        assert result is not None
-        assert "UserServiceTest.java" in result
+class TestFindExistingTests:
+    """Shared by analyze (Has Test column) and gaps: both must agree."""
 
-    def test_none_when_no_test(self, java_project):
-        result = find_existing_test(
-            str(java_project), "src/main/java/com/example/service/OrderService.java"
-        )
-        assert result is None
+    def test_maps_sources_to_their_existing_test(self, java_project):
+        user = "src/main/java/com/example/service/UserService.java"
+        order = "src/main/java/com/example/service/OrderService.java"
+        found = find_existing_tests(str(java_project), get_registry().get("java-spring"), [user, order])
+        # the fixture keeps its test one package up: found by name, not only by mirror path
+        assert found == {user: "src/test/java/com/example/UserServiceTest.java"}

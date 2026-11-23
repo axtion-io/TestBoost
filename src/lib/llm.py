@@ -35,14 +35,6 @@ class LLMTimeoutError(LLMError):
     pass
 
 
-class LLMRateLimitError(LLMError):
-    """Raised when LLM provider rate limit is exceeded."""
-
-    def __init__(self, message: str, provider: str | None = None, retry_after: int | None = None):
-        super().__init__(message, provider)
-        self.retry_after = retry_after
-
-
 def get_llm(
     model: str | None = None,
     provider: str | None = None,
@@ -236,5 +228,4 @@ __all__ = [
     "LLMError",
     "LLMProviderError",
     "LLMTimeoutError",
-    "LLMRateLimitError",
 ]

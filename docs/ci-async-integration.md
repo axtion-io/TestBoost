@@ -348,7 +348,7 @@ In `src/lib/session_tracker.py`:
 - `load_and_verify_answer(session_dir, answer_file, project_path=None, ttl_hours=None) -> dict`
   — verify without consuming (crash-safe resume)
 - `finalize_answer(session_dir, payload)` — mark consumed + clear the question
-- `consume_answer(...)` — one-shot load_and_verify + finalize
+
 - `save_generation_cursor / load_generation_cursor / clear_generation_cursor`
   — the cursor also persists `files_filter` (original `--files` scope,
   replayed by `resume`) and `deferred` (files awaiting input, with their

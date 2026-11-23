@@ -459,8 +459,7 @@ def load_and_verify_answer(
 ) -> dict[str, Any]:
     """Load an answer payload and verify it against the pending question.
 
-    Unlike consume_answer(), question.json is left in place and no consumed
-    marker is written — call finalize_answer() once the answered work has
+    question.json is left in place and no consumed marker is written — call finalize_answer() once the answered work has
     actually succeeded, so a crashed resume run can be retried with the
     same answer file.
 
@@ -518,25 +517,6 @@ def finalize_answer(session_dir: str, payload: dict[str, Any]) -> None:
     question_path = session_path / QUESTION_FILENAME
     if question_path.exists():
         question_path.unlink()
-
-
-def consume_answer(
-    session_dir: str,
-    answer_file: str | Path,
-    project_path: str | None = None,
-    ttl_hours: int | None = None,
-) -> dict[str, Any]:
-    """Load, verify and immediately consume an answer (one-shot helper).
-
-    Equivalent to load_and_verify_answer() + finalize_answer(). Prefer the
-    two-step form in step implementations so a crashed run keeps the
-    question/answer pair retryable.
-    """
-    payload = load_and_verify_answer(
-        session_dir, answer_file, project_path=project_path, ttl_hours=ttl_hours
-    )
-    finalize_answer(session_dir, payload)
-    return payload
 
 
 def _render_question_markdown(payload: dict[str, Any]) -> str:

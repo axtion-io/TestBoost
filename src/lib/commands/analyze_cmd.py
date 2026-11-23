@@ -48,7 +48,7 @@ async def _cmd_analyze_async(args: argparse.Namespace) -> int:
             detect_test_conventions,
             extract_test_examples,
             find_source_files,
-            find_test_for_source,
+            get_plugin_for_session,
         )
         from src.lib.session_tracker import (
             get_project_analysis_path,
@@ -94,10 +94,13 @@ async def _cmd_analyze_async(args: argparse.Namespace) -> int:
         content += f"- **Packages**: {len(src_struct.get('packages', []))}\n\n"
 
         # Classify source files and check for existing tests
+        existing_tests = find_existing_tests(
+            project_path, get_plugin_for_session(project_path), source_files
+        )
         file_details = []
         for sf in source_files:
             category = classify_file(sf, project_path)
-            test_file = find_test_for_source(project_path, sf)
+            test_file = existing_tests.get(sf)
             file_details.append({
                 "path": sf,
                 "category": category,
@@ -134,7 +137,6 @@ async def _cmd_analyze_async(args: argparse.Namespace) -> int:
         # Detect build configuration via plugin
         from pathlib import Path as _Path
 
-        from src.lib.bridge import get_plugin_for_session
         analysis_plugin = get_plugin_for_session(project_path)
         compile_cmd_list = analysis_plugin.validation_command(_Path(project_path), {})
         test_cmd_list = analysis_plugin.test_run_command(_Path(project_path), {})
@@ -235,8 +237,10 @@ async def _cmd_analyze_async(args: argparse.Namespace) -> int:
 _NON_PROJECT_DIRS = {".git", ".testboost", "target", "build", "node_modules", ".venv", "venv"}
 
 
-def _tested_stems(project_dir: Path, patterns: list[str], source_files: set[str]) -> set[str]:
-    """Return the source stems that already have a test, from the plugin's test globs.
+def _tested_stems(project_dir: Path, patterns: list[str], source_files: set[str]) -> dict[str, str]:
+    """Map each source stem that already has a test to that test's relative path.
+
+    Derived from the plugin's test globs.
 
     Each glob's file name is read as prefix*suffix: `**/*Test.java` names
     `FooTest.java` after `Foo`, `**/test_*.py` names `test_foo.py` after
@@ -244,20 +248,40 @@ def _tested_stems(project_dir: Path, patterns: list[str], source_files: set[str]
     and files that are themselves sources (e.g. `TestUtils.java` under
     src/main matched by `Test*.java`) are not tests.
     """
-    stems: set[str] = set()
+    stems: dict[str, str] = {}
     for pattern in patterns:
         stem_pattern = pattern.rsplit("/", 1)[-1].rsplit(".", 1)[0]
         prefix, star, suffix = stem_pattern.partition("*")
         if not star:
             continue
-        for test_file in project_dir.glob(pattern):
+        for test_file in sorted(project_dir.glob(pattern)):
             rel = test_file.relative_to(project_dir)
             if _NON_PROJECT_DIRS.intersection(rel.parts) or rel.as_posix() in source_files:
                 continue
             stem = test_file.stem
             if len(stem) > len(prefix) + len(suffix) and stem.startswith(prefix) and stem.endswith(suffix):
-                stems.add(stem[len(prefix):len(stem) - len(suffix)])
+                stems.setdefault(stem[len(prefix):len(stem) - len(suffix)], rel.as_posix())
     return stems
+
+
+def find_existing_tests(project_path: str, plugin, source_files: list[str]) -> dict[str, str]:
+    """Map each source file that already has a test to that test's path.
+
+    Shared by `analyze` (Has Test column) and `gaps` (what to generate), so
+    the two steps can never disagree. A source is tested when the test the
+    plugin would generate exists, or when a test matching the plugin's globs
+    is named after it.
+    """
+    project_dir = Path(project_path)
+    by_stem = _tested_stems(project_dir, plugin.test_file_pattern(), set(source_files))
+    found: dict[str, str] = {}
+    for source_file in source_files:
+        expected = plugin.test_file_name(source_file)
+        if (project_dir / expected).exists():
+            found[source_file] = expected
+        elif Path(source_file).stem in by_stem:
+            found[source_file] = by_stem[Path(source_file).stem]
+    return found
 
 
 def cmd_gaps(args: argparse.Namespace) -> int:
@@ -315,18 +339,9 @@ async def _cmd_gaps_async(args: argparse.Namespace) -> int:
         # is covered when the test file the plugin would generate already
         # exists, or when any test matching the plugin's test globs names it.
         from src.lib.bridge import get_plugin_for_session
-        plugin = get_plugin_for_session(project_path)
-        project_dir = Path(project_path)
-        tested = _tested_stems(project_dir, plugin.test_file_pattern(), set(source_files))
-
-        gaps = []
-        covered = []
-        for source_file in source_files:
-            has_test = (
-                Path(source_file).stem in tested
-                or (project_dir / plugin.test_file_name(source_file)).exists()
-            )
-            (covered if has_test else gaps).append(source_file)
+        tested = find_existing_tests(project_path, get_plugin_for_session(project_path), source_files)
+        covered = [sf for sf in source_files if sf in tested]
+        gaps = [sf for sf in source_files if sf not in tested]
 
         # Build the gaps report
         total = len(source_files)

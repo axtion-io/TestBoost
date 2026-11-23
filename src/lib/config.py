@@ -25,10 +25,6 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    # Application settings
-    debug: bool = Field(default=False, description="Debug mode")
-    log_level: str = Field(default="INFO", description="Logging level")
-
     # LLM Provider settings
     llm_provider: Literal["anthropic", "google-genai", "openai"] = Field(
         default="anthropic",
@@ -65,12 +61,6 @@ class Settings(BaseSettings):
     startup_timeout: int = Field(
         default=15,
         description="Startup check timeout in seconds (Gemini requires min 10s)",
-    )
-
-    # Retry settings
-    max_retries: int = Field(
-        default=3,
-        description="Maximum retry attempts for transient errors",
     )
 
     @model_validator(mode="after")

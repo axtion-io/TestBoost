@@ -77,12 +77,6 @@ def classify_file(relative_path: str, project_path: str) -> str:
     return plugin.classify_source_file(relative_path, _Path(project_path))
 
 
-def find_test_for_source(project_path: str, source_relative_path: str) -> str | None:
-    """Find existing test file for a source file, if any."""
-    from src.java.discovery import find_existing_test
-    return find_existing_test(project_path, source_relative_path)
-
-
 async def generate_adaptive_tests(project_path: str, source_file: str, **kwargs) -> str:
     """Generate tests for a single source file using LLM.
 
@@ -120,8 +114,8 @@ async def fix_test_runtime_errors(test_code: str, test_errors: str, class_name: 
 def build_class_index(project_path: str, source_files: list[str]) -> dict[str, dict]:
     """Build the full class index for all source files.
 
-    Delegates to the Java class analyzer for backward compatibility.
-    For the Python plugin, use plugin.build_generation_context() directly.
+    Java only (src.java.class_analyzer): for other technologies the index
+    is empty and the prompt gets no dependency signatures.
     """
     from src.java.class_analyzer import build_class_index as _build
     return _build(project_path, source_files)

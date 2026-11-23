@@ -66,14 +66,14 @@ def test_detect_python_setup_cfg_project(registry, tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# Go project
+# Unsupported technology: no stub plugin pretends to handle it
 # ---------------------------------------------------------------------------
 
-def test_detect_go_project(registry, tmp_path):
+def test_go_project_is_not_detected(registry, tmp_path):
+    """A Go project must not be picked up by a placeholder plugin that would
+    generate tests with the Java prompts."""
     (tmp_path / "go.mod").write_text("module example.com/myapp\n\ngo 1.21\n")
-    plugin = registry.detect(tmp_path)
-    assert plugin is not None
-    assert plugin.identifier == "go-testing"
+    assert registry.detect(tmp_path) is None
 
 
 # ---------------------------------------------------------------------------
@@ -117,13 +117,6 @@ def test_get_python_pytest_plugin(registry):
     assert plugin.identifier == "python-pytest"
 
 
-def test_get_go_testing_plugin(registry):
-    plugin = registry.get("go-testing")
-    assert plugin.identifier == "go-testing"
-
-
-def test_list_plugins_includes_all_three(registry):
+def test_list_plugins_lists_the_supported_technologies(registry):
     identifiers = {p["identifier"] for p in registry.list_plugins()}
-    assert "java-spring" in identifiers
-    assert "python-pytest" in identifiers
-    assert "go-testing" in identifiers
+    assert identifiers == {"java-spring", "python-pytest"}

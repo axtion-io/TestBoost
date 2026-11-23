@@ -100,8 +100,9 @@ async def _cmd_generate_async(args: argparse.Namespace) -> int:
             maven_test_cmd = project_data.get("maven_test_cmd")
         else:
             logger.warn(
-                "No project-level class index found. Re-run `analyze` to build it "
-                "for improved generation quality. Falling back to lazy dependency loading."
+                "No project-level analysis (.testboost/analysis.md) found. Re-run "
+                "`analyze`: without it the LLM gets no dependency signatures, "
+                "test examples or conventions."
             )
 
         # Session analysis overrides (maven commands edited by user take priority)
@@ -407,7 +408,7 @@ async def _cmd_generate_async(args: argparse.Namespace) -> int:
                         "class_name": cls,
                         "package": result.get("context", {}).get("package", ""),
                         "source_file": source_file,
-                        "test_count": result.get("test_count", 0),
+                        "test_count": test_code.count("@Test") + test_code.count("def test_"),
                     })
 
             except Exception as file_err:

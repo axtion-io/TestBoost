@@ -451,7 +451,7 @@ class TestProjectAnalysis:
 
 
 # ============================================================================
-# Human-in-the-loop: emit_question / consume_answer (spike)
+# Human-in-the-loop: emit_question / load_and_verify_answer + finalize_answer
 # ============================================================================
 
 
@@ -508,6 +508,15 @@ class TestEmitQuestion:
         assert payload["created_at"] == "2024-01-01T00:00:00Z"
 
 
+def consume_answer(session_dir, answer_file):
+    """The two-step answer path the step commands use: verify, then finalize."""
+    from src.lib.session_tracker import finalize_answer, load_and_verify_answer
+
+    payload = load_and_verify_answer(session_dir, answer_file)
+    finalize_answer(session_dir, payload)
+    return payload
+
+
 class TestConsumeAnswer:
     def _new_session(self, tmp_path):
         from src.lib.session_tracker import create_session, init_project
@@ -517,7 +526,6 @@ class TestConsumeAnswer:
     def test_reads_answer_payload(self, tmp_path):
         import json
 
-        from src.lib.session_tracker import consume_answer
         session = self._new_session(tmp_path)
         answer = tmp_path / "answer.json"
         answer.write_text(json.dumps({"test_requirements": [{"scenario": "edge"}]}))
@@ -528,7 +536,6 @@ class TestConsumeAnswer:
         import json
         from pathlib import Path
 
-        from src.lib.session_tracker import consume_answer
         session = self._new_session(tmp_path)
         answer = tmp_path / "answer.json"
         answer.write_text(json.dumps({"k": "v"}))
@@ -541,7 +548,7 @@ class TestConsumeAnswer:
         import json
         from pathlib import Path
 
-        from src.lib.session_tracker import consume_answer, emit_question
+        from src.lib.session_tracker import emit_question
         session = self._new_session(tmp_path)
         emit_question(session["session_dir"], "generation", {"question": "?"})
         qpath = Path(session["session_dir"]) / "question.json"
@@ -553,7 +560,6 @@ class TestConsumeAnswer:
         assert not qpath.exists()
 
     def test_missing_file_raises(self, tmp_path):
-        from src.lib.session_tracker import consume_answer
         session = self._new_session(tmp_path)
         try:
             consume_answer(session["session_dir"], tmp_path / "nope.json")
@@ -562,7 +568,6 @@ class TestConsumeAnswer:
         raise AssertionError("expected FileNotFoundError")
 
     def test_malformed_json_raises(self, tmp_path):
-        from src.lib.session_tracker import consume_answer
         session = self._new_session(tmp_path)
         bad = tmp_path / "bad.json"
         bad.write_text("{ not json")
@@ -573,7 +578,6 @@ class TestConsumeAnswer:
         raise AssertionError("expected ValueError")
 
     def test_non_object_top_level_raises(self, tmp_path):
-        from src.lib.session_tracker import consume_answer
         session = self._new_session(tmp_path)
         bad = tmp_path / "list.json"
         bad.write_text("[1, 2, 3]")

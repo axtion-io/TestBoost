@@ -10,8 +10,11 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from src.test_generation.generate_unit import (
+    _detect_test_dependencies,
+    _generate_test_code_with_llm,
     analyze_edge_cases,
     fix_compilation_errors,
+    fix_test_runtime_errors,
     generate_adaptive_tests,
 )
 
@@ -60,9 +63,9 @@ class TestGenerateAdaptiveTests:
 
         assert result["success"] is True
         assert result["test_code"] == JAVA_TEST
-        assert result["test_count"] == 2
         assert result["class_type"] == "service"
-        assert result["test_file"].endswith("src/test/java/com/example/service/OrderServiceTest.java")
+        # Only what generate consumes is returned (where to write is the plugin's call)
+        assert result["context"] == {"class_name": "OrderService", "package": "com.example.service"}
         # The context handed to the LLM holds the analyzed class
         context = mock_gen.call_args.args[0]
         assert context["class_name"] == "OrderService"
@@ -109,3 +112,90 @@ class TestAnalyzeEdgeCases:
                    return_value=_llm_returning('{"oops": true}')):
             result = await analyze_edge_cases("class A {}", "A", "service")
         assert result == []
+
+
+def _context(project_path="", **overrides):
+    context = {
+        "class_name": "OrderService", "package": "com.example.service",
+        "class_type": "service", "methods": [{"name": "total", "return_type": "BigDecimal"}],
+        "dependencies": [{"type": "OrderRepository", "name": "repo"}],
+        "conventions": {}, "test_requirements": [], "project_path": project_path,
+        "class_index": None, "test_examples": None,
+    }
+    context.update(overrides)
+    return context
+
+
+class TestPromptAssembly:
+    """docs/workflow.md (Generate): the prompt carries the dependency
+    signatures from the class index, the parent class, the project test
+    examples, the detected conventions and the technology's template."""
+
+    @pytest.fixture(autouse=True)
+    def _clear(self):
+        _detect_test_dependencies.cache_clear()
+
+    async def _prompt(self, context, response=JAVA_TEST, **kwargs):
+        llm = _llm_returning(response)
+        with patch("src.test_generation.generate_unit.get_llm", return_value=llm):
+            code = await _generate_test_code_with_llm(context, "class OrderService {}", **kwargs)
+        return code, llm.ainvoke.await_args.args[0]
+
+    @pytest.mark.asyncio
+    async def test_class_index_context_reaches_the_prompt(self, java_project):
+        index = {
+            "OrderService": {"extends": "BaseService"},
+            "BaseService": {"public_signatures": "  - void audit(String who)", "fields": []},
+            "OrderRepository": {
+                "fields": [{"type": "BigDecimal", "name": "amount"}],
+                "public_signatures": "  - Order save(Order order)",
+            },
+        }
+        examples = [{"path": "src/test/java/FooTest.java", "content": "class FooTest {}"}]
+        conventions = {"naming": {"dominant_pattern": "should_when"},
+                       "assertions": {"dominant_style": "hamcrest"}}
+        _code, prompt = await self._prompt(_context(
+            str(java_project), class_index=index, test_examples=examples,
+            conventions=conventions, test_requirements=[{"scenario": "negative total"}],
+        ))
+        assert "Order save(Order order)" in prompt            # dependency signatures
+        assert "`BigDecimal amount`" in prompt               # exact field types
+        assert "Parent Class `BaseService`" in prompt         # inheritance
+        assert "void audit(String who)" in prompt
+        assert "class FooTest {}" in prompt                   # project test example
+        assert "should_when" in prompt and "hamcrest" in prompt  # conventions
+        assert "negative total" in prompt                     # requirements
+        assert "**Java version**: 17" in prompt               # pom context
+
+    @pytest.mark.asyncio
+    async def test_plugin_template_and_python_fences(self, tmp_path):
+        with patch("src.test_generation.generate_unit.load_prompt_template",
+                   return_value="{{class_name}}") as load:
+            code, _prompt = await self._prompt(
+                _context(), response="```python\ndef test_total():\n    assert 1\n```",
+                prompt_template_dir="testing/python_pytest",
+            )
+        load.assert_called_once_with("testing/python_pytest/unit_test_generation.md")
+        assert code == "def test_total():\n    assert 1"
+
+    @pytest.mark.asyncio
+    async def test_output_without_any_test_is_an_error_not_a_template(self):
+        """CRITICAL: no silent fallback — a non-test answer must fail loudly."""
+        with pytest.raises(ValueError, match="invalid test code"):
+            await self._prompt(_context(), response="I cannot write this test.")
+
+    @pytest.mark.asyncio
+    async def test_controller_gets_webmvc_instructions(self):
+        _code, prompt = await self._prompt(_context(class_type="controller"))
+        assert "@WebMvcTest(OrderService.class)" in prompt
+
+
+class TestFixTestRuntimeErrors:
+    @pytest.mark.asyncio
+    async def test_prompt_has_failures_and_code_and_fence_is_stripped(self):
+        llm = _llm_returning("```java\nclass Fixed {}\n```")
+        with patch("src.test_generation.generate_unit.get_llm", return_value=llm):
+            fixed = await fix_test_runtime_errors("class Broken {}", "expected:<1> but was:<2>", "X")
+        assert fixed == "class Fixed {}"
+        prompt = llm.ainvoke.await_args.args[0]
+        assert "expected:<1> but was:<2>" in prompt and "class Broken {}" in prompt

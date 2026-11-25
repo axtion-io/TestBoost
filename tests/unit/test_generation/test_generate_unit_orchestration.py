@@ -199,3 +199,17 @@ class TestFixTestRuntimeErrors:
         assert fixed == "class Fixed {}"
         prompt = llm.ainvoke.await_args.args[0]
         assert "expected:<1> but was:<2>" in prompt and "class Broken {}" in prompt
+
+
+class TestPromptWithoutMockito:
+    @pytest.mark.asyncio
+    async def test_no_mock_advice_when_the_project_does_not_use_mockito(self):
+        """Seen on a pure-Java module: the prompt said Mockito is unavailable and,
+        two lines later, `use @Mock`."""
+        conventions = {"mocking": {"uses_mockito": False, "uses_spring_mock_bean": False}}
+        llm = _llm_returning(JAVA_TEST)
+        with patch("src.test_generation.generate_unit.get_llm", return_value=llm):
+            await _generate_test_code_with_llm(_context(conventions=conventions), "class OrderService {}")
+        prompt = llm.ainvoke.await_args.args[0]
+        assert "**Uses Mockito**: no" in prompt
+        assert "use @Mock" not in prompt

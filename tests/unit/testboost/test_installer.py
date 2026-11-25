@@ -82,7 +82,11 @@ class TestInstallCommands:
         content = (java_project / ".claude" / "commands" / "testboost.generate.md").read_text()
         assert "CRITICAL: Failure Protocol" in content
         assert "TESTBOOST_INTEGRITY" in content
-        assert "STOP IMMEDIATELY" in content
+        # Any failure other than the agent-mode fix loop stops the assistant…
+        assert "STOP, report the error" in content
+        # …and the agent never fakes TestBoost's output or writes outside the given paths.
+        assert "never write tests outside the paths" in content
+        assert "write `generation.md` or any `.testboost/` file by hand" in content
 
     def test_idempotent_install(self, java_project):
         result1 = install_commands(str(java_project), TESTBOOST_ROOT)

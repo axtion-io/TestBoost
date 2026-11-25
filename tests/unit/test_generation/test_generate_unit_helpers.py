@@ -180,3 +180,17 @@ class TestExtractTokenUsage:
     def test_missing_everywhere(self):
         usage = _extract_token_usage(object())
         assert usage == {"prompt_tokens": None, "completion_tokens": None, "total_tokens": None}
+
+
+class TestCountTests:
+    """Test methods reported in generation.md / killer-tests.md."""
+
+    def test_junit5_annotations_and_pytest_functions(self):
+        from src.lib.prompt_utils import count_tests
+
+        java = ("@Test void a() {}\n@ParameterizedTest @CsvSource({\"1\"}) void b(int x) {}\n"
+                "@RepeatedTest(3) void c() {}\n@TestFactory Stream<DynamicTest> d() {}\n"
+                "// @TestInstance is not a test\n@DisplayName(\"Test\") class TestUtilsTest {}")
+        assert count_tests(java) == 4
+        assert count_tests("def test_a():\n    pass\n\nasync def test_b():\n    pass\ndef helper_test_c(): pass\n") == 2
+        assert count_tests("class Empty {}") == 0

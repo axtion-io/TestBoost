@@ -77,7 +77,7 @@ Identifies which source files have no test file (file-level, not line coverage).
 
 ## 4. Generate
 
-**Command:** `python -m src.lib.cli generate <project_path> [--files file1 file2]`
+**Command:** `python -m src.lib.cli generate <project_path> [--files file1 file2] [--agent]`
 
 Generates unit tests for files identified as lacking coverage.
 
@@ -103,6 +103,25 @@ The LLM prompt includes:
 - Project conventions detected in the analysis step
 - Technology-specific best practices (JUnit 5/Mockito for Java, pytest/unittest.mock for Python)
 - Class-type-specific patterns (controller, service, repository)
+
+### Agent mode (`context` + `generate --agent`)
+
+Inside an LLM CLI the assistant is already an LLM: calling a second one through TestBoost needs
+another API key and duplicates the work. In agent mode TestBoost never calls an LLM:
+
+1. `context <project> [--files …]` writes, for each gap, the full generation prompt (the same one
+   TestBoost would send to its own LLM: class, dependency signatures from the class index, test
+   examples, conventions, framework rules) to `sessions/<id>/agent/<Class>.md`, plus
+   `agent/manifest.json`, and prints the test path the plugin expects for each.
+2. The agent writes each test at its expected path, and nowhere else.
+3. `generate <project> --agent` registers them: missing tests and compilation errors (one
+   `test-compile` for Maven, attributed per file; `py_compile` per file for Python) are reported and
+   the step fails until they are fixed; otherwise `generation.md` is completed (`mode: agent`) and the
+   integrity token is emitted. `validate` and `mutate` are unchanged.
+
+The same cycle exists for mutation testing: `context --killer [--max-tests N]` writes one
+`mutation_killer` prompt per class with surviving mutants (`agent/killer/`), the agent writes the
+`*KillerTest` files, and `killer --agent` registers and compiles them.
 
 ## 5. Validate
 
@@ -135,7 +154,7 @@ Runs PIT mutation testing to measure test quality (Java only).
 
 ## 7. Killer
 
-**Command:** `python -m src.lib.cli killer <project_path> [--max-tests 10]`
+**Command:** `python -m src.lib.cli killer <project_path> [--max-tests 10] [--agent]`
 
 Generates targeted tests to kill surviving mutants.
 

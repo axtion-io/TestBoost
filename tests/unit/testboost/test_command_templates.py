@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from src.lib.installer import _command_steps, install_commands
+from src.lib.installer import HELPER_SCRIPTS, _command_steps, install_commands
 
 ROOT = Path(__file__).resolve().parents[3]
 TEMPLATES = ROOT / "templates" / "commands"
@@ -33,7 +33,7 @@ def test_dev_copies_match_the_template(step):
         == template.rstrip("\n")
 
 
-@pytest.mark.parametrize("step", STEPS)
+@pytest.mark.parametrize("step", STEPS + list(HELPER_SCRIPTS))
 def test_every_command_has_its_dev_wrapper_scripts(step):
     assert (ROOT / "scripts" / f"tb-{step}.sh").exists()
     assert (ROOT / "scripts" / f"tb-{step}.ps1").exists()
@@ -42,8 +42,9 @@ def test_every_command_has_its_dev_wrapper_scripts(step):
 def test_install_ships_a_wrapper_for_every_command(tmp_path):
     result = install_commands(str(tmp_path), str(ROOT), "bash")
     assert result["success"]
-    for step in STEPS:
+    for step in [*STEPS, *HELPER_SCRIPTS]:
         assert (tmp_path / ".testboost" / "scripts" / f"tb-{step}.sh").exists(), step
+    for step in STEPS:
         command = (tmp_path / ".claude" / "commands" / f"testboost.{step}.md").read_text()
         # commands call the installed wrapper, not the TestBoost checkout's scripts/
         assert "bash scripts/" not in command

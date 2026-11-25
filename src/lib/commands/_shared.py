@@ -112,3 +112,18 @@ def load_answer_for_step(
         logger.error(f"Answer expired: {e}")
         print(f"\nERROR: answer rejected — {e}", file=sys.stderr)
         return None, 1
+
+
+def filter_target_files(files: list[str], patterns: list[str] | None, logger) -> list[str]:
+    """Keep the files matching any `--files` pattern (substring, `\\` or `/`).
+
+    No pattern, or no match (warned), keeps every file.
+    """
+    if not patterns:
+        return list(files)
+    normalized = [p.replace("\\", "/") for p in patterns]
+    kept = [f for f in files if any(p in f.replace("\\", "/") for p in normalized)]
+    if not kept:
+        logger.warn(f"No files matched filter: {patterns}")
+        return list(files)
+    return kept

@@ -185,7 +185,10 @@ async def _cmd_mutate_async(args: argparse.Namespace) -> int:
         )
         return 1
 def cmd_killer(args: argparse.Namespace) -> int:
-    """Generate killer tests for surviving mutants."""
+    """Generate killer tests for surviving mutants (`--agent`: register the host agent's tests)."""
+    if getattr(args, "agent", False):
+        from src.lib.commands.agent_cmd import cmd_killer_agent
+        return cmd_killer_agent(args)
     return asyncio.run(_cmd_killer_async(args))
 
 

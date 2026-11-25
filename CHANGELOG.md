@@ -10,6 +10,10 @@ GitLab CI template to the new tag.
 ## [Unreleased]
 
 ### Added
+- **Agent mode**: `testboost context` writes one generation prompt per gap (or, with `--killer`,
+  per class with surviving mutants) and the expected test path; the host agent writes the tests;
+  `generate --agent` / `killer --agent` register and compile them without any LLM call or API
+  key. Default mode of the `/testboost.generate` and `/testboost.killer` slash commands.
 - Human-in-the-loop pause/resume for CI: `generate`/`validate`/`killer`
   pause with exit code 78 and an HMAC-signed `question.json`; answers are
   signed, bound to their question, TTL-checked, and consumed only after

@@ -18,6 +18,7 @@ from typing import Any
 from src.lib.llm import get_llm
 from src.lib.logging import get_logger
 from src.lib.prompt_utils import (
+    count_tests,
     extract_code_block,
     load_prompt_template,
     render_template,
@@ -119,15 +120,15 @@ async def generate_killer_tests(
     return json.dumps(results, indent=2)
 
 
-async def _generate_killer_tests_llm(
+def build_killer_prompt(
     class_name: str,
     mutants: list[dict[str, Any]],
     source_code: str,
     hints: dict[str, str] | None = None,
-) -> str | None:
-    """Use LLM with mutation_killer prompt to generate targeted killer tests.
+) -> str:
+    """Render the mutation-killer prompt for the surviving mutants of one class.
 
-    Returns None when the response contains no @Test method.
+    Used by the LLM generation and by the agent mode (`testboost context --killer`).
     """
     parts = class_name.rsplit(".", 1)
     package = parts[0] if len(parts) > 1 else ""
@@ -147,19 +148,33 @@ async def _generate_killer_tests_llm(
             "\n\n## Developer hints about these mutants (follow them)\n\n"
             + "\n".join(f"- `{key}`: {text}" for key, text in hints.items())
         )
+    return prompt
+
+
+async def _generate_killer_tests_llm(
+    class_name: str,
+    mutants: list[dict[str, Any]],
+    source_code: str,
+    hints: dict[str, str] | None = None,
+) -> str | None:
+    """Use LLM with mutation_killer prompt to generate targeted killer tests.
+
+    Returns None when the response contains no @Test method.
+    """
+    prompt = build_killer_prompt(class_name, mutants, source_code, hints)
 
     llm = get_llm()
     response = await llm.ainvoke(prompt)
     code = extract_code_block(response_text(response))
 
-    if "@Test" not in code:
+    if count_tests(code) == 0:
         logger.warning("llm_killer_no_test", class_name=class_name)
         return None
 
     logger.info(
         "llm_killer_generation_success",
         class_name=class_name,
-        test_count=code.count("@Test"),
+        test_count=count_tests(code),
     )
     return code
 

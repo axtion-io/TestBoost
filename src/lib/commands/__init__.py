@@ -6,6 +6,7 @@ here — external callers (tests, wrapper scripts, `python -m testboost`)
 should keep going through the facade.
 """
 
+from src.lib.commands.agent_cmd import cmd_context
 from src.lib.commands.analyze_cmd import cmd_analyze, cmd_gaps
 from src.lib.commands.generate_cmd import cmd_generate
 from src.lib.commands.hitl_cmd import cmd_resume, cmd_sign_answer
@@ -24,6 +25,7 @@ from src.lib.commands.validate_cmd import cmd_validate
 __all__ = [
     "cmd_analyze",
     "cmd_cleanup",
+    "cmd_context",
     "cmd_doctor",
     "cmd_gaps",
     "cmd_generate",

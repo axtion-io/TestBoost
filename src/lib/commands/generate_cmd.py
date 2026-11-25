@@ -12,12 +12,17 @@ from pathlib import Path
 from src.lib.commands._shared import (
     _extract_json_field,
     _warn_maven_config_issue,
+    filter_target_files,
     load_answer_for_step,
 )
+from src.lib.prompt_utils import count_tests
 
 
 def cmd_generate(args: argparse.Namespace) -> int:
-    """Generate tests for identified gaps."""
+    """Generate tests for identified gaps (`--agent`: register the host agent's tests)."""
+    if getattr(args, "agent", False):
+        from src.lib.commands.agent_cmd import cmd_generate_agent
+        return cmd_generate_agent(args)
     return asyncio.run(_cmd_generate_async(args))
 
 
@@ -119,18 +124,8 @@ async def _cmd_generate_async(args: argparse.Namespace) -> int:
             if session_test_cmd:
                 maven_test_cmd = session_test_cmd
 
-        # Apply file filter if specified
-        target_files = gaps
-        if hasattr(args, "files") and args.files:
-            # Normalize separators so "src/main/..." matches "src\main\..." on Windows
-            normalized_patterns = [p.replace("\\", "/") for p in args.files]
-            target_files = [
-                f for f in gaps
-                if any(pattern in f.replace("\\", "/") for pattern in normalized_patterns)
-            ]
-            if not target_files:
-                logger.warn(f"No files matched filter: {args.files}")
-                target_files = gaps
+        # Apply file filter if specified (separators normalized for Windows)
+        target_files = filter_target_files(gaps, getattr(args, "files", None), logger)
 
         logger.info(f"Generating tests for {len(target_files)} files...")
 
@@ -269,7 +264,7 @@ async def _cmd_generate_async(args: argparse.Namespace) -> int:
                             "class_name": fix_key,
                             "package": prior.get("package", ""),
                             "source_file": source_file,
-                            "test_count": test_code.count("@Test") + test_code.count("def test_"),
+                            "test_count": count_tests(test_code),
                         })
                         completed_files.append(source_file)
                         save_generation_cursor(
@@ -348,7 +343,7 @@ async def _cmd_generate_async(args: argparse.Namespace) -> int:
                 )
                 result = json.loads(result_json)
                 test_code = result.get("test_code", "")
-                has_tests = "@Test" in test_code or "def test_" in test_code
+                has_tests = count_tests(test_code) > 0
 
                 if not (result.get("success") and test_code and has_tests):
                     logger.warn(f"No tests generated for {source_file}")
@@ -408,7 +403,7 @@ async def _cmd_generate_async(args: argparse.Namespace) -> int:
                         "class_name": cls,
                         "package": result.get("context", {}).get("package", ""),
                         "source_file": source_file,
-                        "test_count": test_code.count("@Test") + test_code.count("def test_"),
+                        "test_count": count_tests(test_code),
                     })
 
             except Exception as file_err:

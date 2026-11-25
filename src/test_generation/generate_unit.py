@@ -22,6 +22,7 @@ from src.java.pom import pom_child, pom_findall, pom_text
 from src.lib.llm import get_llm
 from src.lib.logging import get_logger
 from src.lib.prompt_utils import (
+    count_tests,
     extract_code_block,
     load_prompt_template,
     render_template,
@@ -29,6 +30,51 @@ from src.lib.prompt_utils import (
 )
 
 logger = get_logger(__name__)
+
+
+def build_generation_context(
+    project_path: str,
+    source_file: str,
+    class_type: str | None = None,
+    conventions: dict[str, Any] | None = None,
+    test_requirements: list[dict[str, Any]] | None = None,
+    class_index: dict[str, dict[str, Any]] | None = None,
+    test_examples: list[dict[str, str]] | None = None,
+) -> tuple[dict[str, Any] | None, str]:
+    """Read and analyze a source file into the test generation context.
+
+    Returns (context, source_code), or (None, error message) when the source
+    cannot be read. Shared by the LLM generation and the agent mode
+    (`testboost context`), so both see exactly the same context.
+    """
+    source_path = Path(source_file)
+    if not source_path.exists():
+        source_path = Path(project_path) / source_file
+        if not source_path.exists():
+            return None, f"Source file not found: {source_file}"
+    try:
+        source_code = source_path.read_text(encoding="utf-8", errors="replace")
+    except OSError as e:
+        return None, f"Failed to read source file: {e}"
+
+    class_info = _analyze_class(source_code)
+    context = {
+        "class_name": class_info["class_name"],
+        "package": class_info["package"],
+        "class_type": class_type or _detect_class_type(source_code, class_info),
+        "methods": class_info["methods"],
+        "dependencies": class_info["dependencies"],
+        "annotations": class_info["annotations"],
+        "conventions": conventions or {},
+        "test_requirements": test_requirements or [],
+        "imports": class_info.get("imports", []),
+        "is_record": class_info.get("is_record", False),
+        "source_code": source_code,
+        "project_path": project_path,
+        "class_index": class_index,
+        "test_examples": test_examples,
+    }
+    return context, source_code
 
 
 async def generate_adaptive_tests(
@@ -58,53 +104,20 @@ async def generate_adaptive_tests(
         JSON string: success, test_code, class_type and context
         (class_name, package). Where the test is written is the plugin's call.
     """
-    project_dir = Path(project_path)
-    source_path = Path(source_file)
+    context, source_or_error = build_generation_context(
+        project_path, source_file, class_type, conventions, test_requirements, class_index, test_examples,
+    )
+    if context is None:
+        return json.dumps({"success": False, "error": source_or_error})
 
-    if not source_path.exists():
-        # Try as relative path
-        source_path = project_dir / source_file
-        if not source_path.exists():
-            return json.dumps({"success": False, "error": f"Source file not found: {source_file}"})
-
-    # Read source code
-    try:
-        source_code = source_path.read_text(encoding="utf-8", errors="replace")
-    except Exception as e:
-        return json.dumps({"success": False, "error": f"Failed to read source file: {e}"})
-
-    # Analyze source file
-    class_info = _analyze_class(source_code)
-
-    # Auto-detect class type if not provided
-    if not class_type:
-        class_type = _detect_class_type(source_code, class_info)
-
-    # Build test generation context
-    context = {
-        "class_name": class_info["class_name"],
-        "package": class_info["package"],
-        "class_type": class_type,
-        "methods": class_info["methods"],
-        "dependencies": class_info["dependencies"],
-        "annotations": class_info["annotations"],
-        "conventions": conventions or {},
-        "test_requirements": test_requirements or [],
-        "imports": class_info.get("imports", []),
-        "is_record": class_info.get("is_record", False),
-        "source_code": source_code,
-        "project_path": project_path,
-        "class_index": class_index,
-        "test_examples": test_examples,
-    }
-
-    # Generate test code using LLM
-    logger.info("generating_tests_with_llm", class_name=class_info["class_name"])
-    test_code = await _generate_test_code_with_llm(context, source_code, prompt_template_dir=prompt_template_dir)
+    logger.info("generating_tests_with_llm", class_name=context["class_name"])
+    test_code = await _generate_test_code_with_llm(
+        context, source_or_error, prompt_template_dir=prompt_template_dir,
+    )
 
     return json.dumps({
         "success": True,
-        "class_type": class_type,
+        "class_type": context["class_type"],
         "test_code": test_code,
         "context": {"class_name": context["class_name"], "package": context["package"]},
     })
@@ -470,19 +483,15 @@ async def fix_test_runtime_errors(test_code: str, test_errors: str, class_name: 
     return extract_code_block(raw)
 
 
-async def _generate_test_code_with_llm(context: dict[str, Any], source_code: str, *, prompt_template_dir: str | None = None) -> str:
+def build_generation_prompt(
+    context: dict[str, Any], source_code: str, *, prompt_template_dir: str | None = None,
+) -> tuple[str, dict[str, Any]]:
+    """Render the unit-test generation prompt for a context.
+
+    Returns (prompt, test_deps). No LLM call: this is the prompt TestBoost
+    sends to its own LLM, and the one `testboost context` hands to a host
+    agent (Claude Code, OpenCode…) in agent mode.
     """
-    Generate test code using LLM for intelligent, context-aware tests.
-
-    Args:
-        context: Test generation context with class info, methods, dependencies
-        source_code: The original Java source code
-
-    Returns:
-        Generated test code as string
-    """
-    llm = get_llm()
-
     class_name = context["class_name"]
     package = context["package"]
     class_type = context["class_type"]
@@ -550,7 +559,7 @@ async def _generate_test_code_with_llm(context: dict[str, Any], source_code: str
 - **Case style**: {'snake_case' if naming.get('uses_snake_case') else 'camelCase'}
 - **Assertion style**: {assertions.get('dominant_style', 'assertj')} (use this, not others)
 - **Uses Mockito**: {'yes - use @Mock and @InjectMocks' if mocking.get('uses_mockito', True) else 'no'}
-- **Uses @MockBean**: {'yes - for Spring integration' if mocking.get('uses_spring_mock_bean') else 'no - use @Mock'}
+- **Uses @MockBean**: {'yes - for Spring integration' if mocking.get('uses_spring_mock_bean') else ('no - use @Mock' if mocking.get('uses_mockito', True) else 'no')}
 - **Uses @Nested classes**: {'yes' if setup.get('uses_nested') else 'no'}
 - **Uses @ParameterizedTest**: {'yes - prefer parameterized tests for similar scenarios' if setup.get('uses_parameterized') else 'no'}
 """
@@ -624,6 +633,24 @@ async def _generate_test_code_with_llm(context: dict[str, Any], source_code: str
         methods_json=methods_json,
         test_requirements_section=test_requirements_section,
     )
+    return prompt, test_deps
+
+
+async def _generate_test_code_with_llm(context: dict[str, Any], source_code: str, *, prompt_template_dir: str | None = None) -> str:
+    """
+    Generate test code using LLM for intelligent, context-aware tests.
+
+    Args:
+        context: Test generation context with class info, methods, dependencies
+        source_code: The original Java source code
+
+    Returns:
+        Generated test code as string
+    """
+    llm = get_llm()
+    prompt, test_deps = build_generation_prompt(context, source_code, prompt_template_dir=prompt_template_dir)
+    class_name = context["class_name"]
+    class_type = context["class_type"]
 
     try:
         # Call LLM to generate tests
@@ -650,9 +677,7 @@ async def _generate_test_code_with_llm(context: dict[str, Any], source_code: str
         test_code = extract_code_block(test_code)
 
         # Validate that we got actual test code (technology-aware)
-        has_java_tests = "@Test" in test_code and "class" in test_code
-        has_python_tests = "def test_" in test_code
-        if not has_java_tests and not has_python_tests:
+        if count_tests(test_code) == 0:
             logger.warning(
                 "llm_generated_invalid_test",
                 class_name=class_name,
@@ -675,7 +700,7 @@ async def _generate_test_code_with_llm(context: dict[str, Any], source_code: str
         logger.info(
             "llm_test_generation_success",
             class_name=class_name,
-            test_count=test_code.count("@Test"),
+            test_count=count_tests(test_code),
         )
         return test_code
 

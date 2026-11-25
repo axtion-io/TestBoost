@@ -1,6 +1,9 @@
 # LLM Providers
 
-TestBoost uses LLMs for project analysis and test generation. It supports three providers, all interchangeable with zero code changes.
+TestBoost's own LLM generates tests in **LLM mode** (command line, CI). Inside an LLM CLI (Claude
+Code, OpenCode…) the default is **agent mode**, where the assistant writes the tests and TestBoost
+needs no provider or API key — see [Workflow](./workflow.md#agent-mode-context--generate---agent).
+LLM mode supports three providers, all interchangeable with zero code changes.
 
 ## Supported Providers
 

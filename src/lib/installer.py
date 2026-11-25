@@ -74,6 +74,10 @@ def install_commands(
     }
 
 
+# Wrappers called from inside other commands (no slash command of their own).
+HELPER_SCRIPTS = ("context",)
+
+
 def _command_steps(tb_root: Path) -> list[str]:
     """Step names of the shipped slash commands (templates/commands/testboost.<step>.md)."""
     templates_dir = tb_root / "templates" / "commands"
@@ -87,7 +91,7 @@ def _install_scripts(project: Path, tb_root: Path, shell_type: str) -> list[str]
 
     # One wrapper per slash-command template, so commands and scripts can't drift
     # (mutate/killer used to ship as commands with no installed script).
-    steps = _command_steps(tb_root)
+    steps = _command_steps(tb_root) + list(HELPER_SCRIPTS)
     details = []
 
     if shell_type == "powershell":

@@ -12,28 +12,38 @@ The mutation testing step must be completed first. If not, suggest running `/tes
 
 ## What you will do
 
+Agent mode is the default (you write the killer tests, no LLM API key needed); use TestBoost's own LLM
+only if the user explicitly asks for it.
+
+### Agent mode (default)
+
 1. Determine the project path from `$ARGUMENTS` or the current session
-2. Run killer test generation:
+2. Prepare one prompt per class with surviving mutants (optionally `--max-tests 15`):
+
+```bash
+bash scripts/tb-context.sh <project_path> --killer
+```
+
+3. For each row: read the prompt file and write the complete killer test class at the exact "Test to
+   write" path. Each test must FAIL on the mutated code and PASS on the original: compute real expected
+   values from the source. Write nowhere else and never change production code.
+4. Register and compile them; fix and re-run until it exits 0, then **VERIFY the output**:
+
+```bash
+bash scripts/tb-killer.sh <project_path> --agent
+```
+
+5. Suggest `/testboost.validate`, then `/testboost.mutate` to measure the new mutation score.
+
+### LLM mode (only when the user asks for it)
 
 ```bash
 bash scripts/tb-killer.sh <project_path> --verbose
 ```
 
-   To limit the number of killer tests:
-
-```bash
-bash scripts/tb-killer.sh <project_path> --max-tests 15 --verbose
-```
-
-3. **VERIFY the output** — see the "Integrity Verification" section below
-4. Read the results at `<project_path>/.testboost/sessions/<current_session>/killer-tests.md`
-5. **Present results** to the user:
-   - Number of killer test classes generated
-   - Number of mutants targeted
-   - File paths of generated killer tests
-6. **Suggest next steps**:
-   - Run `/testboost.validate` to compile and execute the killer tests
-   - Run `/testboost.mutate` again to verify the mutation score improved
+   To limit the number of killer tests: add `--max-tests 15`. Then **VERIFY the output**, read
+   `<project_path>/.testboost/sessions/<current_session>/killer-tests.md`, present the generated killer
+   tests and suggest `/testboost.validate` then `/testboost.mutate`.
 
 ## How killer test generation works
 
@@ -62,14 +72,13 @@ Results summary is written to `.testboost/sessions/<id>/killer-tests.md`.
 
 ## CRITICAL: Failure Protocol
 
-**If the bash command above exits with a non-zero code, or prints `[TESTBOOST_FAILED`, you MUST:**
+**If a TestBoost command exits with a non-zero code or prints `[TESTBOOST_FAILED`:**
 
-1. **STOP IMMEDIATELY** — do NOT attempt to generate killer tests yourself
-2. **Report the error** to the user exactly as printed by TestBoost
-3. **Do NOT write** Java test files or any test code manually
-4. **Suggest** checking LLM provider configuration and retry
-
-**You are NOT TestBoost. You are the assistant that calls TestBoost.**
+1. **Agent mode, `killer --agent` reporting missing tests or compilation errors**: the normal loop —
+   write or fix exactly the listed killer test files and re-run it.
+2. **Any other failure**: STOP and report the error exactly as printed by TestBoost.
+3. **Never** write `.testboost/` files by hand, never write tests outside the paths given by
+   `context --killer`, and in LLM mode never write killer tests yourself as a fallback.
 
 ## Integrity Verification
 

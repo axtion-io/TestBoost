@@ -1,5 +1,5 @@
 ---
-description: Generate unit tests for Java source files using LLM
+description: Generate unit tests (agent mode by default, or TestBoost's own LLM)
 ---
 
 # /testboost.generate
@@ -10,42 +10,62 @@ Generate unit tests for files identified as lacking coverage.
 
 The coverage gaps step must be completed first. If not, suggest running `/testboost.gaps`.
 
-## What you will do
+## Choose the mode
+
+- **Agent mode (default)**: you, the assistant, write the tests from the prompts TestBoost prepares.
+  No LLM API key is needed and TestBoost never calls an LLM. Use it unless the user asks otherwise.
+- **LLM mode**: TestBoost calls its own LLM (requires an API key in TestBoost's `.env`). Use it only
+  when the user explicitly asks for it, then follow "LLM mode" below.
+
+## Agent mode (default)
 
 1. Determine the project path from `$ARGUMENTS` or the current session
-2. Run test generation:
+2. Prepare the prompts (optionally `--files ServiceA.java ServiceB.java`):
+
+```bash
+bash scripts/tb-context.sh <project_path>
+```
+
+3. For **each row** of the printed table: read the prompt file, then write the **complete** test file at
+   the exact "Test to write" path. Follow the prompt (project conventions, exact dependency signatures,
+   test framework) and think about edge cases yourself. Write only at those paths: no other file, no
+   production code change.
+4. Register and compile your tests:
+
+```bash
+bash scripts/tb-generate.sh <project_path> --agent
+```
+
+5. If it reports **missing** tests or **compilation errors**, fix exactly those files and re-run step 4,
+   until it exits 0. Then **VERIFY the output** (see "Integrity Verification" below).
+6. Present the generated files and suggest the user reviews them, then `/testboost.validate`.
+
+## LLM mode (only when the user asks for it)
+
+1. Run test generation:
 
 ```bash
 bash scripts/tb-generate.sh <project_path> --verbose
 ```
 
-   If the user wants to generate for specific files only:
+   For specific files only: `bash scripts/tb-generate.sh <project_path> --files ServiceA.java ServiceB.java`
 
-```bash
-bash scripts/tb-generate.sh <project_path> --files ServiceA.java ServiceB.java
-```
-
-3. **VERIFY the output** — see the "Integrity Verification" section below
-4. Read the generation results at `<project_path>/.testboost/sessions/<current_session>/generation.md`
-5. **Present results** to the user:
-   - How many test files were generated
-   - Which source files got tests
-   - How many test methods per file
-6. **Important**: Ask the user to **review the generated tests** before validation:
-   - Show them the paths of the generated test files
-   - Suggest they open and review the code
-   - Ask if they want to make manual adjustments before validating
-7. Once the user is satisfied, suggest `/testboost.validate`
+2. **VERIFY the output** — see the "Integrity Verification" section below
+3. Read the generation results at `<project_path>/.testboost/sessions/<current_session>/generation.md`
+4. **Present results** to the user (files generated, test methods per file) and ask them to **review
+   the generated tests** before suggesting `/testboost.validate`
 
 ## How test generation works
 
-- Uses LLM (configurable: Gemini, Claude, OpenAI) to generate intelligent tests
+- Agent mode: the prompts carry the class, its dependencies' exact signatures, the project's test
+  examples and conventions; you write the tests, TestBoost compiles and registers them
+- LLM mode: TestBoost's own LLM (configurable: Gemini, Claude, OpenAI) generates the tests
 - Follows detected project conventions (naming, assertions, mocking)
 - Generates JUnit5 tests with Mockito mocks
 - Handles Spring Boot `@Service`, `@RestController`, `@Repository` patterns
 - Generates appropriate mock setups for injected dependencies
 
-## Auto-correction
+## Auto-correction (LLM mode)
 
 If compilation fails during generation, the errors are fed back to the LLM. The budget is `max_correction_retries` compile checks (default 3, i.e. up to 2 LLM fixes) from `.testboost/config.yaml`. Once the test compiles, it is run once (`mvn test -Dtest=<Class>`) and runtime failures get one LLM fix (`--no-runtime-fix` to skip). This happens automatically within the generation step.
 
@@ -56,15 +76,15 @@ Results summary is written to `.testboost/sessions/<id>/generation.md`.
 
 ## CRITICAL: Failure Protocol
 
-**If the bash command above exits with a non-zero code, or prints `[TESTBOOST_FAILED`, you MUST:**
+**If a TestBoost command exits with a non-zero code or prints `[TESTBOOST_FAILED`:**
 
-1. **STOP IMMEDIATELY** — do NOT attempt to generate tests yourself
-2. **Report the error** to the user exactly as printed by TestBoost
-3. **Do NOT write** Java test files, `generation.md`, or any test code manually
-4. **Do NOT use your own knowledge** of Java testing to create tests — only TestBoost-generated tests are valid in this workflow
-5. **Suggest** the user check their LLM provider configuration (API keys, endpoint) and retry
-
-**You are NOT TestBoost. You are the assistant that calls TestBoost. If TestBoost fails, you fail. Under NO circumstances should you generate Java test code as a fallback.**
+1. **Agent mode, `generate --agent` reporting missing tests or compilation errors**: this is the normal
+   loop — write or fix exactly the listed test files and re-run it.
+2. **Any other failure** (missing session, `context` failure, LLM mode failure): STOP, report the error
+   exactly as printed by TestBoost, and do not work around it.
+3. **Never** write `generation.md` or any `.testboost/` file by hand, never write tests outside the paths
+   given by `context`, and never present results that a successful, verified TestBoost command did not
+   produce. In LLM mode, do not write test code yourself as a fallback.
 
 ## Integrity Verification
 

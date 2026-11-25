@@ -18,6 +18,12 @@ init --> analyze --> gaps --> generate --> validate [--> mutate --> killer]
 
 Each step produces a markdown report in your project's `.testboost/` directory, giving you full visibility into what was analyzed, what's missing, and what was generated. The optional `mutate`/`killer` steps run PIT mutation testing and generate targeted tests for surviving mutants.
 
+Inside an LLM CLI, TestBoost runs in **agent mode** by default: the assistant you are already
+talking to writes the tests from prompts TestBoost prepares, and TestBoost keeps the
+deterministic part — analysis, gap detection, compilation, test runs, PIT mutation testing,
+reports. **No LLM API key is needed** in that mode. TestBoost's own LLM (LangChain) is used for
+the command line and CI.
+
 TestBoost runs interactively from an LLM CLI, directly from the command line, or **unattended in CI** — pausing on a Merge Request comment whenever it needs human input (see [CI section](#using-testboost-in-ci-gitlab)).
 
 ## Quick Start
@@ -32,11 +38,10 @@ pip install poetry
 poetry install
 eval "$(poetry env activate)"  # Poetry 2.x (on 1.x: poetry shell)
 
-# Configure your LLM (copy and edit .env)
-cp .env.example .env
-# Edit .env — see "LLM Providers" below
+# Only for the command line / CI (LLM mode): configure TestBoost's own LLM
+cp .env.example .env           # then edit it — see "LLM Providers" below
 
-# Launch your LLM CLI from the TestBoost directory
+# Launch your LLM CLI from the TestBoost directory (agent mode: no API key needed)
 claude                         # or: opencode
 ```
 
@@ -70,6 +75,9 @@ Once inside the LLM CLI:
 /testboost.validate /path/to/your/java/project
 ```
 
+`/testboost.generate` and `/testboost.killer` run in agent mode (the assistant writes the tests,
+TestBoost compiles and registers them) unless you ask for TestBoost's own LLM.
+
 Or use the CLI directly (no LLM CLI needed):
 
 ```bash
@@ -78,6 +86,19 @@ python -m testboost analyze /path/to/java/project
 python -m testboost gaps /path/to/java/project
 python -m testboost generate /path/to/java/project
 python -m testboost validate /path/to/java/project
+```
+
+Agent mode from any agent or script — no LLM call, no API key:
+
+```bash
+python -m testboost context /path/to/java/project            # one prompt file per gap + expected test path
+# … write each test at its expected path …
+python -m testboost generate /path/to/java/project --agent   # registers + compiles them
+python -m testboost validate /path/to/java/project
+python -m testboost mutate /path/to/java/project
+python -m testboost context /path/to/java/project --killer   # prompts for the surviving mutants
+# … write the killer tests …
+python -m testboost killer /path/to/java/project --agent
 ```
 
 ### Installing into a Java project
@@ -166,7 +187,7 @@ signing).
 
 ## LLM Providers
 
-TestBoost supports three LLM provider modes via the `LLM_PROVIDER` variable in `.env`:
+Only needed in LLM mode (command line without an agent, CI). TestBoost supports three LLM provider modes via the `LLM_PROVIDER` variable in `.env`:
 
 | Provider | Use case | Setup |
 |----------|----------|-------|

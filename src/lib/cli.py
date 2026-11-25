@@ -39,6 +39,7 @@ from src.lib.commands._shared import (  # noqa: E402,F401
     _read_step_status,
     _warn_maven_config_issue,
 )
+from src.lib.commands.agent_cmd import cmd_context  # noqa: E402,F401
 from src.lib.commands.analyze_cmd import (  # noqa: E402,F401
     _cmd_analyze_async,
     _cmd_gaps_async,
@@ -118,6 +119,12 @@ def main() -> int:
         action="store_true",
         help="Skip the per-test `mvn test` auto-fix loop (compile-fix only)",
     )
+    p_gen.add_argument(
+        "--agent",
+        action="store_true",
+        help="Agent mode: register and compile the tests written by the host agent (no LLM call); "
+             "run `context` first",
+    )
     p_gen.add_argument("--verbose", "-v", action="store_true")
     p_gen.add_argument(
         "--fail-on-uncertainty",
@@ -130,6 +137,17 @@ def main() -> int:
         default=None,
         help="JSON file with answers/context to inject as test_requirements (for resume)",
     )
+
+    # context (agent mode)
+    p_ctx = subparsers.add_parser(
+        "context",
+        help="Agent mode: write one generation prompt per gap (or per class with surviving mutants)",
+    )
+    p_ctx.add_argument("project_path", help="Path to the project")
+    p_ctx.add_argument("--files", nargs="*", help="Filter specific files")
+    p_ctx.add_argument("--killer", action="store_true", help="Prompts for the surviving mutants")
+    p_ctx.add_argument("--max-tests", type=int, default=10, help="(--killer) maximum mutants targeted")
+    p_ctx.add_argument("--verbose", "-v", action="store_true")
 
     # validate
     p_val = subparsers.add_parser("validate", help="Compile and run tests")
@@ -156,6 +174,12 @@ def main() -> int:
     p_killer = subparsers.add_parser("killer", help="Generate killer tests for surviving mutants")
     p_killer.add_argument("project_path", help="Path to the Java project")
     p_killer.add_argument("--max-tests", type=int, default=10, help="Maximum killer tests to generate")
+    p_killer.add_argument(
+        "--agent",
+        action="store_true",
+        help="Agent mode: register and compile the killer tests written by the host agent; "
+             "run `context --killer` first",
+    )
     p_killer.add_argument("--verbose", "-v", action="store_true")
     p_killer.add_argument(
         "--fail-on-uncertainty", action="store_true",
@@ -264,6 +288,7 @@ def main() -> int:
         "analyze": cmd_analyze,
         "gaps": cmd_gaps,
         "generate": cmd_generate,
+        "context": cmd_context,
         "validate": cmd_validate,
         "mutate": cmd_mutate,
         "killer": cmd_killer,

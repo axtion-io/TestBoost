@@ -61,4 +61,13 @@ def extract_code_block(text: str) -> str:
     return (match.group(1) if match else text).strip()
 
 
-__all__ = ["extract_code_block", "load_prompt_template", "render_template", "response_text"]
+# JUnit 5 test-method annotations, then pytest functions.
+_TEST_METHOD = re.compile(r"@(?:Test|ParameterizedTest|RepeatedTest|TestFactory|TestTemplate)\b|^\s*(?:async\s+)?def test_", re.M)
+
+
+def count_tests(code: str) -> int:
+    """Number of test methods in a JUnit 5 or pytest file (parameterized tests count once)."""
+    return len(_TEST_METHOD.findall(code))
+
+
+__all__ = ["count_tests", "extract_code_block", "load_prompt_template", "render_template", "response_text"]

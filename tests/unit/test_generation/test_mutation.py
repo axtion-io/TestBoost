@@ -40,7 +40,9 @@ class TestRunMutationTesting:
         assert result["output"] == "build log"
         # PIT goal + output formats are on the command line
         cmd = mock_exec.call_args.args
-        assert any("pitest-maven:mutationCoverage" in c for c in cmd)
+        # no pitest-maven in the pom: TestBoost's pinned version, never Maven's "latest"
+        assert "org.pitest:pitest-maven:1.30.2:mutationCoverage" in cmd
+        assert cmd.index("test-compile") < cmd.index("org.pitest:pitest-maven:1.30.2:mutationCoverage")
         assert any("-DoutputFormats=XML,HTML" in c for c in cmd)
 
     @pytest.mark.asyncio
@@ -73,3 +75,34 @@ class TestRunMutationTesting:
         cmd = " ".join(mock_exec.call_args.args)
         assert "-DtargetClasses=com.a.*,com.b.*" in cmd
         assert "-Dmutators=MATH" in cmd
+
+
+class TestReportsAndSetup:
+    @pytest.mark.asyncio
+    async def test_every_module_report_is_aggregated(self, tmp_path):
+        (tmp_path / "pom.xml").write_text("<project></project>")
+        _write_report(tmp_path / "engine")
+        _write_report(tmp_path / "app")
+        with patch("asyncio.create_subprocess_exec", return_value=_fake_process(0)):
+            result = json.loads(await run_mutation_testing(str(tmp_path)))
+        assert result["mutations"]["total"] == 8 and len(result["report_paths"]) == 2
+
+    @pytest.mark.asyncio
+    async def test_a_report_older_than_the_run_is_ignored(self, tmp_path):
+        import os
+        (tmp_path / "pom.xml").write_text("<project></project>")
+        stale = _write_report(tmp_path) / "mutations.xml"
+        os.utime(stale, (1, 1))
+        with patch("asyncio.create_subprocess_exec", return_value=_fake_process(0)):
+            result = json.loads(await run_mutation_testing(str(tmp_path)))
+        assert result["error"] == "PIT report not found"
+
+    @pytest.mark.asyncio
+    async def test_junit5_project_without_the_plugin_is_refused_before_running(self, tmp_path):
+        (tmp_path / "pom.xml").write_text(
+            "<project><dependencies><dependency><artifactId>junit-jupiter</artifactId>"
+            "</dependency></dependencies></project>")
+        with patch("asyncio.create_subprocess_exec") as mock_exec:
+            result = json.loads(await run_mutation_testing(str(tmp_path)))
+        mock_exec.assert_not_called()
+        assert "testboost pit-setup" in result["error"]

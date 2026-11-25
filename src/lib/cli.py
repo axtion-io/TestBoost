@@ -46,6 +46,7 @@ from src.lib.commands.analyze_cmd import (  # noqa: E402,F401
     cmd_analyze,
     cmd_gaps,
 )
+from src.lib.commands.check_cmd import cmd_check  # noqa: E402,F401
 from src.lib.commands.generate_cmd import (  # noqa: E402,F401
     _MAX_COMPILE_FIX_ATTEMPTS,
     _attempt_compile_fix,
@@ -64,10 +65,12 @@ from src.lib.commands.mutation_cmd import (  # noqa: E402,F401
     cmd_equivalent,
     cmd_killer,
     cmd_mutate,
+    cmd_pit_setup,
 )
 from src.lib.commands.ops_cmd import (  # noqa: E402,F401
     cmd_cleanup,
     cmd_doctor,
+    cmd_github,
     cmd_gitlab,
     cmd_status,
     cmd_verify,
@@ -214,6 +217,25 @@ def main() -> int:
     p_eq.add_argument("--reason", default="", help="Why no test can observe the mutation (required to declare)")
     p_eq.add_argument("--remove", action="store_true", help="Withdraw the given declarations")
 
+    # check — the judge: measured coverage + mutation score, no session, no LLM
+    p_check = subparsers.add_parser(
+        "check",
+        help="Measure line coverage (JaCoCo) and mutation score (PIT), optionally on the lines changed "
+             "since a git ref; exit 0 pass, 1 below threshold, 2 measure failed",
+    )
+    p_check.add_argument("project_path", help="Path to the Maven project")
+    p_check.add_argument("--base", help="Git ref (e.g. origin/main): judge only the lines changed since it")
+    p_check.add_argument("--min-coverage", type=float, default=80.0, help="Minimum line coverage %% (default 80)")
+    p_check.add_argument("--min-mutation", type=float, default=80.0,
+                         help="Minimum mutation score %%, declared equivalents excluded (default 80)")
+    p_check.add_argument("--no-mutation", action="store_true", help="Coverage only (skip PIT)")
+    p_check.add_argument("--target-tests", nargs="*", help="Test classes PIT runs (default: all)")
+
+    # pit-setup
+    p_pit = subparsers.add_parser(
+        "pit-setup", help="Declare PIT and its JUnit 5 plugin (pinned versions) in the root pom.xml")
+    p_pit.add_argument("project_path", help="Path to the Maven project")
+
     # verify
     p_verify = subparsers.add_parser("verify", help="Verify an integrity token")
     p_verify.add_argument("project_path", help="Path to the Java project")
@@ -265,6 +287,16 @@ def main() -> int:
         "post-question", help="Post the pending question.json as an MR note"
     )
     p_gl_post.add_argument("project_path", help="Path to the project")
+    p_gl_report = gitlab_sub.add_parser(
+        "post-report", help="Post (or update) the `check` report as a sticky MR note")
+    p_gl_report.add_argument("project_path", help="Path to the project")
+    p_gl_report.add_argument("--file", help="Report file (default: .testboost/check/report.md)")
+    p_github = subparsers.add_parser("github", help="GitHub PR helpers for Actions")
+    github_sub = p_github.add_subparsers(dest="github_command", required=True)
+    p_gh_report = github_sub.add_parser(
+        "post-report", help="Post (or update) the `check` report as a sticky PR comment")
+    p_gh_report.add_argument("project_path", help="Path to the project")
+    p_gh_report.add_argument("--file", help="Report file (default: .testboost/check/report.md)")
     p_gl_fetch = gitlab_sub.add_parser(
         "fetch-answer", help="Find the developer's answer note and write a signed answer file"
     )
@@ -317,12 +349,15 @@ def main() -> int:
         "mutate": cmd_mutate,
         "killer": cmd_killer,
         "equivalent": cmd_equivalent,
+        "check": cmd_check,
+        "pit-setup": cmd_pit_setup,
         "verify": cmd_verify,
         "install": cmd_install,
         "status": cmd_status,
         "resume": cmd_resume,
         "sign-answer": cmd_sign_answer,
         "gitlab": cmd_gitlab,
+        "github": cmd_github,
         "cleanup": cmd_cleanup,
         "doctor": cmd_doctor,
     }

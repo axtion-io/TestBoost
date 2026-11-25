@@ -48,7 +48,8 @@ def read_reports(project_path: str) -> dict[str, dict[str, Any]]:
     """Coverage by source file (path relative to the project, as `find_source_files` gives it).
 
     {path: {"line_pct": float, "missed": int, "covered": int, "uncovered": "12-14, 40",
-            "partial": "22"}} — `partial`: lines with missed branches.
+            "partial": "22", "lines": {12: "missed", 22: "partial", …}}} — `partial`: lines
+    with missed branches; `lines`: every executable line.
     Reads every module's `target/site/jacoco/jacoco.xml`.
     """
     project = Path(project_path)
@@ -68,9 +69,14 @@ def read_reports(project_path: str) -> dict[str, dict[str, Any]]:
                 counter = next((c for c in source.findall("counter") if c.get("type") == "LINE"), None)
                 m = int(counter.get("missed")) if counter is not None else len(missed)
                 c = int(counter.get("covered")) if counter is not None else 0
+                lines = {}
+                for ln in source.iter("line"):
+                    nr, ci = int(ln.get("nr")), int(ln.get("ci", 0))
+                    lines[nr] = "missed" if ci == 0 else "partial" if int(ln.get("mb", 0)) > 0 else "covered"
                 result[rel] = {
                     "line_pct": round(100.0 * c / (m + c), 1) if m + c else 100.0,
                     "missed": m, "covered": c,
                     "uncovered": _ranges(missed), "partial": _ranges(partial),
+                    "lines": lines,
                 }
     return result

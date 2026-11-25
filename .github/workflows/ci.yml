@@ -44,12 +44,48 @@ jobs:
       run: |
         poetry run pytest tests/ --tb=short \
           --cov=src --cov-report=term --cov-fail-under=75 \
-          -k "not test_llm_connection_success" \
+          -k "not test_llm_connection_success" -m "not maven" \
           --durations=10
 
     - name: Dead code check
       run: |
         poetry run python scripts/find_dead_code.py
+
+  # `testboost check` on examples/java-demo with the real Maven, JaCoCo and PIT:
+  # the seam every mocked test passes through (see tests/e2e/test_check_maven.py).
+  maven:
+    name: Real Maven / JaCoCo / PIT (examples/java-demo)
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Python 3.12
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+
+    - name: Set up Java 21 and Maven cache
+      uses: actions/setup-java@v4
+      with:
+        distribution: temurin
+        java-version: '21'
+        cache: maven
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip poetry
+        poetry install --no-interaction
+
+    - name: Run the Maven end-to-end tests
+      run: |
+        poetry run pytest tests/ -m maven --tb=short -p no:cacheprovider
+
+    - name: Check the demo itself (report as job summary)
+      run: |
+        poetry run python -m testboost check examples/java-demo --min-coverage 0 --min-mutation 0
+        cat examples/java-demo/.testboost/check/report.md >> "$GITHUB_STEP_SUMMARY"
 
   lint:
     name: Code Quality

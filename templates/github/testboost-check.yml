@@ -1,0 +1,42 @@
+# TestBoost check — measured test quality of a pull request, as a sticky PR comment.
+# Copy to .github/workflows/testboost-check.yml.
+#
+# Judges only the lines the PR changes: JaCoCo line coverage + PIT mutation
+# score (declared equivalents excluded). The job fails below the thresholds.
+# Prerequisite, once, committed: `testboost pit-setup .` (PIT + JUnit 5 plugin in pom.xml).
+name: TestBoost check
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+  pull-requests: write          # the sticky comment
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0          # the merge base with the target branch is needed
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install TestBoost
+        run: pip install "git+https://github.com/axtion-io/TestBoost.git@main"   # pin a tag in production
+      - name: Check the changed lines
+        id: check
+        run: testboost check . --base "origin/${{ github.base_ref }}" --min-coverage 80 --min-mutation 80
+      - name: Post the report
+        if: always() && hashFiles('.testboost/check/report.md') != ''
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          testboost github post-report .
+          cat .testboost/check/report.md >> "$GITHUB_STEP_SUMMARY"

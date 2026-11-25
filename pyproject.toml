@@ -10,6 +10,9 @@ packages = [{include = "src"}, {include = "testboost"}]
 # (e.g. the GitLab CI template) works without a repo checkout.
 include = [{path = "src/prompts/**/*.md", format = ["sdist", "wheel"]}]
 
+[tool.poetry.scripts]
+testboost = "src.lib.cli:main"
+
 [tool.poetry.dependencies]
 python = "^3.11"
 pydantic = "^2.12"
@@ -94,6 +97,7 @@ markers = [
     "integration: mark test as integration test",
     "e2e: mark test as end-to-end test",
     "slow: mark test as slow-running",
+    "maven: runs the real Maven/JaCoCo/PIT on examples/java-demo (skipped without mvn and java)",
 ]
 filterwarnings = [
     "ignore::DeprecationWarning",

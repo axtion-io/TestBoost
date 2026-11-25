@@ -500,12 +500,17 @@ def cmd_equivalent(args: argparse.Namespace) -> int:
                   f"| {e['description']} | {e['reason']} |")
         return 0
 
+    from src.lib.commands.check_cmd import last_check_survivors
+
     session = get_current_session(project_path)
     mutation_file = Path(session["session_dir"]) / "mutation.md" if session else None
-    if mutation_file is None or not mutation_file.exists():
-        print("Error: run `mutate` first: only surviving mutants can be declared equivalent.", file=sys.stderr)
+    survivors = last_check_survivors(project_path)          # `check` needs no session
+    if mutation_file is not None and mutation_file.exists():
+        survivors += _extract_json_field(mutation_file.read_text(encoding="utf-8"), "surviving_mutants") or []
+    if not survivors:
+        print("Error: run `mutate` or `check` first: only surviving mutants can be declared equivalent.",
+              file=sys.stderr)
         return 1
-    survivors = _extract_json_field(mutation_file.read_text(encoding="utf-8"), "surviving_mutants") or []
     try:
         added = equivalents.declare(project_path, survivors, args.ids, args.reason)
     except ValueError as e:
@@ -514,5 +519,25 @@ def cmd_equivalent(args: argparse.Namespace) -> int:
     for e in added:
         print(f"Declared equivalent: `{e['id']}` {e['class'].rsplit('.', 1)[-1]}.{e['method']} "
               f"l.{e['line']} — {e['description']}")
-    print("Excluded from killer tests and from the effective score of the next `mutate`.")
+    print("Excluded from killer tests and from the effective score of the next `mutate` / `check`.")
+    return 0
+
+
+def cmd_pit_setup(args: argparse.Namespace) -> int:
+    """Declare pitest-maven + pitest-junit5-plugin (pinned) in the root pom."""
+    from src.java.pit import JUNIT5_PLUGIN_VERSION, PIT_VERSION, add_pit_plugin
+
+    if not (Path(args.project_path) / "pom.xml").exists():
+        print("Error: no pom.xml in the project root.", file=sys.stderr)
+        return 1
+    try:
+        done = add_pit_plugin(args.project_path)
+    except ValueError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        return 1
+    if done == "added":
+        print(f"Added pitest-maven {PIT_VERSION} + pitest-junit5-plugin {JUNIT5_PLUGIN_VERSION} to "
+              f"{Path(args.project_path) / 'pom.xml'} (<build><plugins>). Review and commit it.")
+    else:
+        print("PIT is already declared in the pom: nothing to do.")
     return 0

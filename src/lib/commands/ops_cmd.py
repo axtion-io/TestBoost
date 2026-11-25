@@ -48,6 +48,11 @@ def cmd_gitlab(args: argparse.Namespace) -> int:
                 f"(note {result.get('note_id')})"
             )
             return 0
+        if sub == "post-report":
+            from src.lib.mr_report import post_gitlab
+            result = post_gitlab(args.project_path, getattr(args, "file", None))
+            print(f"{'Updated' if result['updated'] else 'Posted'} the check report (note {result['id']})")
+            return 0
         if sub == "fetch-answer":
             out = fetch_answer(args.project_path, output=args.output)
             print(f"Signed answer written to {out}")
@@ -63,6 +68,25 @@ def cmd_gitlab(args: argparse.Namespace) -> int:
     except httpx.HTTPError as e:
         print(f"Error: GitLab API call failed: {e}", file=sys.stderr)
         return 1
+def cmd_github(args: argparse.Namespace) -> int:
+    """GitHub PR helper for Actions: post the `check` report as a sticky comment."""
+    import httpx
+
+    from src.lib.gitlab_mr import GitLabConfigError
+    from src.lib.mr_report import post_github
+
+    try:
+        result = post_github(args.project_path, getattr(args, "file", None))
+    except GitLabConfigError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        return 1
+    except httpx.HTTPError as e:
+        print(f"Error: GitHub API call failed: {e}", file=sys.stderr)
+        return 1
+    print(f"{'Updated' if result['updated'] else 'Posted'} the check report (comment {result['id']})")
+    return 0
+
+
 def cmd_cleanup(args: argparse.Namespace) -> int:
     """Mark abandoned (awaiting_input + age > TTL) sessions.
 

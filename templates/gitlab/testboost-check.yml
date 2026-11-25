@@ -1,0 +1,45 @@
+# TestBoost check — measured test quality of a merge request, as a sticky MR comment.
+#
+# include:
+#   - remote: https://raw.githubusercontent.com/axtion-io/TestBoost/main/templates/gitlab/testboost-check.yml
+#
+# Judges only the lines the MR changes: JaCoCo line coverage + PIT mutation
+# score (declared equivalents excluded). The job fails below the thresholds.
+# Prerequisite, once, committed: `testboost pit-setup .` (PIT + JUnit 5 plugin in pom.xml).
+#
+# CI/CD variables:
+#   GITLAB_TOKEN            — Project Access Token, scope `api` (posts the comment)
+#   TESTBOOST_MIN_COVERAGE  — default 80
+#   TESTBOOST_MIN_MUTATION  — default 80
+#   TESTBOOST_PACKAGE       — pip requirement for TestBoost (pin a tag in production)
+
+testboost:check:
+  image: $TESTBOOST_CHECK_IMAGE
+  stage: test
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+  variables:
+    TESTBOOST_CHECK_IMAGE: "maven:3.9-eclipse-temurin-21"
+    TESTBOOST_PACKAGE: "git+https://github.com/axtion-io/TestBoost.git@main"
+    TESTBOOST_MIN_COVERAGE: "80"
+    TESTBOOST_MIN_MUTATION: "80"
+    GIT_DEPTH: "0"                      # the merge base with the target branch is needed
+    MAVEN_OPTS: "-Dmaven.repo.local=$CI_PROJECT_DIR/.m2"
+  cache:
+    key: testboost-m2
+    paths: [.m2/]
+  before_script:
+    - command -v python3 >/dev/null && python3 -m venv --help >/dev/null 2>&1 ||
+      (apt-get update -qq && apt-get install -qq --no-install-recommends python3-venv git)
+    - python3 -m venv /tmp/tb && . /tmp/tb/bin/activate
+    - pip install --quiet "$TESTBOOST_PACKAGE"
+    - git fetch --quiet origin "$CI_MERGE_REQUEST_TARGET_BRANCH_NAME"
+  script:
+    # Post the report whatever the verdict, then fail the job if needed.
+    - rc=0; testboost check . --base "origin/$CI_MERGE_REQUEST_TARGET_BRANCH_NAME"
+        --min-coverage "$TESTBOOST_MIN_COVERAGE" --min-mutation "$TESTBOOST_MIN_MUTATION" || rc=$?
+    - if [ -f .testboost/check/report.md ]; then testboost gitlab post-report .; fi
+    - exit $rc
+  artifacts:
+    when: always
+    paths: [.testboost/check/]

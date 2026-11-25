@@ -50,8 +50,10 @@ class TestReport:
     def test_line_coverage_and_uncovered_ranges_per_source_file(self, tmp_path):
         _write_report(tmp_path)
         cov = read_reports(str(tmp_path))
+        lines = cov[ORDER].pop("lines")
         assert cov[ORDER] == {"line_pct": 33.3, "missed": 4, "covered": 2,
                               "uncovered": "12-14, 31", "partial": "20"}
+        assert lines == {10: "covered", 12: "missed", 13: "missed", 14: "missed", 20: "partial", 31: "missed"}
         assert cov[USER]["line_pct"] == 100.0
 
     def test_multi_module_paths_are_relative_to_the_project(self, tmp_path):

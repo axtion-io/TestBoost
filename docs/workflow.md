@@ -137,6 +137,29 @@ The same cycle exists for mutation testing: `context --killer [--max-tests N]` w
 class with surviving mutants (`agent/killer/`: ids, lines, mutations), the agent writes the
 `*KillerTest` files, and `killer --agent` registers and compiles them.
 
+## Check (no session)
+
+**Command:** `testboost check <project> [--base <git ref>] [--min-coverage 80] [--min-mutation 80]
+[--no-mutation] [--target-tests …]`
+
+Judges the tests, whoever wrote them. Runs the suite once under JaCoCo (failing tests are a
+measure error: exit 2, before any mutation), then PIT, and compares both to their thresholds:
+exit 0 when both are met, 1 when one is not, 2 when the measure failed.
+
+With `--base`, only the lines changed since that ref count (`git diff --unified=0` plus untracked
+files, main Java sources only): coverage of the changed *executable* lines (a line with a missed
+branch counts as covered and is listed), PIT restricted to the changed classes, and the score
+computed on the mutants of the changed lines. Declared equivalents (`testboost equivalent`, which
+also accepts the ids of the last `check`) leave the denominator.
+
+**Output:** `.testboost/check/report.md` (the MR comment) and `.testboost/check/check.json`.
+
+PIT needs `pitest-junit5-plugin` as a plugin dependency to run JUnit 5 tests, which only the pom
+can declare: `testboost pit-setup <project>` adds `pitest-maven` and the plugin (pinned versions)
+to the root pom's `<build><plugins>`. `mutate` and `check` refuse early, with that instruction,
+instead of letting PIT find no test. Reports of every module are aggregated; reports older than
+the run are ignored.
+
 ## 5. Validate
 
 **Command:** `python -m src.lib.cli validate <project_path> [--full]`

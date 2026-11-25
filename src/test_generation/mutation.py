@@ -9,6 +9,7 @@ import asyncio
 import json
 import shutil
 import subprocess
+import time
 import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Any
@@ -50,13 +51,22 @@ async def run_mutation_testing(
     if not pom_file.exists():
         return json.dumps({"success": False, "error": "pom.xml not found - PIT requires Maven"})
 
-    # Build PIT command
+    from src.java.pit import pit_goal, setup_problem
+
+    problem = setup_problem(project_path)
+    if problem:
+        return json.dumps({"success": False, "error": problem})
+
+    # Build PIT command: tests compiled first (PIT does not compile), the pom's PIT
+    # version or TestBoost's pinned one, one fixed report directory per module.
     mvn = _get_mvn_command()
     cmd = [
         mvn,
-        "org.pitest:pitest-maven:mutationCoverage",
+        "test-compile",
+        pit_goal(project_path),
         f"-DtimeoutFactor={timeout_factor}",
         "-DoutputFormats=XML,HTML",
+        "-DtimestampedReports=false",
     ]
 
     if target_classes:
@@ -68,7 +78,7 @@ async def run_mutation_testing(
     if mutators:
         cmd.append(f"-Dmutators={','.join(mutators)}")
 
-    # Run PIT
+    started = time.time()
     try:
         process = await asyncio.create_subprocess_exec(
             *cmd, cwd=project_dir, stdout=subprocess.PIPE, stderr=subprocess.PIPE
@@ -90,13 +100,13 @@ async def run_mutation_testing(
         return json.dumps({"success": False, "error": f"Failed to run PIT: {e}"})
 
     # Parse results
-    results = await _parse_pit_results(project_dir)
+    results = await _parse_pit_results(project_dir, since=started)
 
     return json.dumps(results, indent=2)
 
 
-async def _parse_pit_results(project_dir: Path) -> dict[str, Any]:
-    """Parse PIT mutation testing results."""
+async def _parse_pit_results(project_dir: Path, since: float | None = None) -> dict[str, Any]:
+    """Parse PIT results of every module (reports written since `since`: no stale report)."""
     mutations: dict[str, int] = {"total": 0, "killed": 0, "survived": 0, "no_coverage": 0, "timed_out": 0}
     by_class_list: list[dict[str, Any]] = []
     surviving_mutants: list[dict[str, Any]] = []
@@ -107,32 +117,34 @@ async def _parse_pit_results(project_dir: Path) -> dict[str, Any]:
         "mutations": mutations,
         "by_class": by_class_list,
         "surviving_mutants": surviving_mutants,
+        "mutants": [],          # every mutant, with its status (`check --base` filters them by line)
         "report_path": "",
     }
 
-    # Find PIT report
-    pit_reports = list(project_dir.rglob("pit-reports/**/mutations.xml"))
-    if not pit_reports:
+    reports = [r for r in project_dir.rglob("pit-reports/**/mutations.xml")
+               if since is None or r.stat().st_mtime >= since - 1]
+    if not reports:
         results["error"] = "PIT report not found"
         return results
+    results["report_path"] = str(reports[0].parent)
+    results["report_paths"] = [str(r.parent) for r in sorted(reports)]
 
-    report_file = pit_reports[0]
-    results["report_path"] = str(report_file.parent)
-
-    # Parse XML report
     try:
-        tree = ET.parse(report_file)
-        root = tree.getroot()
-
         by_class: dict[str, dict[str, int]] = {}
+        all_mutations = [m for r in sorted(reports) for m in ET.parse(r).getroot().findall(".//mutation")]
 
-        for mutation in root.findall(".//mutation"):
+        for mutation in all_mutations:
             status = mutation.get("status", "UNKNOWN")
             class_name = mutation.findtext("mutatedClass", "")
             method = mutation.findtext("mutatedMethod", "")
             line = mutation.findtext("lineNumber", "0")
             mutator = mutation.findtext("mutator", "")
             description = mutation.findtext("description", "")
+            package = class_name.rsplit(".", 1)[0].replace(".", "/") if "." in class_name else ""
+            source_file = f"{package}/{mutation.findtext('sourceFile', '')}".lstrip("/")
+            results["mutants"].append({"class": class_name, "method": method, "line": int(line),
+                                       "mutator": mutator, "description": description,
+                                       "status": status, "source_file": source_file})
 
             mutations["total"] += 1
 
@@ -147,6 +159,7 @@ async def _parse_pit_results(project_dir: Path) -> dict[str, Any]:
                         "line": int(line),
                         "mutator": mutator,
                         "description": description,
+                        "source_file": source_file,
                     }
                 )
             elif status == "NO_COVERAGE":

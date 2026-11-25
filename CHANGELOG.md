@@ -14,12 +14,25 @@ GitLab CI template to the new tag.
   per class with surviving mutants) and the expected test path; the host agent writes the tests;
   `generate --agent` / `killer --agent` register and compile them without any LLM call or API
   key. Default mode of the `/testboost.generate` and `/testboost.killer` slash commands.
+- **`testboost check`**: the judge. JaCoCo line coverage + PIT mutation score of the whole
+  project or, with `--base <ref>`, of the lines changed since that ref; exit 0/1/2 for CI; writes
+  an MR-ready `report.md`. A red suite is reported as such, not scored. No session, no LLM.
+- `testboost gitlab post-report` / `testboost github post-report`: the check report as one sticky
+  MR/PR comment (updated on each push, only TestBoost's own), and the CI templates
+  `templates/{gitlab,github}/testboost-check.yml`. A `testboost` console script is installed.
+- **`testboost pit-setup`**: declares `pitest-maven` 1.30.2 + `pitest-junit5-plugin` 1.2.3 in the
+  root pom (formatting kept, idempotent). PIT is no longer run at Maven's "latest" version.
+- `examples/java-demo`: a small public Maven project, under-tested on purpose; the `maven` CI job
+  runs the real Maven/JaCoCo/PIT on it (`tests/e2e/test_check_maven.py`).
 - **Equivalent mutants**: `testboost equivalent <project> <id> --reason …` declares a surviving
   mutant that no test can observe (project-level, keyed on its location so it comes back when the
   code moves). `mutate` reports an effective score without them (the threshold applies to it);
   killer steps no longer target them; in LLM mode the model can only suggest them.
 
 ### Fixed
+- `mutate` read the first `mutations.xml` found — possibly a stale one, or another module's — and
+  compiled nothing first: it now compiles tests, aggregates every module's fresh report, and
+  refuses a JUnit 5 project whose pom lacks the PIT JUnit 5 plugin.
 - The mutation report's recommendations counted every mutant of a mutator, killed ones included
   ("40 negated conditional mutants survived" with 0 survivors).
 - A class holding a nested record (`class Vaud { record Ferie(…) }`) was analysed as that record,

@@ -26,6 +26,25 @@ the command line and CI.
 
 TestBoost runs interactively from an LLM CLI, directly from the command line, or **unattended in CI** — pausing on a Merge Request comment whenever it needs human input (see [CI section](#using-testboost-in-ci-gitlab)).
 
+## `testboost check`: the judge
+
+Whoever wrote the tests — a developer, Claude, Copilot — `check` measures them instead of
+trusting what is declared: JaCoCo line coverage and PIT mutation score, on the whole project or
+only on the lines a merge request changes. No session, no LLM, no API key.
+
+```bash
+testboost pit-setup .                      # once: declares PIT + its JUnit 5 plugin in pom.xml
+testboost check . --base origin/main       # exit 0 pass · 1 below threshold · 2 measure failed
+```
+
+It writes `.testboost/check/report.md` — ready to post as a merge request comment (`testboost
+gitlab post-report` / `testboost github post-report`) — with the uncovered lines and every
+surviving mutant, each with the command to declare it equivalent when no test can observe it.
+Try it on [`examples/java-demo`](examples/java-demo), a deliberately under-tested project.
+Ready-made CI jobs: [`templates/gitlab/testboost-check.yml`](templates/gitlab/testboost-check.yml)
+(`include:` it) and [`templates/github/testboost-check.yml`](templates/github/testboost-check.yml)
+(copy it to `.github/workflows/`).
+
 ## Quick Start
 
 ### Linux / macOS (Bash)

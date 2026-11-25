@@ -310,24 +310,32 @@ def _file_level_gaps(project_path: str, plugin, source_files: list[str]) -> tupl
     return content, {"mode": "file", "gaps": gaps, "covered": covered, "coverage_pct": pct}
 
 
+def maven_session_config(project_path: str, session_dir: str | None) -> dict:
+    """The Maven commands detected by `analyze` (profiles, -D flags), session first."""
+    from src.lib.session_tracker import read_project_analysis_data
+
+    data = read_project_analysis_data(project_path) or {}
+    config = {k: data[k] for k in ("maven_compile_cmd", "maven_test_cmd") if data.get(k)}
+    analysis = Path(session_dir) / "analysis.md" if session_dir else None
+    if analysis and analysis.exists():
+        text = analysis.read_text(encoding="utf-8")
+        for k in ("maven_compile_cmd", "maven_test_cmd"):
+            config[k] = _extract_json_field(text, k) or config.get(k)
+    return {k: v for k, v in config.items() if v}
+
+
 def _coverage_gaps(project_path: str, session_dir: str, plugin, source_files: list[str],
                    min_coverage: float, logger) -> tuple[str, dict] | None:
     """Gaps = source files whose JaCoCo line coverage is below `min_coverage`, most missed lines first."""
     import subprocess
 
     from src.java.coverage import read_reports, run_jacoco
-    from src.lib.session_tracker import load_project_config, read_project_analysis_data
+    from src.lib.session_tracker import load_project_config
 
     if plugin.identifier != "java-spring":
         logger.error(f"`gaps --coverage` measures JaCoCo coverage: Java/Maven only (not {plugin.identifier}).")
         return None
-    session_config = {}
-    test_cmd = (read_project_analysis_data(project_path) or {}).get("maven_test_cmd")
-    analysis = Path(session_dir) / "analysis.md"
-    if analysis.exists():
-        test_cmd = _extract_json_field(analysis.read_text(encoding="utf-8"), "maven_test_cmd") or test_cmd
-    if test_cmd:
-        session_config["maven_test_cmd"] = test_cmd
+    session_config = maven_session_config(project_path, session_dir)
     timeout = load_project_config(project_path)["test_timeout_seconds"]
     logger.info("Measuring line coverage with JaCoCo (runs the test suite)...")
     try:
@@ -362,7 +370,7 @@ def _coverage_gaps(project_path: str, session_dir: str, plugin, source_files: li
             content += f"| {i} | `{sf}` | {info['line_pct']}% | {info['uncovered'] or '-'} |\n"
         content += "\n"
     return content, {"mode": "coverage", "min_coverage": min_coverage, "gaps": gaps, "covered": covered,
-                     "coverage_pct": total_pct, "coverage": {sf: per_file[sf] for sf in gaps}}
+                     "coverage_pct": total_pct, "coverage": {sf: {k: v for k, v in per_file[sf].items() if k != "lines"} for sf in gaps}}
 
 
 def cmd_gaps(args: argparse.Namespace) -> int:

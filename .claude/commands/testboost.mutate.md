@@ -10,22 +10,9 @@ Run PIT mutation testing to measure how effective the generated tests are at det
 
 The validation step must be completed first (tests must compile and pass), unless you pass `--target-tests` (PIT then checks those tests pass itself). If not, suggest running `/testboost.validate`.
 
-The Java project must have the PIT Maven plugin configured in its `pom.xml`. If PIT is not configured, suggest adding:
-
-```xml
-<plugin>
-    <groupId>org.pitest</groupId>
-    <artifactId>pitest-maven</artifactId>
-    <version>1.15.0</version>
-    <dependencies>
-        <dependency>
-            <groupId>org.pitest</groupId>
-            <artifactId>pitest-junit5-plugin</artifactId>
-            <version>1.2.1</version>
-        </dependency>
-    </dependencies>
-</plugin>
-```
+JUnit 5 projects need PIT and its JUnit 5 plugin declared in `pom.xml` (Maven cannot add a plugin
+dependency from the command line). If `mutate` reports it, run `testboost pit-setup <project_path>`
+(pinned versions, root `<build><plugins>`), show the user the pom diff and let them commit it.
 
 ## What you will do
 

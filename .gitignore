@@ -137,3 +137,4 @@ artifacts/**/
 .security-key
 logs/security/
 tests/fixtures/java-sample-project/target/
+examples/java-demo/target/

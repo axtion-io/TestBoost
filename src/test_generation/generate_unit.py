@@ -939,3 +939,83 @@ async def analyze_edge_cases(source_code: str, class_name: str, class_type: str)
         logger.warning("edge_case_analysis_parse_error", class_name=class_name)
 
     return []
+
+
+def build_agent_brief(
+    context: dict[str, Any],
+    source_file: str,
+    test_path: str,
+    *,
+    technology: str = "java-spring",
+    coverage: dict[str, Any] | None = None,
+) -> str:
+    """Short brief for a host agent (agent mode): what only TestBoost knows, not the whole prompt.
+
+    The agent reads the source itself; the brief gives where to write, the test stack actually
+    available, the detected conventions, the exact signatures of the dependencies (class index),
+    the parent class, what JaCoCo found uncovered, and which project tests to imitate.
+    """
+    class_name, package = context["class_name"], context["package"]
+    project_path = context.get("project_path", "")
+    class_index = context.get("class_index") or {}
+    lines = [
+        f"# Test to write: `{test_path}`",
+        "",
+        f"- **Class under test**: `{source_file}` — read it ({context['class_type']}"
+        + (f", package `{package}`" if package else "") + ")",
+    ]
+    if coverage:
+        lines.append(f"- **Current line coverage**: {coverage.get('line_pct')}%"
+                     + (f"; uncovered lines: {coverage['uncovered']}" if coverage.get("uncovered") else "")
+                     + (f"; lines with missed branches: {coverage['partial']}" if coverage.get("partial") else ""))
+
+    if technology == "python-pytest":
+        lines.append("- **Test stack**: pytest, `unittest.mock`")
+    else:
+        deps = _detect_test_dependencies(project_path) if project_path else {
+            "framework": "junit5", "has_mockito": True, "has_assertj": True, "available_deps": []}
+        stack = ["JUnit 4" if deps["framework"] == "junit4" else "JUnit 5"]
+        stack += [name for flag, name in (("has_assertj", "AssertJ"), ("has_mockito", "Mockito"),
+                                          ("has_hamcrest", "Hamcrest")) if deps.get(flag)]
+        missing = [name for flag, name in (("has_assertj", "AssertJ"), ("has_mockito", "Mockito"))
+                   if not deps.get(flag)]
+        lines.append(f"- **Test stack available**: {', '.join(stack)}"
+                     + (f" — NOT available: {', '.join(missing)}" if missing else ""))
+
+    conventions = context.get("conventions") or {}
+    if conventions.get("success", True) and conventions:
+        naming = conventions.get("naming", {}).get("dominant_pattern")
+        style = conventions.get("assertions", {}).get("dominant_style")
+        setup = conventions.get("setup_patterns", {})
+        flags = [name for key, name in (("uses_nested", "@Nested"), ("uses_parameterized", "@ParameterizedTest"))
+                 if setup.get(key)]
+        parts = [p for p in (f"naming `{naming}`" if naming and naming != "unknown" else "",
+                             f"assertions `{style}`" if style and style != "unknown" else "",
+                             f"uses {', '.join(flags)}" if flags else "") if p]
+        if parts:
+            lines.append(f"- **Project conventions**: {'; '.join(parts)}")
+
+    examples = _select_test_examples(context.get("test_examples") or [], package)
+    if examples:
+        lines.append("- **Style to imitate**: " + ", ".join(f"`{e['path']}`" for e in examples))
+
+    signatures = _resolve_dependency_signatures_from_index(context["dependencies"], class_index)
+    if signatures:
+        lines += ["", "## Dependencies (exact signatures — use these types in mocks and matchers)", "",
+                  signatures]
+    parent = class_index.get(class_name, {}).get("extends")
+    if parent and class_index.get(parent, {}).get("public_signatures"):
+        lines += ["", f"## Parent class `{parent}`", "", class_index[parent]["public_signatures"]]
+    if context.get("test_requirements"):
+        lines += ["", "## Scenarios to cover", "", json.dumps(context["test_requirements"], indent=2)]
+
+    lines += [
+        "",
+        "## Rules",
+        "",
+        "- Mutation-resistant: assert exact values (both branches, boundaries at/below/above), never "
+        "just non-null; derive expected values from the code or an independent source, never guess.",
+        "- Only real project classes and the libraries above: no stub/shadow classes.",
+        f"- Write this one file at `{test_path}`, then run `testboost generate <project> --agent`.",
+    ]
+    return "\n".join(lines) + "\n"

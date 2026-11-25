@@ -109,6 +109,12 @@ def main() -> int:
     # gaps
     p_gaps = subparsers.add_parser("gaps", help="Identify test coverage gaps")
     p_gaps.add_argument("project_path", help="Path to the Java project")
+    p_gaps.add_argument(
+        "--coverage", action="store_true",
+        help="Java/Maven: measure line coverage with JaCoCo (runs the tests) instead of file-level gaps",
+    )
+    p_gaps.add_argument("--min-coverage", type=float, default=80.0,
+                        help="(--coverage) classes below this line coverage are gaps (default 80)")
     p_gaps.add_argument("--verbose", "-v", action="store_true")
 
     # generate

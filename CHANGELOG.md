@@ -20,6 +20,12 @@ GitLab CI template to the new tag.
   killer steps no longer target them; in LLM mode the model can only suggest them.
 
 ### Changed
+- `gaps --coverage` (Java/Maven): gaps are the classes below `--min-coverage` JaCoCo line coverage,
+  with their uncovered lines — instead of "no `FooTest` file" (4 real gaps instead of 70 on a module
+  tested by feature).
+- Agent mode: `context` writes a ~25-line brief (test path, available stack, conventions, exact
+  dependency signatures, uncovered lines, examples to imitate) instead of the full LLM prompt; the
+  agent reads the source itself. Same for `context --killer`.
 - Generation prompt: only the rules relevant to the class (JPA, reflection, reactive, Mockito),
   no mandatory setup method, at most 2 test examples (same package first, 80 lines each) —
   about half the size on a real module.

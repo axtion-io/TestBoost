@@ -13,17 +13,21 @@ The analysis step must be completed first. If not, suggest running `/testboost.a
 ## What you will do
 
 1. Determine the project path from `$ARGUMENTS` or the current session
-2. Run the gap analysis:
+2. Run the gap analysis. For a Java/Maven project, measure real line coverage with JaCoCo (it runs
+   the test suite; `--min-coverage 80` by default):
 
 ```bash
-bash scripts/tb-gaps.sh <project_path> --verbose
+bash scripts/tb-gaps.sh <project_path> --coverage --verbose
 ```
+
+   Without `--coverage` (other technologies, or if the build cannot run here), gaps are file-level:
+   a class without a `FooTest` file — which says nothing about what is really executed.
 
 3. **VERIFY the output** — see the "Integrity Verification" section below
 4. Read the coverage gaps file at `<project_path>/.testboost/sessions/<current_session>/coverage-gaps.md`
 5. **Present the gaps** to the user:
-   - Show the coverage percentage
-   - List the files that need tests, with priority (high for services/controllers)
+   - Show the coverage percentage (line coverage with `--coverage`)
+   - List the files that need tests (with `--coverage`: their line coverage and uncovered lines)
    - List files that already have tests
 6. **Ask the user which files to generate tests for**:
    - All gaps? (default)

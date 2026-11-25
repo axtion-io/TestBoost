@@ -284,6 +284,87 @@ def find_existing_tests(project_path: str, plugin, source_files: list[str]) -> d
     return found
 
 
+def _file_level_gaps(project_path: str, plugin, source_files: list[str]) -> tuple[str, dict]:
+    """A source is covered when the test the plugin would generate exists, or a test matching
+    the plugin's globs is named after it (`find_existing_tests`)."""
+    tested = find_existing_tests(project_path, plugin, source_files)
+    covered = [sf for sf in source_files if sf in tested]
+    gaps = [sf for sf in source_files if sf not in tested]
+    total = len(source_files)
+    pct = ((total - len(gaps)) / total * 100) if total else 0
+
+    content = "# Coverage Gap Analysis\n\n"
+    content += f"**Total testable files**: {total}\n"
+    content += f"**Files with tests**: {len(covered)}\n"
+    content += f"**Files WITHOUT tests**: {len(gaps)}\n"
+    content += (f"**Files with a test**: {pct:.0f}% (file-level, not line coverage — "
+                "`gaps --coverage` measures it with JaCoCo)\n\n")
+    if gaps:
+        content += "## Files Needing Tests\n\n| # | Source File | Priority |\n|---|------------|----------|\n"
+        for i, gap in enumerate(gaps, 1):
+            priority = "high" if "service" in gap.lower() or "controller" in gap.lower() else "medium"
+            content += f"| {i} | `{gap}` | {priority} |\n"
+        content += "\n"
+    if covered:
+        content += "## Files Already Covered\n\n" + "".join(f"- `{c}`\n" for c in covered) + "\n"
+    return content, {"mode": "file", "gaps": gaps, "covered": covered, "coverage_pct": pct}
+
+
+def _coverage_gaps(project_path: str, session_dir: str, plugin, source_files: list[str],
+                   min_coverage: float, logger) -> tuple[str, dict] | None:
+    """Gaps = source files whose JaCoCo line coverage is below `min_coverage`, most missed lines first."""
+    import subprocess
+
+    from src.java.coverage import read_reports, run_jacoco
+    from src.lib.session_tracker import load_project_config, read_project_analysis_data
+
+    if plugin.identifier != "java-spring":
+        logger.error(f"`gaps --coverage` measures JaCoCo coverage: Java/Maven only (not {plugin.identifier}).")
+        return None
+    session_config = {}
+    test_cmd = (read_project_analysis_data(project_path) or {}).get("maven_test_cmd")
+    analysis = Path(session_dir) / "analysis.md"
+    if analysis.exists():
+        test_cmd = _extract_json_field(analysis.read_text(encoding="utf-8"), "maven_test_cmd") or test_cmd
+    if test_cmd:
+        session_config["maven_test_cmd"] = test_cmd
+    timeout = load_project_config(project_path)["test_timeout_seconds"]
+    logger.info("Measuring line coverage with JaCoCo (runs the test suite)...")
+    try:
+        result = run_jacoco(project_path, plugin.test_run_command(Path(project_path), session_config), timeout)
+    except (ValueError, FileNotFoundError, subprocess.TimeoutExpired) as e:
+        logger.error(f"JaCoCo run failed: {e}")
+        return None
+    coverage = read_reports(project_path)
+    if not coverage:
+        logger.error("No JaCoCo report produced. Maven output (last 30 lines):\n"
+                     + "\n".join((result.stdout + result.stderr).splitlines()[-30:]))
+        return None
+
+    absent = {"line_pct": 0.0, "missed": None, "covered": 0, "uncovered": "all", "partial": ""}
+    per_file = {sf: coverage.get(sf, absent) for sf in source_files}
+    gaps = sorted((sf for sf in source_files if per_file[sf]["line_pct"] < min_coverage),
+                  key=lambda sf: (-(per_file[sf]["missed"] or 10**6), sf))
+    covered = [sf for sf in source_files if sf not in gaps]
+    missed = sum(v["missed"] or 0 for v in coverage.values())
+    hit = sum(v["covered"] for v in coverage.values())
+    total_pct = round(100.0 * hit / (hit + missed), 1) if hit + missed else 0.0
+
+    content = "# Coverage Gap Analysis (JaCoCo line coverage)\n\n"
+    content += f"**Line coverage**: {total_pct}% ({hit} of {hit + missed} lines)\n"
+    content += f"**Threshold**: {min_coverage}% per class\n"
+    content += f"**Classes below the threshold**: {len(gaps)} of {len(source_files)}\n\n"
+    if gaps:
+        content += ("## Files Needing Tests\n\n| # | Source File | Line coverage | Uncovered lines |"
+                    "\n|---|---|---|---|\n")
+        for i, sf in enumerate(gaps, 1):
+            info = per_file[sf]
+            content += f"| {i} | `{sf}` | {info['line_pct']}% | {info['uncovered'] or '-'} |\n"
+        content += "\n"
+    return content, {"mode": "coverage", "min_coverage": min_coverage, "gaps": gaps, "covered": covered,
+                     "coverage_pct": total_pct, "coverage": {sf: per_file[sf] for sf in gaps}}
+
+
 def cmd_gaps(args: argparse.Namespace) -> int:
     """Identify test coverage gaps."""
     return asyncio.run(_cmd_gaps_async(args))
@@ -335,47 +416,21 @@ async def _cmd_gaps_async(args: argparse.Namespace) -> int:
             logger.error("No source files found in analysis. Re-run analyze.")
             return 1
 
-        # Identify gaps with the session's technology plugin: a source file
-        # is covered when the test file the plugin would generate already
-        # exists, or when any test matching the plugin's test globs names it.
         from src.lib.bridge import get_plugin_for_session
-        tested = find_existing_tests(project_path, get_plugin_for_session(project_path), source_files)
-        covered = [sf for sf in source_files if sf in tested]
-        gaps = [sf for sf in source_files if sf not in tested]
-
-        # Build the gaps report
-        total = len(source_files)
-        gap_count = len(gaps)
-        coverage_pct = ((total - gap_count) / total * 100) if total > 0 else 0
-
-        content = "# Coverage Gap Analysis\n\n"
-        content += f"**Total testable files**: {total}\n"
-        content += f"**Files with tests**: {len(covered)}\n"
-        content += f"**Files WITHOUT tests**: {gap_count}\n"
-        content += f"**Files with a test**: {coverage_pct:.0f}% (file-level, not line coverage)\n\n"
-
-        if gaps:
-            content += "## Files Needing Tests\n\n"
-            content += "| # | Source File | Priority |\n"
-            content += "|---|------------|----------|\n"
-            for i, gap in enumerate(gaps, 1):
-                # Simple priority heuristic based on path
-                priority = "high" if "service" in gap.lower() or "controller" in gap.lower() else "medium"
-                content += f"| {i} | `{gap}` | {priority} |\n"
-            content += "\n"
-
-        if covered:
-            content += "## Files Already Covered\n\n"
-            for c in covered:
-                content += f"- `{c}`\n"
-            content += "\n"
-
-        logger.info(f"Found {gap_count} files without tests out of {total} total")
-
-        update_step_file(
-            session_dir, "coverage-gaps", STATUS_COMPLETED, content,
-            data={"gaps": gaps, "covered": covered, "coverage_pct": coverage_pct},
-        )
+        plugin = get_plugin_for_session(project_path)
+        if getattr(args, "coverage", False):
+            measured = _coverage_gaps(project_path, session_dir, plugin, source_files,
+                                      getattr(args, "min_coverage", 80.0), logger)
+            if measured is None:
+                update_step_file(session_dir, "coverage-gaps", STATUS_FAILED,
+                                 "# Coverage Gaps - FAILED\n\n**Error**: line coverage could not be measured "
+                                 "(see the log); run `gaps` without `--coverage` for file-level gaps.\n")
+                return 1
+            content, data = measured
+        else:
+            content, data = _file_level_gaps(project_path, plugin, source_files)
+        logger.info(f"Found {len(data['gaps'])} gap(s) out of {len(source_files)} source files")
+        update_step_file(session_dir, "coverage-gaps", STATUS_COMPLETED, content, data=data)
 
         logger.result("Coverage Gaps Identified", content)
 

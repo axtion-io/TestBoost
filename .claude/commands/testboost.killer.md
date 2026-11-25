@@ -24,7 +24,7 @@ only if the user explicitly asks for it.
 bash scripts/tb-context.sh <project_path> --killer
 ```
 
-3. For each row: read the prompt file and write the complete killer test class at the exact "Test to
+3. For each row: read the brief and the class under test, then write the complete killer test class at the exact "Test to
    write" path. Each test must FAIL on the mutated code and PASS on the original: compute real expected
    values from the source (never guess a number: derive it, or check it with an independent tool).
    Write nowhere else and never change production code.

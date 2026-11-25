@@ -32,27 +32,6 @@ from src.lib.prompt_utils import count_tests
 
 AGENT_DIR = "agent"
 
-AGENT_INSTRUCTIONS = """\
-> **Agent mode.** You (the host agent) write this test; TestBoost does not call an LLM.
-> 1. Read the prompt below and follow it as if you were TestBoost's generator, including the
->    project conventions and the exact dependency signatures.
-> 2. Think about edge cases and business rules yourself (TestBoost's LLM mode runs a separate
->    edge-case analysis): boundaries, empty/null inputs, error paths.
-> 3. Write the complete test file at **`{test_path}`** (and nowhere else).
-> 4. Run `testboost generate <project> --agent` to register and compile it.
-"""
-
-
-KILLER_INSTRUCTIONS = """\
-> **Equivalent mutants.** A mutant that no test can observe (the mutated code behaves exactly like the
-> original for every input the class can receive) cannot be killed: do not write a test for it. Declare
-> it instead, with the reason, then leave it out of the test class:
-> `testboost equivalent <project> <id> --reason "why no test can observe it"` (ids in the JSON below).
-> If every mutant of this class is equivalent, write no file.
-
-"""
-
-
 def _session_or_exit(project_path: str):
     from src.lib.session_tracker import get_current_session
 
@@ -62,16 +41,22 @@ def _session_or_exit(project_path: str):
     return session
 
 
-def _write_prompt(agent_dir: Path, name: str, test_path: str, prompt: str) -> Path:
-    agent_dir.mkdir(parents=True, exist_ok=True)
-    path = agent_dir / f"{name}.md"
-    path.write_text(
-        f"# Test to write: `{test_path}`\n\n"
-        + AGENT_INSTRUCTIONS.format(test_path=test_path)
-        + "\n---\n\n" + prompt,
-        encoding="utf-8",
+def killer_brief(class_name: str, source: str, test_path: str, mutants: list[dict]) -> str:
+    """Short brief for the surviving mutants of one class (agent mode): the agent reads the source."""
+    rows = "\n".join(f"| `{m['id']}` | `{m['method']}` | {m['line']} | {m['description']} |" for m in mutants)
+    return (
+        f"# Killer tests to write: `{test_path}`\n\n"
+        f"- **Class under test**: `{source}` — read it (`{class_name}`)\n"
+        f"- **Surviving mutants** (the current tests pass on each mutated version):\n\n"
+        "| Id | Method | Line | Mutation |\n|---|---|---|---|\n" + rows + "\n\n"
+        "## Rules\n\n"
+        "- One focused test per mutant: it must FAIL on the mutated code and PASS on the original. "
+        "Derive the exact expected value from the source (or an independent tool), never guess.\n"
+        "- **Equivalent mutant** (no input the class can receive makes it behave differently): write no "
+        "test; declare it: `testboost equivalent <project> <id> --reason \"why no test can observe it\"`. "
+        "If every mutant here is equivalent, write no file.\n"
+        f"- Write only `{test_path}`, then run `testboost killer <project> --agent`.\n"
     )
-    return path
 
 
 def _compile_errors(project_path: str, plugin, maven_compile_cmd: str | None,
@@ -145,7 +130,7 @@ def _context_generation(args: argparse.Namespace) -> int:
     from src.lib.bridge import get_plugin_for_session
     from src.lib.md_logger import MdLogger
     from src.lib.session_tracker import read_project_analysis_data
-    from src.test_generation.generate_unit import build_generation_context, build_generation_prompt
+    from src.test_generation.generate_unit import build_agent_brief, build_generation_context
 
     project_path = args.project_path
     session = _session_or_exit(project_path)
@@ -158,7 +143,9 @@ def _context_generation(args: argparse.Namespace) -> int:
     if not gaps_file.exists():
         logger.error("Coverage gaps step not completed. Run `gaps` first.")
         return 1
-    gaps = _extract_json_field(gaps_file.read_text(encoding="utf-8"), "gaps") or []
+    gaps_md = gaps_file.read_text(encoding="utf-8")
+    gaps = _extract_json_field(gaps_md, "gaps") or []
+    coverage = _extract_json_field(gaps_md, "coverage") or {}     # gaps --coverage (JaCoCo)
     targets = filter_target_files(gaps, getattr(args, "files", None), logger)
 
     data = read_project_analysis_data(project_path) or {}
@@ -178,21 +165,22 @@ def _context_generation(args: argparse.Namespace) -> int:
         if context is None:
             logger.warn(f"Skipped {source_file}: {source_or_error}")
             continue
-        prompt, _deps = build_generation_prompt(
-            context, source_or_error, prompt_template_dir=plugin.prompt_template_dir,
-        )
         test_path = plugin.test_file_name(source_file)
+        brief = build_agent_brief(context, source_file, test_path, technology=plugin.identifier,
+                                  coverage=coverage.get(source_file))
         name = context["class_name"] or Path(source_file).stem
-        prompt_file = _write_prompt(agent_dir, name, test_path, prompt)
+        prompt_file = agent_dir / f"{name}.md"
+        agent_dir.mkdir(parents=True, exist_ok=True)
+        prompt_file.write_text(brief, encoding="utf-8")
         manifest.append({"source_file": source_file, "class_name": name,
                          "test_path": test_path, "prompt_file": str(prompt_file)})
 
     (agent_dir).mkdir(parents=True, exist_ok=True)
     (agent_dir / "manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
 
-    print(f"Agent mode: {len(manifest)} test(s) to write. For each one, read the prompt file and write "
-          "the test at the given path, then run `testboost generate <project> --agent`.\n")
-    print("| # | Source file | Test to write | Prompt |")
+    print(f"Agent mode: {len(manifest)} test(s) to write. For each one, read its brief and the class, "
+          "write the test at the given path, then run `testboost generate <project> --agent`.\n")
+    print("| # | Source file | Test to write | Brief |")
     print("|---|---|---|---|")
     for i, m in enumerate(manifest, 1):
         print(f"| {i} | `{m['source_file']}` | `{m['test_path']}` | `{m['prompt_file']}` |")
@@ -205,7 +193,6 @@ def _context_killer(args: argparse.Namespace) -> int:
         _JAVA_CLASS_NAME,
         _find_source_file,
         _get_killer_test_path,
-        build_killer_prompt,
     )
 
     project_path = args.project_path
@@ -239,9 +226,10 @@ def _context_killer(args: argparse.Namespace) -> int:
             logger.warn(f"Skipped {class_name}: source file not found")
             continue
         test_path = str(_get_killer_test_path(project_dir, class_name, source).relative_to(project_dir))
-        prompt = build_killer_prompt(class_name, mutants, source.read_text(encoding="utf-8", errors="replace"))
-        prompt_file = _write_prompt(agent_dir, class_name.rsplit(".", 1)[-1], test_path,
-                                    KILLER_INSTRUCTIONS + prompt)
+        agent_dir.mkdir(parents=True, exist_ok=True)
+        prompt_file = agent_dir / f"{class_name.rsplit('.', 1)[-1]}.md"
+        prompt_file.write_text(killer_brief(class_name, source.relative_to(project_dir).as_posix(),
+                                            test_path, mutants), encoding="utf-8")
         manifest.append({"class": class_name, "test_path": test_path, "mutants_targeted": len(mutants),
                          "mutant_ids": [m["id"] for m in mutants], "prompt_file": str(prompt_file)})
 
@@ -249,7 +237,7 @@ def _context_killer(args: argparse.Namespace) -> int:
     (agent_dir / "manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
     print(f"Agent mode: {len(manifest)} killer test class(es) to write, then run "
           "`testboost killer <project> --agent`.\n")
-    print("| # | Class | Mutants | Test to write | Prompt |")
+    print("| # | Class | Mutants | Test to write | Brief |")
     print("|---|---|---|---|---|")
     for i, m in enumerate(manifest, 1):
         print(f"| {i} | `{m['class']}` | {m['mutants_targeted']} | `{m['test_path']}` | `{m['prompt_file']}` |")

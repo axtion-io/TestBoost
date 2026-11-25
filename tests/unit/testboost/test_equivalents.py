@@ -128,8 +128,8 @@ class TestKillerSkipsEquivalents:
         assert cmd_context(_args(initialized_project, files=None, killer=True, max_tests=10)) == 0
         manifest = json.loads((_session_dir(initialized_project) / "agent/killer/manifest.json").read_text())
         assert [m["class"] for m in manifest] == ["com.example.Occurrences"]
-        prompt = Path(manifest[0]["prompt_file"]).read_text()
-        assert "testboost equivalent" in prompt and equivalents.mutant_id(BOUND) in prompt
+        brief = Path(manifest[0]["prompt_file"]).read_text()
+        assert "testboost equivalent" in brief and equivalents.mutant_id(BOUND) in brief
 
     @pytest.mark.asyncio
     async def test_class_declared_equivalent_after_context_needs_no_file(self, initialized_project):

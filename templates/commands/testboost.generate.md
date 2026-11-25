@@ -26,9 +26,10 @@ The coverage gaps step must be completed first. If not, suggest running `/testbo
 bash scripts/tb-context.sh <project_path>
 ```
 
-3. For **each row** of the printed table: read the prompt file, then write the **complete** test file at
-   the exact "Test to write" path. Follow the prompt (project conventions, exact dependency signatures,
-   test framework) and think about edge cases yourself. Write only at those paths: no other file, no
+3. For **each row** of the printed table: read the brief and the class under test, then write the
+   **complete** test file at the exact "Test to write" path. Follow the brief (test stack actually
+   available, project conventions, exact dependency signatures, uncovered lines) and think about edge
+   cases yourself. Write only at those paths: no other file, no
    production code change.
 4. Register and compile your tests:
 

@@ -69,10 +69,11 @@ class TestContext:
         assert [(m["source_file"], m["test_path"]) for m in manifest] == [
             (ORDER_SERVICE, ORDER_TEST), (USER_CONTROLLER, CONTROLLER_TEST),
         ]
-        prompt = Path(manifest[0]["prompt_file"]).read_text()
-        assert f"`{ORDER_TEST}`" in prompt                     # where to write
-        assert "OrderService" in prompt and "@Test" not in prompt.split("---")[0]
-        assert "Agent mode" in prompt
+        brief = Path(manifest[0]["prompt_file"]).read_text()
+        assert brief.startswith(f"# Test to write: `{ORDER_TEST}`")
+        assert f"`{ORDER_SERVICE}` — read it" in brief                # the agent reads the source…
+        assert "public class OrderService" not in brief             # …so the brief does not copy it
+        assert "Test stack available" in brief and "generate <project> --agent" in brief
         out = capsys.readouterr().out
         assert "2 test(s) to write" in out and ORDER_TEST in out
 
@@ -185,7 +186,9 @@ class TestKillerAgent:
         killer_path = "src/test/java/com/example/OrderServiceKillerTest.java"
         assert [(m["class"], m["test_path"], m["mutants_targeted"]) for m in manifest] == [
             ("com.example.OrderService", killer_path, 1)]
-        assert "Replaced + with -" in Path(manifest[0]["prompt_file"]).read_text()
+        brief = Path(manifest[0]["prompt_file"]).read_text()
+        assert "Replaced + with -" in brief and "testboost equivalent" in brief
+        assert "src/main/java/com/example/OrderService.java" in brief
 
         assert cmd_killer(_args(initialized_project, agent=True)) == 1     # not written yet
         _write(initialized_project, killer_path, "class OrderServiceKillerTest { @Test void k() {} }")

@@ -62,7 +62,15 @@ Scans the project to understand its structure, frameworks, and testing conventio
 
 **Command:** `python -m src.lib.cli gaps <project_path>`
 
-Identifies which source files have no test file (file-level, not line coverage).
+Identifies the source files that need tests.
+
+- **`--coverage` (Java/Maven, recommended)**: runs the test suite with JaCoCo (no pom change) and
+  reports as gaps the classes whose line coverage is below `--min-coverage` (80 by default), most
+  missed lines first, with their uncovered lines and partially covered branches. `context` passes
+  them on to the agent.
+- **Default (file-level)**: a source file without a test file named after it — fast, needs no
+  build, but blind to what tests really execute (on a module tested by feature it reported 11 % of
+  classes tested for 93 % of lines covered).
 
 **What it does:**
 - Reads the source file list from the analysis step
@@ -109,18 +117,20 @@ The LLM prompt includes:
 Inside an LLM CLI the assistant is already an LLM: calling a second one through TestBoost needs
 another API key and duplicates the work. In agent mode TestBoost never calls an LLM:
 
-1. `context <project> [--files …]` writes, for each gap, the full generation prompt (the same one
-   TestBoost would send to its own LLM: class, dependency signatures from the class index, test
-   examples, conventions, framework rules) to `sessions/<id>/agent/<Class>.md`, plus
-   `agent/manifest.json`, and prints the test path the plugin expects for each.
+1. `context <project> [--files …]` writes, for each gap, a short brief to
+   `sessions/<id>/agent/<Class>.md` (plus `agent/manifest.json`) and prints the test path the
+   plugin expects: what only TestBoost knows — the test stack actually available, the detected
+   conventions, the exact dependency signatures from the class index, the parent class, the
+   uncovered lines (`gaps --coverage`) and which project tests to imitate. The agent reads the class
+   itself: the brief does not copy the source (about 25 lines instead of a 300–700-line prompt).
 2. The agent writes each test at its expected path, and nowhere else.
 3. `generate <project> --agent` registers them: missing tests and compilation errors (one
    `test-compile` for Maven, attributed per file; `py_compile` per file for Python) are reported and
    the step fails until they are fixed; otherwise `generation.md` is completed (`mode: agent`) and the
    integrity token is emitted. `validate` and `mutate` are unchanged.
 
-The same cycle exists for mutation testing: `context --killer [--max-tests N]` writes one
-`mutation_killer` prompt per class with surviving mutants (`agent/killer/`), the agent writes the
+The same cycle exists for mutation testing: `context --killer [--max-tests N]` writes one brief per
+class with surviving mutants (`agent/killer/`: ids, lines, mutations), the agent writes the
 `*KillerTest` files, and `killer --agent` registers and compiles them.
 
 ## 5. Validate

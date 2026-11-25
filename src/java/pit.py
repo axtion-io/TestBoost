@@ -21,9 +21,48 @@ PIT_GOAL = "org.pitest:pitest-maven:mutationCoverage"
 
 
 def _poms(project_path: str) -> list[Path]:
+    """The project's poms (every module) and its parents' — a module often inherits
+    its PIT configuration from a parent outside the directory being judged."""
     project = Path(project_path)
-    return [p for p in sorted(project.glob("**/pom.xml"))
+    poms = [p for p in sorted(project.glob("**/pom.xml"))
             if "target" not in p.relative_to(project).parts and ".testboost" not in p.parts]
+    return poms + [p for p in _parents(project / "pom.xml") if p not in poms]
+
+
+def _m2_repository() -> Path:
+    return Path.home() / ".m2" / "repository"
+
+
+def _parents(pom: Path) -> list[Path]:
+    """Parent poms: `<relativePath>` (default ../pom.xml) when it is that parent, else the
+    local Maven repository. Stops at the first one not found (unknown → not judged)."""
+    found: list[Path] = []
+    while len(found) < 10:
+        root = _parse(pom) if pom.exists() else None
+        parent = pom_child(root, "parent") if root is not None else None
+        if parent is None:
+            break
+        gav = [pom_text(parent, t) for t in ("groupId", "artifactId", "version")]
+        rel = pom_text(parent, "relativePath")
+        local = (pom.parent / (rel if rel is not None else "../pom.xml"))
+        local = local / "pom.xml" if local.is_dir() else local
+        candidate = None
+        if local.exists():
+            local_root = _parse(local)
+            if local_root is not None and pom_text(local_root, "artifactId") == gav[1]:
+                candidate = local
+        if candidate is None and all(gav):
+            m2 = _m2_repository().joinpath(*gav[0].split("."), gav[1], gav[2], f"{gav[1]}-{gav[2]}.pom")
+            candidate = m2 if m2.exists() else None
+        if candidate is None:
+            found.append(UNRESOLVED)
+            break
+        found.append(candidate)
+        pom = candidate
+    return found
+
+
+UNRESOLVED = Path("<unresolved parent pom>")
 
 
 def _parse(pom: Path) -> ET.Element | None:
@@ -35,7 +74,7 @@ def _parse(pom: Path) -> ET.Element | None:
 
 def _declares(project_path: str, artifact_id: str, *, among: str) -> bool:
     for pom in _poms(project_path):
-        root = _parse(pom)
+        root = _parse(pom) if pom.exists() else None
         if root is None:
             continue
         for element in pom_findall(root, among):
@@ -57,8 +96,11 @@ def pit_status(project_path: str) -> dict[str, bool]:
 
 
 def setup_problem(project_path: str) -> str | None:
-    """Why PIT cannot run on this project as configured (None if it can)."""
+    """Why PIT cannot run on this project as configured (None if it can — or if a parent
+    pom cannot be read: then PIT itself will say)."""
     status = pit_status(project_path)
+    if UNRESOLVED in _poms(project_path):
+        return None
     if status["junit5_tests"] and not status["junit5_plugin_declared"]:
         return ("PIT needs `pitest-junit5-plugin` declared in the pom to run JUnit 5 tests. "
                 "Run `testboost pit-setup <project>` (adds pitest-maven "

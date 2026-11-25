@@ -158,3 +158,13 @@ def test_the_target_branch_moving_on_is_not_this_change(tmp_path):
     git("commit", "-qam", "main moved on")
     git("checkout", "-q", "feature")
     assert changed_lines(str(tmp_path), "main") == {"src/main/java/a/B.java": {2}}
+
+
+def test_classes_scope_finds_sources_in_any_module(tmp_path):
+    from src.lib.commands.check_cmd import class_scope
+    src = tmp_path / "billing/src/main/java/a"
+    src.mkdir(parents=True)
+    (src / "Invoice.java").write_text("class Invoice {\n  record Line() {}\n}\n")
+    assert class_scope(str(tmp_path), ["a.Invoice$Line"]) == {"billing/src/main/java/a/Invoice.java": {1, 2, 3}}
+    with pytest.raises(ValueError, match="no source file for class a.Nope"):
+        class_scope(str(tmp_path), ["a.Nope"])

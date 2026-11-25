@@ -106,7 +106,12 @@ def _verdict(value: float | None, threshold: float) -> tuple[bool, str]:
 
 def render_report(data: dict[str, Any]) -> str:
     cov, mut = data["coverage"], data.get("mutation")
-    scope = f"lines changed since `{data['base']}`" if data.get("base") else "whole project"
+    parts = []
+    if data.get("classes"):
+        parts.append("classes " + ", ".join(f"`{c}`" for c in data["classes"]))
+    if data.get("base"):
+        parts.append(f"lines changed since `{data['base']}`")
+    scope = "; ".join(parts) or "whole project"
     md = [f"## TestBoost check — {'PASSED' if data['passed'] else 'FAILED'}", "",
           f"Scope: {scope}. Measured by {'JaCoCo and PIT' if mut is not None else 'JaCoCo'}, not declared.", "",
           "| Measure | Value | Verdict |", "|---|---|---|",
@@ -186,12 +191,25 @@ async def _cmd_check_async(args: argparse.Namespace) -> int:
         if not scope:
             print(f"No main Java source changed since {base}: nothing to check.")
             return EXIT_PASS
+    classes = getattr(args, "classes", None)
+    if classes:
+        try:
+            by_class = class_scope(project_path, classes)
+        except ValueError as e:
+            return _error(str(e))
+        scope = by_class if scope is None else {p: ls for p, ls in scope.items() if p in by_class}
+        if not scope:
+            print("None of the given classes changed: nothing to check.")
+            return EXIT_PASS
 
     session = get_current_session(project_path)
     config = maven_session_config(project_path, session["session_dir"] if session else None)
     plugin = get_plugin_for_session(project_path)
     timeout = load_project_config(project_path)["test_timeout_seconds"]
     test_cmd = plugin.test_run_command(Path(project_path), config)
+    target_tests = getattr(args, "target_tests", None)
+    if target_tests:                 # coverage of the same tests PIT runs: what THEY exercise
+        test_cmd = [*test_cmd, f"-Dtest={','.join(target_tests)}", "-Dsurefire.failIfNoSpecifiedTests=false"]
 
     print("Measuring line coverage with JaCoCo (runs the test suite)...", file=sys.stderr)
     try:
@@ -208,15 +226,15 @@ async def _cmd_check_async(args: argparse.Namespace) -> int:
         tail = "\n".join((run.stdout + run.stderr).splitlines()[-30:])
         return _error(f"no JaCoCo report produced (build failure?). Maven output:\n{tail}")
     data: dict[str, Any] = {
-        "base": base, "min_coverage": args.min_coverage, "min_mutation": args.min_mutation,
+        "base": base, "classes": classes, "min_coverage": args.min_coverage, "min_mutation": args.min_mutation,
         "coverage": coverage_summary(coverage, scope),
     }
 
     if with_mutation:
         targets = sorted({c for p in scope for c in (class_name(p), class_name(p) + "$*")}) if scope else None
-        print(f"Running PIT on {'the changed classes' if scope else 'the project'}...", file=sys.stderr)
+        print(f"Running PIT on {'the selected classes' if scope else 'the project'}...", file=sys.stderr)
         pit = json.loads(await run_mutation_testing(
-            project_path, target_classes=targets, target_tests=getattr(args, "target_tests", None)))
+            project_path, target_classes=targets, target_tests=target_tests))
         if not pit.get("success") or pit.get("error"):
             return _error(f"PIT failed: {pit.get('error', '')[-3000:]}")
         mutation = mutation_summary(project_path, pit.get("mutants", []), scope)
@@ -235,6 +253,23 @@ async def _cmd_check_async(args: argparse.Namespace) -> int:
     print(report)
     print(f"Report: {out_dir / 'report.md'}", file=sys.stderr)
     return EXIT_PASS if data["passed"] else EXIT_BELOW
+
+
+def class_scope(project_path: str, classes: list[str]) -> dict[str, set[int]]:
+    """`--classes a.b.C …` → every line of their source files (any module)."""
+    from src.java.diff import MAIN_JAVA
+
+    project = Path(project_path)
+    scope: dict[str, set[int]] = {}
+    for fqcn in classes:
+        rel = fqcn.split("$")[0].replace(".", "/") + ".java"
+        found = [p for p in project.glob(f"**/{MAIN_JAVA}{rel}") if "target" not in p.parts]
+        if not found:
+            raise ValueError(f"no source file for class {fqcn} (looked for */{MAIN_JAVA}{rel})")
+        for path in found:
+            n = len(path.read_text(encoding="utf-8", errors="replace").splitlines())
+            scope[path.relative_to(project).as_posix()] = set(range(1, n + 1))
+    return scope
 
 
 def last_check_survivors(project_path: str) -> list[dict]:

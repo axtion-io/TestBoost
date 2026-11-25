@@ -228,6 +228,8 @@ def main() -> int:
     p_check.add_argument("--min-coverage", type=float, default=80.0, help="Minimum line coverage %% (default 80)")
     p_check.add_argument("--min-mutation", type=float, default=80.0,
                          help="Minimum mutation score %%, declared equivalents excluded (default 80)")
+    p_check.add_argument("--classes", nargs="+", metavar="FQCN",
+                         help="Judge only these classes (e.g. com.acme.Billing); combinable with --base")
     p_check.add_argument("--no-mutation", action="store_true", help="Coverage only (skip PIT)")
     p_check.add_argument("--target-tests", nargs="*", help="Test classes PIT runs (default: all)")
 

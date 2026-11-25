@@ -55,8 +55,8 @@ def _git(repo, *args):
 
 
 def _check(project, **kw):
-    args = argparse.Namespace(project_path=str(project), base=None, min_coverage=80.0, min_mutation=80.0,
-                              no_mutation=False, target_tests=None)
+    args = argparse.Namespace(project_path=str(project), base=None, classes=None, min_coverage=80.0,
+                              min_mutation=80.0, no_mutation=False, target_tests=None)
     for k, v in kw.items():
         setattr(args, k, v)
     rc = cmd_check(args)
@@ -117,8 +117,25 @@ def test_a_red_suite_is_a_measure_error_not_a_score(demo, capsys):
         "import static org.junit.jupiter.api.Assertions.assertEquals;\n"
         "class RedTest { @Test void red() { assertEquals(1, Shipping.costCents(1, 1, false)); } }\n")
     from src.lib.commands.check_cmd import EXIT_ERROR
-    args = argparse.Namespace(project_path=str(demo), base=None, min_coverage=80.0, min_mutation=80.0,
+    args = argparse.Namespace(project_path=str(demo), base=None, classes=None, min_coverage=80.0, min_mutation=80.0,
                               no_mutation=False, target_tests=None)
     assert cmd_check(args) == EXIT_ERROR
     assert "1 test(s) fail without any mutation" in capsys.readouterr().err   # before PIT
     assert not (demo / ".testboost/check/check.json").exists()
+
+
+def test_one_class_measured_with_only_its_own_tests(demo):
+    """How an agent measures what IT wrote: one class, only its test class run by PIT."""
+    rc, data = _check(demo, classes=["io.testboost.demo.Shipping"],
+                      target_tests=["io.testboost.demo.ShippingTest"])
+    assert set(data["coverage"]["files"]) == {"src/main/java/io/testboost/demo/Shipping.java"}
+    assert data["coverage"]["files"]["src/main/java/io/testboost/demo/Shipping.java"]["uncovered"] == [20]
+    assert {m["source_file"] for m in data["mutation"]["survivors"]} == {"io/testboost/demo/Shipping.java"}
+    assert rc == EXIT_BELOW
+
+
+def test_coverage_counts_only_the_target_tests(demo):
+    (demo / "src/test/java/io/testboost/demo/PromoCodeTest.java").write_text(PROMO_TEST)
+    _rc, alone = _check(demo, classes=["io.testboost.demo.PromoCode"], no_mutation=True,
+                        target_tests=["io.testboost.demo.ShippingTest"])
+    assert alone["coverage"]["covered"] == 0          # ShippingTest never runs PromoCode

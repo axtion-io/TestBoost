@@ -48,6 +48,8 @@ async def test_arguments_become_cli_flags(monkeypatch, tmp_path):
     out = await mcp_server.check(str(tmp_path), base="origin/main", min_mutation=70, mutation=False)
     assert seen == [("check", str(tmp_path), "--min-coverage", "80.0", "--min-mutation", "70",
                      "--base", "origin/main", "--no-mutation")]
+    await mcp_server.check(str(tmp_path), classes=["a.B"], target_tests=["a.BTest"])
+    assert seen[-1][-4:] == ("--classes", "a.B", "--target-tests", "a.BTest")
     assert out.startswith("exit 1 (failed / below threshold)")
 
     await mcp_server.declare_equivalent(str(tmp_path), ["abc", "def"], "the list is always sorted")

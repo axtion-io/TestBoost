@@ -139,8 +139,8 @@ class with surviving mutants (`agent/killer/`: ids, lines, mutations), the agent
 
 ## Check (no session)
 
-**Command:** `testboost check <project> [--base <git ref>] [--min-coverage 80] [--min-mutation 80]
-[--no-mutation] [--target-tests …]`
+**Command:** `testboost check <project> [--base <git ref>] [--classes FQCN …] [--min-coverage 80]
+[--min-mutation 80] [--no-mutation] [--target-tests …]`
 
 Judges the tests, whoever wrote them. Runs the suite once under JaCoCo (failing tests are a
 measure error: exit 2, before any mutation), then PIT, and compares both to their thresholds:
@@ -152,12 +152,16 @@ branch counts as covered and is listed), PIT restricted to the changed classes, 
 computed on the mutants of the changed lines. Declared equivalents (`testboost equivalent`, which
 also accepts the ids of the last `check`) leave the denominator.
 
+`--classes` judges only those classes (combinable with `--base`). `--target-tests` restricts both
+JaCoCo and PIT to those test classes: how an agent measures the tests *it* wrote, alone.
+
 **Output:** `.testboost/check/report.md` (the MR comment) and `.testboost/check/check.json`.
 
 PIT needs `pitest-junit5-plugin` as a plugin dependency to run JUnit 5 tests, which only the pom
 can declare: `testboost pit-setup <project>` adds `pitest-maven` and the plugin (pinned versions)
 to the root pom's `<build><plugins>`. `mutate` and `check` refuse early, with that instruction,
-instead of letting PIT find no test. Reports of every module are aggregated; reports older than
+instead of letting PIT find no test. The poms checked include the parents (`<relativePath>`, then
+the local Maven repository): a module often inherits PIT from a parent outside its directory. Reports of every module are aggregated; reports older than
 the run are ignored.
 
 ## 5. Validate

@@ -77,11 +77,14 @@ def _project(project_path: str) -> str:
 
 
 @server.tool()
-async def check(project_path: str, base: str | None = None, min_coverage: float = 80.0,
+async def check(project_path: str, base: str | None = None, classes: list[str] | None = None,
+                target_tests: list[str] | None = None, min_coverage: float = 80.0,
                 min_mutation: float = 80.0, mutation: bool = True) -> str:
     """Measure the tests (JaCoCo line coverage + PIT mutation score), whoever wrote them.
 
     `base`: a git ref (e.g. "origin/main") to judge only the lines changed since its merge base.
+    `classes`: fully qualified class names to judge only those. `target_tests`: the test classes
+    PIT runs (e.g. only the ones you wrote, to measure them alone).
     Exit 0 = both thresholds met, 1 = one is not, 2 = the measure failed (red suite, build error).
     Returns the markdown report: uncovered lines and surviving mutants with their ids.
     """
@@ -89,6 +92,10 @@ async def check(project_path: str, base: str | None = None, min_coverage: float 
     args = ["check", project, "--min-coverage", str(min_coverage), "--min-mutation", str(min_mutation)]
     if base:
         args += ["--base", base]
+    if classes:
+        args += ["--classes", *classes]
+    if target_tests:
+        args += ["--target-tests", *target_tests]
     if not mutation:
         args.append("--no-mutation")
     return _result(*await run_cli(*args))

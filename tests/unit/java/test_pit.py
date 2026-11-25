@@ -83,3 +83,43 @@ def test_cli(tmp_path, monkeypatch, capsys):
     assert "Review and commit it" in capsys.readouterr().out
     monkeypatch.setattr("sys.argv", ["testboost", "pit-setup", str(tmp_path / "nope")])
     assert main() == 1
+
+
+PARENT = ("<project><groupId>g</groupId><artifactId>parent</artifactId><version>1</version><build>"
+          "<pluginManagement><plugins><plugin><artifactId>pitest-maven</artifactId><dependencies>"
+          "<dependency><artifactId>pitest-junit5-plugin</artifactId></dependency></dependencies>"
+          "</plugin></plugins></pluginManagement></build></project>")
+MODULE = ("<project><parent><groupId>g</groupId><artifactId>parent</artifactId><version>1</version>{rel}"
+          "</parent>" + JUPITER + "</project>")
+
+
+class TestParentPoms:
+    """A module judged alone inherits PIT from a parent outside its directory."""
+
+    def test_parent_on_disk(self, tmp_path):
+        (tmp_path / "pom.xml").write_text(PARENT)
+        (tmp_path / "engine").mkdir()
+        (tmp_path / "engine/pom.xml").write_text(MODULE.format(rel=""))
+        assert setup_problem(str(tmp_path / "engine")) is None
+        assert pit_goal(str(tmp_path / "engine")) == "org.pitest:pitest-maven:mutationCoverage"
+
+    def test_parent_installed_in_the_local_repository(self, tmp_path, monkeypatch):
+        m2 = tmp_path / "m2"
+        (m2 / "g/parent/1").mkdir(parents=True)
+        (m2 / "g/parent/1/parent-1.pom").write_text(PARENT)
+        monkeypatch.setattr("src.java.pit._m2_repository", lambda: m2)
+        (tmp_path / "engine").mkdir()
+        (tmp_path / "engine/pom.xml").write_text(MODULE.format(rel="<relativePath/>"))
+        assert setup_problem(str(tmp_path / "engine")) is None
+
+    def test_unreadable_parent_is_not_judged(self, tmp_path, monkeypatch):
+        monkeypatch.setattr("src.java.pit._m2_repository", lambda: tmp_path / "empty")
+        (tmp_path / "pom.xml").write_text(MODULE.format(rel=""))
+        assert setup_problem(str(tmp_path)) is None              # PIT will say, not a guess
+
+    def test_parent_without_pit_still_refused(self, tmp_path):
+        (tmp_path / "pom.xml").write_text(
+            "<project><groupId>g</groupId><artifactId>parent</artifactId><version>1</version></project>")
+        (tmp_path / "engine").mkdir()
+        (tmp_path / "engine/pom.xml").write_text(MODULE.format(rel=""))
+        assert "pit-setup" in setup_problem(str(tmp_path / "engine"))

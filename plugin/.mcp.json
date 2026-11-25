@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "testboost": {
+      "command": "uvx",
+      "args": ["--from", "testboost[mcp] @ git+https://github.com/axtion-io/TestBoost.git@main", "testboost-mcp"]
+    }
+  }
+}

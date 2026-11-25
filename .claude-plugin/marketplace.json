@@ -1,0 +1,14 @@
+{
+  "name": "testboost",
+  "description": "TestBoost: measured test quality for Java/Maven projects.",
+  "owner": {
+    "name": "TestBoost maintainers"
+  },
+  "plugins": [
+    {
+      "name": "testboost",
+      "source": "./plugin",
+      "description": "Measure Java tests (JaCoCo coverage + PIT mutation score) and write them with deterministic briefs — no LLM key needed."
+    }
+  ]
+}

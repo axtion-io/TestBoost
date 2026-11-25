@@ -12,6 +12,7 @@ include = [{path = "src/prompts/**/*.md", format = ["sdist", "wheel"]}]
 
 [tool.poetry.scripts]
 testboost = "src.lib.cli:main"
+testboost-mcp = "src.mcp_server:main"
 
 [tool.poetry.dependencies]
 python = "^3.11"
@@ -24,6 +25,11 @@ langchain-anthropic = "^1.1"
 langchain-openai = "^1.0"
 httpx = "^0.28"
 structlog = "^25.5"
+mcp = {version = "^2.3", optional = true}
+
+[tool.poetry.extras]
+# `pip install "testboost[mcp]"`: the MCP server (`testboost-mcp`) for Claude Code, Cursor, …
+mcp = ["mcp"]
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.2"
@@ -37,7 +43,7 @@ ruff = "^0.11"
 mypy = "^1.13"
 types-PyYAML = "^6.0"
 # Needed only to test tools/gitlab-webhook (skip-if-absent otherwise)
-fastapi = "^0.115"
+fastapi = ">=0.118"
 
 [build-system]
 requires = ["poetry-core"]

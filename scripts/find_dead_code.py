@@ -42,6 +42,7 @@ SCRIPT_DIRS = ["scripts"]
 ROOT_MODULES = [
     ("testboost.__main__", "python -m testboost"),
     ("webhook", "uvicorn webhook:app (tools/gitlab-webhook)"),
+    ("src.mcp_server", "testboost-mcp console script (pyproject [tool.poetry.scripts])"),
 ]
 
 # Names that are alive by convention even with no in-repo reference
@@ -277,6 +278,7 @@ def analyze():
             continue
         if any(
             "app." in dec or "pytest" in dec
+            or "server.tool" in dec  # MCP tools, called by the MCP client
             or "validator" in dec  # pydantic @model_validator/@field_validator
             for dec in d.decorators
         ):

@@ -45,6 +45,22 @@ Ready-made CI jobs: [`templates/gitlab/testboost-check.yml`](templates/gitlab/te
 (`include:` it) and [`templates/github/testboost-check.yml`](templates/github/testboost-check.yml)
 (copy it to `.github/workflows/`).
 
+## In Claude Code, Cursor, OpenCode…
+
+**Claude Code plugin** (skills `/testboost:check`, `/testboost:write-tests`,
+`/testboost:kill-mutants` + the MCP server; requires [uv](https://docs.astral.sh/uv/)):
+
+```
+/plugin marketplace add axtion-io/TestBoost
+/plugin install testboost@testboost
+```
+
+**Any MCP client**: `pip install "testboost[mcp]"` and register the `testboost-mcp` command (stdio),
+or `uvx --from "testboost[mcp] @ git+https://github.com/axtion-io/TestBoost.git" testboost-mcp`.
+Tools: `check`, `pit_setup`, and the agent loop `init` → `analyze` → `gaps` → `context` →
+`register_tests` → `validate` → `mutate` → `register_killer_tests`, `declare_equivalent`,
+`status`. None of them calls an LLM.
+
 ## Quick Start
 
 ### Linux / macOS (Bash)

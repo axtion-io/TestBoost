@@ -14,6 +14,11 @@ GitLab CI template to the new tag.
   per class with surviving mutants) and the expected test path; the host agent writes the tests;
   `generate --agent` / `killer --agent` register and compile them without any LLM call or API
   key. Default mode of the `/testboost.generate` and `/testboost.killer` slash commands.
+- **MCP server** (`pip install "testboost[mcp]"`, `testboost-mcp`, stdio): `check`, `pit_setup`
+  and the agent-mode loop as tools, each running the CLI in a subprocess; no LLM call.
+- **Claude Code plugin** (`plugin/`, marketplace in `.claude-plugin/`): skills `check`,
+  `write-tests`, `kill-mutants` over the MCP server; passes `claude plugin validate --profile
+  directory`.
 - **`testboost check`**: the judge. JaCoCo line coverage + PIT mutation score of the whole
   project or, with `--base <ref>`, of the lines changed since that ref; exit 0/1/2 for CI; writes
   an MR-ready `report.md`. A red suite is reported as such, not scored. No session, no LLM.

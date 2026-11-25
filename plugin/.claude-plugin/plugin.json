@@ -1,0 +1,10 @@
+{
+  "name": "testboost",
+  "version": "0.2.0",
+  "description": "Measure Java/Maven tests (JaCoCo line coverage + PIT mutation score, on a whole project or a change) and write them from deterministic briefs. Claude writes the tests; TestBoost compiles, runs and judges them. No LLM key needed.",
+  "author": { "name": "TestBoost maintainers" },
+  "homepage": "https://github.com/axtion-io/TestBoost",
+  "repository": "https://github.com/axtion-io/TestBoost",
+  "license": "Apache-2.0",
+  "keywords": ["java", "maven", "testing", "mutation-testing", "pitest", "jacoco", "junit"]
+}

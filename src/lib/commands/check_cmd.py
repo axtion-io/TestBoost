@@ -108,7 +108,7 @@ def render_report(data: dict[str, Any]) -> str:
     cov, mut = data["coverage"], data.get("mutation")
     scope = f"lines changed since `{data['base']}`" if data.get("base") else "whole project"
     md = [f"## TestBoost check — {'PASSED' if data['passed'] else 'FAILED'}", "",
-          f"Scope: {scope}. Measured by JaCoCo and PIT, not declared.", "",
+          f"Scope: {scope}. Measured by {'JaCoCo and PIT' if mut is not None else 'JaCoCo'}, not declared.", "",
           "| Measure | Value | Verdict |", "|---|---|---|",
           f"| Line coverage | {_fmt(cov['pct'])} ({cov['covered']}/{cov['lines']} lines) "
           f"| {_verdict(cov['pct'], data['min_coverage'])[1]} |"]

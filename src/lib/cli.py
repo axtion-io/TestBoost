@@ -61,6 +61,7 @@ from src.lib.commands.install_cmd import _prompt_shell_type, cmd_install  # noqa
 from src.lib.commands.mutation_cmd import (  # noqa: E402,F401
     _cmd_killer_async,
     _cmd_mutate_async,
+    cmd_equivalent,
     cmd_killer,
     cmd_mutate,
 )
@@ -190,6 +191,16 @@ def main() -> int:
         help="Signed JSON answer file (killer_hints injected into LLM context)",
     )
 
+    # equivalent
+    p_eq = subparsers.add_parser(
+        "equivalent",
+        help="Declare surviving mutants equivalent (no test can observe them), list or withdraw declarations",
+    )
+    p_eq.add_argument("project_path", help="Path to the project")
+    p_eq.add_argument("ids", nargs="*", help="Mutant ids from the last `mutate` report (none: list)")
+    p_eq.add_argument("--reason", default="", help="Why no test can observe the mutation (required to declare)")
+    p_eq.add_argument("--remove", action="store_true", help="Withdraw the given declarations")
+
     # verify
     p_verify = subparsers.add_parser("verify", help="Verify an integrity token")
     p_verify.add_argument("project_path", help="Path to the Java project")
@@ -292,6 +303,7 @@ def main() -> int:
         "validate": cmd_validate,
         "mutate": cmd_mutate,
         "killer": cmd_killer,
+        "equivalent": cmd_equivalent,
         "verify": cmd_verify,
         "install": cmd_install,
         "status": cmd_status,

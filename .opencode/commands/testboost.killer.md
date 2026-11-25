@@ -27,14 +27,23 @@ bash scripts/tb-context.sh <project_path> --killer
 
 3. For each row: read the prompt file and write the complete killer test class at the exact "Test to
    write" path. Each test must FAIL on the mutated code and PASS on the original: compute real expected
-   values from the source. Write nowhere else and never change production code.
+   values from the source (never guess a number: derive it, or check it with an independent tool).
+   Write nowhere else and never change production code.
+   **Equivalent mutants**: if no input the class can receive makes the mutated code behave differently,
+   do not write a test for it — tell the user why and declare it (a class whose mutants are all
+   equivalent needs no file):
+
+```bash
+bash scripts/tb-equivalent.sh <project_path> <mutant_id> --reason "why no test can observe it"
+```
 4. Register and compile them; fix and re-run until it exits 0, then **VERIFY the output**:
 
 ```bash
 bash scripts/tb-killer.sh <project_path> --agent
 ```
 
-5. Suggest `/testboost.validate`, then `/testboost.mutate` to measure the new mutation score.
+5. Suggest `/testboost.validate`, then `/testboost.mutate` to measure the new mutation score (the report
+   shows the raw PIT score and the effective score without the declared equivalent mutants).
 
 ### LLM mode (only when the user asks for it)
 

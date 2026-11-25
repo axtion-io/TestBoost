@@ -12,7 +12,7 @@ from src.lib.commands.generate_cmd import cmd_generate
 from src.lib.commands.hitl_cmd import cmd_resume, cmd_sign_answer
 from src.lib.commands.init_cmd import cmd_init
 from src.lib.commands.install_cmd import cmd_install
-from src.lib.commands.mutation_cmd import cmd_killer, cmd_mutate
+from src.lib.commands.mutation_cmd import cmd_equivalent, cmd_killer, cmd_mutate
 from src.lib.commands.ops_cmd import (
     cmd_cleanup,
     cmd_doctor,
@@ -27,6 +27,7 @@ __all__ = [
     "cmd_cleanup",
     "cmd_context",
     "cmd_doctor",
+    "cmd_equivalent",
     "cmd_gaps",
     "cmd_generate",
     "cmd_gitlab",

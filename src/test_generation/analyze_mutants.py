@@ -11,9 +11,12 @@ from collections import Counter
 from pathlib import Path
 from typing import Any
 
+from src.lib.equivalents import mutant_id
+
 
 async def analyze_mutants(
-    project_path: str, report_path: str | None = None, min_score: float = 80
+    project_path: str, report_path: str | None = None, min_score: float = 80,
+    exclude_ids: list[str] | None = None,
 ) -> str:
     """
     Analyze mutation testing results for insights.
@@ -22,6 +25,7 @@ async def analyze_mutants(
         project_path: Path to the Java project root directory
         report_path: Path to PIT mutation report (optional)
         min_score: Minimum mutation score threshold
+        exclude_ids: Ids of declared equivalent mutants (src.lib.equivalents), left out
 
     Returns:
         JSON string with mutant analysis
@@ -46,12 +50,14 @@ async def analyze_mutants(
         return json.dumps({"success": False, "error": f"Mutations file not found: {report_file}"})
 
     # Analyze mutations
-    analysis = await _analyze_mutations(report_file, min_score)
+    analysis = await _analyze_mutations(report_file, min_score, set(exclude_ids or ()))
 
     return json.dumps(analysis, indent=2)
 
 
-async def _analyze_mutations(report_file: Path, min_score: float) -> dict[str, Any]:
+async def _analyze_mutations(
+    report_file: Path, min_score: float, exclude_ids: set[str] | None = None,
+) -> dict[str, Any]:
     """Perform detailed mutation analysis."""
     hard_to_kill: list[dict[str, Any]] = []
     by_class: list[dict[str, Any]] = []
@@ -85,8 +91,13 @@ async def _analyze_mutations(report_file: Path, min_score: float) -> dict[str, A
             class_name = mutation.findtext("mutatedClass", "")
             method = mutation.findtext("mutatedMethod", "")
             line = int(mutation.findtext("lineNumber", "0"))
-            mutator = mutation.findtext("mutator", "").split(".")[-1]
+            full_mutator = mutation.findtext("mutator", "")
+            mutator = full_mutator.split(".")[-1]
             description = mutation.findtext("description", "")
+            if status == "SURVIVED" and exclude_ids and mutant_id({
+                    "class": class_name, "method": method, "line": line,
+                    "mutator": full_mutator, "description": description}) in exclude_ids:
+                continue  # declared equivalent: neither a target nor in the denominator
             _ = mutation.findtext("killingTest", "")  # killingTest extracted but not used currently
 
             analysis["summary"]["total_mutants"] += 1
@@ -102,7 +113,7 @@ async def _analyze_mutations(report_file: Path, min_score: float) -> dict[str, A
                 }
             class_stats[class_name]["methods"].add(method)
 
-            if status == "KILLED":
+            if status in ("KILLED", "TIMED_OUT"):  # PIT counts a timeout as detected
                 analysis["summary"]["killed"] += 1
                 class_stats[class_name]["killed"] += 1
             elif status == "SURVIVED":

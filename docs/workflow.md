@@ -152,6 +152,26 @@ Runs PIT mutation testing to measure test quality (Java only).
 
 **Output:** `.testboost/sessions/<id>/mutation.md`
 
+### Equivalent mutants
+
+Some survivors cannot be killed: the mutation changes the code but not its behaviour (sorting a list
+that is always built in order, an early `return` of an already-empty list…). TestBoost never decides
+that alone. The agent or a human declares it, with a reason:
+
+```bash
+python -m src.lib.cli equivalent <project_path> <mutant_id> --reason "why no test can observe it"
+python -m src.lib.cli equivalent <project_path>                 # list the declarations
+python -m src.lib.cli equivalent <project_path> <mutant_id> --remove
+```
+
+Mutant ids are shown in `mutation.md`. Declarations are project-level
+(`.testboost/equivalents.json`, worth committing) and keyed on class, method, line, mutator and
+description: when the code moves, the id changes and the mutant comes back as a survivor. The next
+`mutate` reports the raw PIT score and an **effective score** without them (the threshold applies to
+the effective score), and `killer` / `context --killer` no longer target them. In LLM mode, the killer
+prompt lets the model flag a mutant with `// EQUIVALENT <id>: reason`; such suggestions are listed in
+`killer-tests.md`, never applied.
+
 ## 7. Killer
 
 **Command:** `python -m src.lib.cli killer <project_path> [--max-tests 10] [--agent]`

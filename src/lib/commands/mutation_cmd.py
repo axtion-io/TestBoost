@@ -85,7 +85,12 @@ async def _cmd_mutate_async(args: argparse.Namespace) -> int:
 
         mutation_score = pit_result.get("mutation_score", 0)
         mutations = pit_result.get("mutations", {})
-        surviving = pit_result.get("surviving_mutants", [])
+        # Declared equivalent mutants (`testboost equivalent`) are no killer-test targets and
+        # leave the denominator of the effective score.
+        from src.lib import equivalents
+        surviving, equivalent = equivalents.split(project_path, pit_result.get("surviving_mutants", []))
+        effective_score = equivalents.effective_score(mutations, len(equivalent))
+        meets_threshold = effective_score >= min_score
 
         logger.info(
             f"PIT complete: score={mutation_score}%, "
@@ -99,14 +104,18 @@ async def _cmd_mutate_async(args: argparse.Namespace) -> int:
         report_path = pit_result.get("report_path")
         analysis_json = await analyze_mutants(
             project_path, report_path=report_path, min_score=min_score,
+            exclude_ids=[m["id"] for m in equivalent],
         )
         analysis = json.loads(analysis_json)
 
         # Build report
         content = "# Mutation Testing Results\n\n"
         content += f"**Mutation score**: {mutation_score}%\n"
+        if equivalent:
+            content += (f"**Effective score**: {effective_score}% "
+                        f"({len(equivalent)} declared equivalent mutant(s) excluded)\n")
         content += f"**Threshold**: {min_score}%\n"
-        content += f"**Meets threshold**: {'Yes' if analysis.get('meets_threshold') else 'No'}\n\n"
+        content += f"**Meets threshold**: {'Yes' if meets_threshold else 'No'}\n\n"
 
         content += "## Summary\n\n"
         content += "| Metric | Count |\n"
@@ -156,16 +165,31 @@ async def _cmd_mutate_async(args: argparse.Namespace) -> int:
                 content += f"| `{p['class']}` | `{p['method']}` | {p['type']} | {p['count']} | {p['action']} |\n"
             content += "\n"
 
+        if equivalent:
+            content += "## Declared Equivalent Mutants\n\n| Id | Location | Mutation | Reason |\n|---|---|---|---|\n"
+            for m in equivalent:
+                content += (f"| `{m['id']}` | `{m['class'].rsplit('.', 1)[-1]}.{m['method']}` l.{m['line']} "
+                            f"| {m['description']} | {m['reason']} |\n")
+            content += "\n"
+
         if surviving:
-            content += f"\n**{len(surviving)} surviving mutants** can be targeted with `/testboost.killer`.\n"
+            content += "## Surviving Mutants\n\n| Id | Location | Mutation |\n|---|---|---|\n"
+            for m in surviving:
+                content += (f"| `{m['id']}` | `{m['class'].rsplit('.', 1)[-1]}.{m['method']}` l.{m['line']} "
+                            f"| {m['description']} |\n")
+            content += (f"\n**{len(surviving)} surviving mutants** can be targeted with `/testboost.killer`. "
+                        "One that no test can observe can be declared with "
+                        "`testboost equivalent <project> <id> --reason \"…\"`.\n")
 
         update_step_file(
             session_dir, "mutation", STATUS_COMPLETED, content,
             data={
                 "mutation_score": mutation_score,
-                "meets_threshold": analysis.get("meets_threshold", False),
+                "effective_score": effective_score,
+                "meets_threshold": meets_threshold,
                 "mutations": mutations,
                 "surviving_mutants": surviving,
+                "equivalent_mutants": equivalent,
                 "report_path": report_path,
                 "recommendations": recommendations,
             },
@@ -252,6 +276,9 @@ async def _cmd_killer_async(args: argparse.Namespace) -> int:
         # Read surviving mutants from mutation step
         mutation_content = mutation_file.read_text(encoding="utf-8")
         surviving_mutants = _extract_json_field(mutation_content, "surviving_mutants")
+        if surviving_mutants is not None:  # declared since the last `mutate`: no killer test
+            from src.lib import equivalents
+            surviving_mutants, _equivalent = equivalents.split(project_path, surviving_mutants)
 
         # Distinguish None (missing data / corrupt file) from [] (genuinely zero survivors)
         if surviving_mutants is None:
@@ -354,6 +381,14 @@ async def _cmd_killer_async(args: argparse.Namespace) -> int:
         content += f"**Surviving mutants targeted**: {result.get('total_mutants_targeted', 0)}\n"
         content += f"**Test classes generated**: {len(generated_tests)}\n"
         content += f"**Total test methods**: {result.get('total_tests', 0)}\n\n"
+        suggestions = result.get("equivalent_suggestions", [])
+        if suggestions:
+            content += ("## Suggested Equivalent Mutants\n\nThe LLM thinks no test can observe these "
+                        "mutants. Check each one, then confirm with "
+                        "`testboost equivalent <project> <id> --reason \"…\"`:\n\n")
+            for sug in suggestions:
+                content += f"- `{sug['id']}` ({sug['class'].rsplit('.', 1)[-1]}): {sug['reason']}\n"
+            content += "\n"
         if skipped:
             content += "## Skipped Classes\n\n"
             for item in skipped:
@@ -442,3 +477,42 @@ async def _cmd_killer_async(args: argparse.Namespace) -> int:
             f"# Killer Tests - FAILED\n\n**Error**: {e}\n",
         )
         return 1
+
+
+def cmd_equivalent(args: argparse.Namespace) -> int:
+    """Declare, list or withdraw equivalent mutants (`.testboost/equivalents.json`)."""
+    from src.lib import equivalents
+    from src.lib.session_tracker import get_current_session
+
+    project_path = args.project_path
+    if getattr(args, "remove", False):
+        removed = equivalents.remove(project_path, args.ids)
+        print(f"Withdrawn: {', '.join(removed) if removed else 'none'}")
+        return 0 if removed else 1
+    if not args.ids:  # --list (default without ids)
+        declared = equivalents.load(project_path)
+        if not declared:
+            print("No declared equivalent mutant.")
+            return 0
+        print("| Id | Location | Mutation | Reason |\n|---|---|---|---|")
+        for e in declared.values():
+            print(f"| `{e['id']}` | `{e['class'].rsplit('.', 1)[-1]}.{e['method']}` l.{e['line']} "
+                  f"| {e['description']} | {e['reason']} |")
+        return 0
+
+    session = get_current_session(project_path)
+    mutation_file = Path(session["session_dir"]) / "mutation.md" if session else None
+    if mutation_file is None or not mutation_file.exists():
+        print("Error: run `mutate` first: only surviving mutants can be declared equivalent.", file=sys.stderr)
+        return 1
+    survivors = _extract_json_field(mutation_file.read_text(encoding="utf-8"), "surviving_mutants") or []
+    try:
+        added = equivalents.declare(project_path, survivors, args.ids, args.reason)
+    except ValueError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        return 1
+    for e in added:
+        print(f"Declared equivalent: `{e['id']}` {e['class'].rsplit('.', 1)[-1]}.{e['method']} "
+              f"l.{e['line']} — {e['description']}")
+    print("Excluded from killer tests and from the effective score of the next `mutate`.")
+    return 0

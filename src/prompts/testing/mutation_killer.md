@@ -30,6 +30,9 @@ You are an expert Java test engineer. Generate tests that specifically kill the 
 4. Use AssertJ assertions with exact expected values
 5. Mock dependencies with Mockito where needed
 6. Name tests: `shouldKill_{method}_line{line}_{mutator_short_name}`
+7. Equivalent mutants: if a mutant cannot change any observable behaviour (the mutated code behaves like
+   the original for every input the class can receive), write no test for it and add one comment line
+   at the top of the class: `// EQUIVALENT <id>: <why no test can observe it>` (id from the JSON above).
 
 ## Output:
 Return ONLY the complete Java test class starting with `package`. No explanation.

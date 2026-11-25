@@ -47,7 +47,8 @@ bash scripts/tb-mutate.sh <project_path> --target-classes "com.example.service.*
 4. Read the mutation results at `<project_path>/.testboost/sessions/<current_session>/mutation.md`
 5. **Present results** to the user:
    - Overall mutation score (percentage)
-   - Whether the score meets the threshold
+   - The effective score when equivalent mutants were declared (raw PIT score without them), and
+     whether it meets the threshold
    - Number of killed vs survived mutants
    - Classes with the lowest mutation scores
    - Key recommendations for improvement

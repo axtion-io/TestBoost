@@ -14,6 +14,15 @@ GitLab CI template to the new tag.
   per class with surviving mutants) and the expected test path; the host agent writes the tests;
   `generate --agent` / `killer --agent` register and compile them without any LLM call or API
   key. Default mode of the `/testboost.generate` and `/testboost.killer` slash commands.
+- **Equivalent mutants**: `testboost equivalent <project> <id> --reason …` declares a surviving
+  mutant that no test can observe (project-level, keyed on its location so it comes back when the
+  code moves). `mutate` reports an effective score without them (the threshold applies to it);
+  killer steps no longer target them; in LLM mode the model can only suggest them.
+
+### Changed
+- Generation prompt: only the rules relevant to the class (JPA, reflection, reactive, Mockito),
+  no mandatory setup method, at most 2 test examples (same package first, 80 lines each) —
+  about half the size on a real module.
 - Human-in-the-loop pause/resume for CI: `generate`/`validate`/`killer`
   pause with exit code 78 and an HMAC-signed `question.json`; answers are
   signed, bound to their question, TTL-checked, and consumed only after

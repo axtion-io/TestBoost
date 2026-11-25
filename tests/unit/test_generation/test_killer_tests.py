@@ -77,7 +77,7 @@ class TestGenerateKillerTests:
         async def fake_llm(class_name, mutants, source_code, hints=None):
             captured["hints"] = hints
             captured["class_name"] = class_name
-            return "import org.junit.jupiter.api.Test;\nclass K { @Test void k() {} }"
+            return "import org.junit.jupiter.api.Test;\nclass K { @Test void k() {} }", []
 
         with patch("src.test_generation.killer_tests._generate_killer_tests_llm",
                    new=AsyncMock(side_effect=fake_llm)):
@@ -97,7 +97,7 @@ class TestGenerateKillerTests:
         for i in range(5):
             _write_source(tmp_path, f"src/main/java/com/example/C{i}.java")
         with patch("src.test_generation.killer_tests._generate_killer_tests_llm",
-                   new=AsyncMock(return_value="class K { @Test void k() {} }")):
+                   new=AsyncMock(return_value=("class K { @Test void k() {} }", []))):
             result = json.loads(await generate_killer_tests(
                 str(tmp_path), mutants, max_tests=2,
             ))
@@ -123,11 +123,12 @@ class TestKillerHelpers:
         llm = AsyncMock()
         llm.ainvoke.return_value = AsyncMock(content="```java\nclass K { @Test void k() {} }\n```")
         with patch("src.test_generation.killer_tests.get_llm", return_value=llm):
-            code = await _generate_killer_tests_llm(
+            code, suggestions = await _generate_killer_tests_llm(
                 "com.example.OrderService", [_mutant()], "class OrderService {}",
                 hints={"OrderService.calculateTotal": "round half-up"},
             )
         assert code == "class K { @Test void k() {} }"
+        assert suggestions == []
         prompt = llm.ainvoke.await_args.args[0]
         assert "Replaced + with -" in prompt
         assert "class OrderService {}" in prompt
@@ -139,3 +140,24 @@ def _write_source(root, rel):
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("package com.example;\npublic class X {}")
     return path
+
+
+class TestEquivalentSuggestions:
+    """The LLM may flag a mutant it cannot kill; TestBoost reports it, never applies it."""
+
+    @pytest.mark.asyncio
+    async def test_suggestions_are_collected_and_an_all_equivalent_class_is_skipped(self, tmp_path):
+        from src.lib.equivalents import mutant_id
+
+        _write_source(tmp_path, "src/main/java/com/example/OrderService.java")
+        mutant = _mutant()
+        mid = mutant_id(mutant)
+        llm = AsyncMock()
+        llm.ainvoke.return_value = AsyncMock(
+            content=f"```java\n// EQUIVALENT {mid}: the list is always built in order\nclass K {{}}\n```")
+        with patch("src.test_generation.killer_tests.get_llm", return_value=llm):
+            result = json.loads(await generate_killer_tests(str(tmp_path), [mutant]))
+        assert result["equivalent_suggestions"] == [
+            {"class": "com.example.OrderService", "id": mid, "reason": "the list is always built in order"}]
+        assert result["skipped"][0]["reason"] == "every mutant suggested equivalent"
+        assert result["generated_tests"] == []

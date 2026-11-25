@@ -29,6 +29,9 @@ logger = get_logger(__name__)
 
 # A fully-qualified Java class name as PIT reports it (nested: Outer$Inner).
 # Anything else is refused before it is turned into a file path.
+# `// EQUIVALENT <id>: reason` — the LLM's suggestion that a mutant cannot be killed.
+_SUGGESTION = re.compile(r"//\s*EQUIVALENT\s+([0-9a-f]{10})\s*:\s*(.+)")
+
 _JAVA_CLASS_NAME = re.compile(r"^[A-Za-z_$][\w$]*(\.[A-Za-z_$][\w$]*)*$")
 
 
@@ -73,6 +76,7 @@ async def generate_killer_tests(
     # Generate killer tests for each class
     generated_tests: list[dict[str, Any]] = []
     skipped: list[dict[str, str]] = []
+    suggestions: list[dict[str, str]] = []
 
     for class_name, mutants in by_class.items():
         if not _JAVA_CLASS_NAME.match(class_name):
@@ -93,11 +97,14 @@ async def generate_killer_tests(
             or k.startswith((f"{class_name}.", f"{simple_name}."))
         }
 
-        test_code = await _generate_killer_tests_llm(
+        test_code, suggested = await _generate_killer_tests_llm(
             class_name, mutants, source_code, hints=class_hints or None
         )
+        suggestions.extend({"class": class_name, **s} for s in suggested)
         if test_code is None:
-            skipped.append({"class": class_name, "reason": "LLM returned no @Test method"})
+            skipped.append({"class": class_name, "reason": (
+                "every mutant suggested equivalent" if suggested and len(suggested) >= len(mutants)
+                else "LLM returned no @Test method")})
             continue
 
         generated_tests.append(
@@ -115,6 +122,7 @@ async def generate_killer_tests(
         "total_tests": sum(t["mutants_targeted"] for t in generated_tests),
         "total_mutants_targeted": len(surviving_mutants[:max_tests]),
         "skipped": skipped,
+        "equivalent_suggestions": suggestions,
     }
 
     return json.dumps(results, indent=2)
@@ -156,27 +164,30 @@ async def _generate_killer_tests_llm(
     mutants: list[dict[str, Any]],
     source_code: str,
     hints: dict[str, str] | None = None,
-) -> str | None:
+) -> tuple[str | None, list[dict[str, str]]]:
     """Use LLM with mutation_killer prompt to generate targeted killer tests.
 
-    Returns None when the response contains no @Test method.
+    Returns (code, equivalent suggestions); code is None when the response contains
+    no test method. Suggestions are `// EQUIVALENT <id>: reason` lines — never applied
+    automatically: `testboost equivalent` confirms them.
     """
     prompt = build_killer_prompt(class_name, mutants, source_code, hints)
 
     llm = get_llm()
     response = await llm.ainvoke(prompt)
     code = extract_code_block(response_text(response))
+    suggestions = [{"id": i, "reason": r.strip()} for i, r in _SUGGESTION.findall(code)]
 
     if count_tests(code) == 0:
         logger.warning("llm_killer_no_test", class_name=class_name)
-        return None
+        return None, suggestions
 
     logger.info(
         "llm_killer_generation_success",
         class_name=class_name,
         test_count=count_tests(code),
     )
-    return code
+    return code, suggestions
 
 
 def _find_source_file(project_dir: Path, class_name: str) -> Path | None:

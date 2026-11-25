@@ -158,13 +158,14 @@ async def _parse_pit_results(project_dir: Path) -> dict[str, Any]:
             if class_name not in by_class:
                 by_class[class_name] = {"killed": 0, "total": 0}
             by_class[class_name]["total"] += 1
-            if status == "KILLED":
+            if status in ("KILLED", "TIMED_OUT"):  # detected, as in PIT
                 by_class[class_name]["killed"] += 1
 
         # Calculate scores
         if mutations["total"] > 0:
+            # PIT's convention: a mutant that times out was detected.
             results["mutation_score"] = round(
-                (mutations["killed"] / mutations["total"]) * 100, 1
+                ((mutations["killed"] + mutations["timed_out"]) / mutations["total"]) * 100, 1
             )
 
         # Format by-class results

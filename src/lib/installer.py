@@ -75,7 +75,7 @@ def install_commands(
 
 
 # Wrappers called from inside other commands (no slash command of their own).
-HELPER_SCRIPTS = ("context",)
+HELPER_SCRIPTS = ("context", "equivalent")
 
 
 def _command_steps(tb_root: Path) -> list[str]:

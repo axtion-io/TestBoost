@@ -1,0 +1,41 @@
+# TestBoost - Declare surviving mutants equivalent (no test can observe them), list or withdraw
+# Usage: tb-equivalent.ps1 <project_path> [<id> ...] [--reason "..."] [--remove]
+param(
+    [Parameter(Mandatory=$true, Position=0)]
+    [string]$ProjectPath,
+    [Parameter(ValueFromRemainingArguments=$true)]
+    [string[]]$ExtraArgs
+)
+$ErrorActionPreference = "Stop"
+
+$ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+$TestBoostRoot = Split-Path -Parent $ScriptDir
+
+# Activate virtual environment
+if (Test-Path "$TestBoostRoot\.venv\Scripts\Activate.ps1") {
+    & "$TestBoostRoot\.venv\Scripts\Activate.ps1"
+} elseif (Test-Path "$TestBoostRoot\venv\Scripts\Activate.ps1") {
+    & "$TestBoostRoot\venv\Scripts\Activate.ps1"
+}
+
+if (-not (Test-Path -LiteralPath $ProjectPath)) {
+    Write-Host "Error: project path not found: $ProjectPath"
+    exit 1
+}
+$ProjectPath = (Resolve-Path -LiteralPath $ProjectPath).Path
+
+Push-Location $TestBoostRoot
+try {
+    python -m testboost equivalent $ProjectPath @ExtraArgs
+    $exitCode = $LASTEXITCODE
+} finally {
+    Pop-Location
+}
+
+if ($exitCode -ne 0) {
+    Write-Host ""
+    Write-Host "[TESTBOOST_FAILED:exit_code=$exitCode:step=equivalent]"
+    Write-Host "CRITICAL: TestBoost command 'equivalent' failed. Do NOT proceed with this step manually."
+}
+
+exit $exitCode

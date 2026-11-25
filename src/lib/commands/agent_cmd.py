@@ -43,6 +43,16 @@ AGENT_INSTRUCTIONS = """\
 """
 
 
+KILLER_INSTRUCTIONS = """\
+> **Equivalent mutants.** A mutant that no test can observe (the mutated code behaves exactly like the
+> original for every input the class can receive) cannot be killed: do not write a test for it. Declare
+> it instead, with the reason, then leave it out of the test class:
+> `testboost equivalent <project> <id> --reason "why no test can observe it"` (ids in the JSON below).
+> If every mutant of this class is equivalent, write no file.
+
+"""
+
+
 def _session_or_exit(project_path: str):
     from src.lib.session_tracker import get_current_session
 
@@ -210,6 +220,8 @@ def _context_killer(args: argparse.Namespace) -> int:
         logger.error("Mutation testing step not completed. Run `mutate` first.")
         return 1
     survivors = _extract_json_field(mutation_file.read_text(encoding="utf-8"), "surviving_mutants") or []
+    from src.lib import equivalents
+    survivors, _declared = equivalents.split(project_path, survivors)
 
     project_dir = Path(project_path)
     by_class: dict[str, list[dict]] = {}
@@ -228,9 +240,10 @@ def _context_killer(args: argparse.Namespace) -> int:
             continue
         test_path = str(_get_killer_test_path(project_dir, class_name, source).relative_to(project_dir))
         prompt = build_killer_prompt(class_name, mutants, source.read_text(encoding="utf-8", errors="replace"))
-        prompt_file = _write_prompt(agent_dir, class_name.rsplit(".", 1)[-1], test_path, prompt)
+        prompt_file = _write_prompt(agent_dir, class_name.rsplit(".", 1)[-1], test_path,
+                                    KILLER_INSTRUCTIONS + prompt)
         manifest.append({"class": class_name, "test_path": test_path, "mutants_targeted": len(mutants),
-                         "prompt_file": str(prompt_file)})
+                         "mutant_ids": [m["id"] for m in mutants], "prompt_file": str(prompt_file)})
 
     agent_dir.mkdir(parents=True, exist_ok=True)
     (agent_dir / "manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
@@ -360,10 +373,24 @@ def cmd_killer_agent(args: argparse.Namespace) -> int:
                      "then `killer --agent`.")
         return 1
 
+    from src.lib import equivalents
+    declared = equivalents.load(project_path)
+    remaining = []
+    for entry in manifest:
+        targets = [i for i in entry.get("mutant_ids", []) if i not in declared]
+        if entry.get("mutant_ids") and not targets:
+            logger.info(f"{entry['class']}: every mutant declared equivalent — no killer test needed")
+            continue
+        remaining.append({**entry, "mutants_targeted": len(targets) if entry.get("mutant_ids") else
+                          entry["mutants_targeted"]})
+    manifest = remaining
+    if not manifest:
+        logger.info("Every targeted mutant was declared equivalent: nothing to register.")
+
     written, missing, errors = _register(project_path, session_dir, logger, manifest, "killer test(s)")
     content = _report(written, missing, errors, project_path, "Killer Test Generation Results")
     ok = [e for e in written if e["test_path"] not in errors]
-    done = not missing and not errors and bool(ok)
+    done = not missing and not errors
     update_step_file(session_dir, "killer-tests", STATUS_COMPLETED if done else STATUS_FAILED, content,
                      data={"mode": "agent",
                            "generated_tests": [{"class": e["class"], "test_file": e["test_path"],

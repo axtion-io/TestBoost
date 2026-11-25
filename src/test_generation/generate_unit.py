@@ -769,6 +769,15 @@ async def _generate_test_code_with_llm(context: dict[str, Any], source_code: str
         raise
 
 
+_TYPE_DECLARATION = re.compile(r"\b(class|record|interface|enum)\s+(\w+)")
+_COMMENTS = re.compile(r"//[^\n]*|/\*.*?\*/", re.DOTALL)
+
+
+def _strip_comments(source_code: str) -> str:
+    """Java source without comments ('// this class …' must not read as a declaration)."""
+    return _COMMENTS.sub(lambda m: "\n" * m.group(0).count("\n"), source_code)
+
+
 def _analyze_class(source_code: str) -> dict[str, Any]:
     """Analyze Java class structure."""
     methods: list[dict[str, Any]] = []
@@ -798,33 +807,28 @@ def _analyze_class(source_code: str) -> dict[str, Any]:
     for match in import_pattern.finditer(source_code):
         imports.append(match.group(1))
 
-    # Check if this is a Java record
-    record_match = re.search(r"(?:public\s+)?record\s+(\w+)\s*\(([^)]*)\)", source_code)
-    if record_match:
-        info["class_name"] = record_match.group(1)
+    # The file's type is its FIRST type declaration: nested records/classes come later
+    # (e.g. `public final class Vaud { public record Ferie(...) {} … }` is Vaud, a class).
+    code = _strip_comments(source_code)
+    decl = _TYPE_DECLARATION.search(code)
+    if not decl:
+        return info
+    kind, info["class_name"] = decl.group(1), decl.group(2)
+
+    class_annotations = re.findall(r"@(\w+)(?:\([^)]*\))?", code[:decl.start()])
+    annotations.extend(a for a in class_annotations if a in (
+        'Controller', 'RestController', 'Service', 'Repository', 'Component',
+        'RequestMapping', 'Timed', 'Transactional', 'Configuration', 'Bean',
+        'Slf4j', 'Log4j2', 'Data', 'Entity', 'Table', 'Document'
+    ))
+
+    if kind == "record":
         info["is_record"] = True
-        record_params = record_match.group(2)
-        for param in _parse_parameters(record_params):
+        components = _extract_balanced_parens(code, code.index("(", decl.end()))
+        for param in _parse_parameters(components):
             if not _is_primitive_type(param["type"]):
                 dependencies.append({"type": param["type"], "name": param["name"]})
         return info
-
-    # Extract class name
-    class_match = re.search(r"(?:public\s+)?(?:abstract\s+)?class\s+(\w+)", source_code)
-    if class_match:
-        info["class_name"] = class_match.group(1)
-
-    # Extract ALL class-level annotations (before the class declaration)
-    class_decl_match = re.search(r'(?:public\s+)?(?:abstract\s+)?class\s+\w+', source_code)
-    if class_decl_match:
-        before_class = source_code[:class_decl_match.start()]
-        class_annotations = re.findall(r'@(\w+)(?:\([^)]*\))?', before_class)
-        class_level_annots = [a for a in class_annotations if a in (
-            'Controller', 'RestController', 'Service', 'Repository', 'Component',
-            'RequestMapping', 'Timed', 'Transactional', 'Configuration', 'Bean',
-            'Slf4j', 'Log4j2', 'Data', 'Entity', 'Table', 'Document'
-        )]
-        annotations.extend(class_level_annots)
 
     # Extract constructor parameters for dependency injection
     class_name = info["class_name"]
@@ -855,8 +859,8 @@ def _analyze_class(source_code: str) -> dict[str, Any]:
         return_type = match.group(2)
         method_name = match.group(3)
 
-        if method_name == info["class_name"]:
-            continue
+        if method_name == info["class_name"] or return_type in ("record", "class", "interface", "enum"):
+            continue                       # constructor, or a nested type declaration
 
         # Filter private methods - they shouldn't be tested directly
         if visibility == "private":

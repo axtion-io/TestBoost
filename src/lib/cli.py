@@ -161,6 +161,10 @@ def main() -> int:
     p_val.add_argument("project_path", help="Path to the Java project")
     p_val.add_argument("--verbose", "-v", action="store_true")
     p_val.add_argument(
+        "--full", action="store_true",
+        help="Run the whole test suite (default: only the generated tests)",
+    )
+    p_val.add_argument(
         "--fail-on-uncertainty", action="store_true",
         help="Pause with exit 78 and emit question.json when tests fail at runtime",
     )
@@ -173,7 +177,10 @@ def main() -> int:
     p_mutate = subparsers.add_parser("mutate", help="Run mutation testing with PIT")
     p_mutate.add_argument("project_path", help="Path to the Java project")
     p_mutate.add_argument("--target-classes", nargs="*", help="Specific classes to mutate")
-    p_mutate.add_argument("--target-tests", nargs="*", help="Specific test classes to run")
+    p_mutate.add_argument(
+        "--target-tests", nargs="*",
+        help="Specific test classes to run (PIT checks they pass: `validate` is then optional)",
+    )
     p_mutate.add_argument("--min-score", type=int, default=80, help="Minimum mutation score threshold")
     p_mutate.add_argument("--verbose", "-v", action="store_true")
 

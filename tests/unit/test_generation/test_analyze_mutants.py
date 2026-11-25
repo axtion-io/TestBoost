@@ -155,3 +155,23 @@ class TestScoreConventions:
         assert analysis["summary"]["survived"] == 1
         assert analysis["mutation_score"] == 50.0       # 2 detected / 4 left
         assert all(p.get("count", 1) == 1 for p in analysis["priority_improvements"])
+
+
+class TestRecommendationsCountSurvivorsOnly:
+    @pytest.mark.asyncio
+    async def test_killed_mutants_are_not_reported_as_survivors(self, tmp_path):
+        """Seen in a real run: '40 negated conditional mutants survived' with 0 survivors."""
+        report_dir = tmp_path / "pit"
+        report_dir.mkdir()
+        killed = PIT_XML.replace('status="SURVIVED" detected="false"', 'status="KILLED" detected="true"')
+        (report_dir / "mutations.xml").write_text(killed)
+        analysis = json.loads(await analyze_mutants(str(tmp_path), report_path=str(report_dir)))
+        assert analysis["summary"]["survived"] == 0
+        assert not any("survived" in r for r in analysis["recommendations"])
+
+    @pytest.mark.asyncio
+    async def test_survivor_counts_match_the_survivors(self, tmp_path):
+        report_dir = _write_report(tmp_path)
+        analysis = json.loads(await analyze_mutants(str(tmp_path), report_path=str(report_dir)))
+        assert "2 boundary condition mutants survived. Add tests for boundary values (<=, >=, <, >)." \
+            in analysis["recommendations"]

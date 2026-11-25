@@ -453,6 +453,31 @@ class TestCmdValidate:
         content = (Path(session["session_dir"]) / "validation.md").read_text()
         assert "FAILED" in content
 
+    def _generated(self, project, paths):
+        session = get_current_session(str(project))
+        update_step_file(session["session_dir"], "generation", STATUS_COMPLETED, "# Generation\n",
+                         data={"generated": [{"path": p} for p in paths]})
+        return Path(session["session_dir"])
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("full", [False, True])
+    async def test_runs_only_the_generated_tests_unless_full(self, initialized_project, full):
+        """Validate checks what was generated; the module's whole suite can outlast the
+        timeout (seen on a CP-SAT solver suite) — `--full` is the regression run."""
+        from src.lib.cli import _cmd_validate_async
+
+        session_dir = self._generated(initialized_project, [
+            "src/test/java/com/example/OrderServiceTest.java", "app/src/test/java/x/VaudTest.java"])
+        ok = MagicMock(returncode=0, stdout="Tests run: 3", stderr="")
+        with patch("subprocess.run", return_value=ok) as run:
+            args = argparse.Namespace(project_path=str(initialized_project), verbose=False, full=full)
+            assert await _cmd_validate_async(args) == 0
+        test_cmd = run.call_args_list[-1].args[0]
+        selected = [a for a in test_cmd if a.startswith("-Dtest=")]
+        assert selected == ([] if full else ["-Dtest=OrderServiceTest,VaudTest"])
+        assert _extract_json_field((session_dir / "validation.md").read_text(), "scope") == \
+            ("full" if full else "generated")
+
     @pytest.mark.asyncio
     async def test_validate_without_generation(self, initialized_project):
         from src.lib.cli import _cmd_validate_async

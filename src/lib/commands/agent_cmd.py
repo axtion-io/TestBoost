@@ -146,7 +146,12 @@ def _context_generation(args: argparse.Namespace) -> int:
     gaps_md = gaps_file.read_text(encoding="utf-8")
     gaps = _extract_json_field(gaps_md, "gaps") or []
     coverage = _extract_json_field(gaps_md, "coverage") or {}     # gaps --coverage (JaCoCo)
-    targets = filter_target_files(gaps, getattr(args, "files", None), logger)
+    plugin = get_plugin_for_session(project_path)
+    patterns = getattr(args, "files", None)
+    targets = filter_target_files(gaps, patterns, logger,
+                                  others=plugin.find_source_files(Path(project_path)) if patterns else None)
+    if patterns and not targets:
+        return 1
 
     data = read_project_analysis_data(project_path) or {}
     conventions = data.get("conventions")
@@ -154,7 +159,6 @@ def _context_generation(args: argparse.Namespace) -> int:
     if analysis.exists():
         conventions = _extract_json_field(analysis.read_text(encoding="utf-8"), "conventions") or conventions
 
-    plugin = get_plugin_for_session(project_path)
     agent_dir = Path(session_dir) / AGENT_DIR
     manifest: list[dict[str, Any]] = []
     for source_file in targets:
@@ -169,7 +173,11 @@ def _context_generation(args: argparse.Namespace) -> int:
         brief = build_agent_brief(context, source_file, test_path, technology=plugin.identifier,
                                   coverage=coverage.get(source_file))
         name = context["class_name"] or Path(source_file).stem
-        prompt_file = agent_dir / f"{name}.md"
+        stem = Path(source_file).stem              # the brief is named after the FILE: unique per module
+        prompt_file = agent_dir / f"{stem}.md"
+        n = 2
+        while str(prompt_file) in {m["prompt_file"] for m in manifest}:
+            prompt_file, n = agent_dir / f"{stem}-{n}.md", n + 1
         agent_dir.mkdir(parents=True, exist_ok=True)
         prompt_file.write_text(brief, encoding="utf-8")
         manifest.append({"source_file": source_file, "class_name": name,
@@ -318,8 +326,10 @@ def cmd_generate_agent(args: argparse.Namespace) -> int:
         return 1
     files = getattr(args, "files", None)
     if files:
-        manifest = [e for e in manifest
-                    if e["source_file"] in filter_target_files([m["source_file"] for m in manifest], files, logger)]
+        kept = filter_target_files([m["source_file"] for m in manifest], files, logger)
+        if not kept:
+            return 1
+        manifest = [e for e in manifest if e["source_file"] in kept]
 
     written, missing, errors = _register(project_path, session_dir, logger, manifest, "test file(s)")
     content = _report(written, missing, errors, project_path, "Test Generation Results")

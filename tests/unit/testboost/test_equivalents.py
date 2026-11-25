@@ -47,6 +47,24 @@ async def _mutate(project, survivors=(SORT, BOUND), total=10, killed=8, min_scor
     return md, lambda field: _extract_json_field(md, field)
 
 
+class TestMutatePrerequisite:
+    @pytest.mark.asyncio
+    async def test_target_tests_need_no_prior_validation(self, initialized_project):
+        """PIT runs the --target-tests green before mutating: a full `validate` is not required."""
+        pit = json.dumps({"success": True, "mutation_score": 100.0,
+                          "mutations": {"total": 1, "killed": 1, "survived": 0, "no_coverage": 0, "timed_out": 0},
+                          "by_class": [], "surviving_mutants": [], "report_path": "/tmp/pit"})
+        with patch("src.lib.bridge.run_mutation_testing", new=AsyncMock(return_value=pit)) as pit_run, \
+             patch("src.lib.bridge.analyze_mutants", new=AsyncMock(return_value=json.dumps({"success": True}))):
+            without = _args(initialized_project, target_classes=None, target_tests=None, min_score=80)
+            assert await _cmd_mutate_async(without) == 1
+            pit_run.assert_not_called()
+            targeted = _args(initialized_project, target_classes=["com.example.Vaud"],
+                             target_tests=["com.example.VaudTest"], min_score=80)
+            assert await _cmd_mutate_async(targeted) == 0
+        assert pit_run.call_args.kwargs["target_tests"] == ["com.example.VaudTest"]
+
+
 class TestIds:
     def test_stable_and_location_sensitive(self):
         assert equivalents.mutant_id(SORT) == equivalents.mutant_id(dict(SORT))

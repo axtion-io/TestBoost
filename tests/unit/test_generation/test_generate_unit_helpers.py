@@ -91,6 +91,35 @@ class TestAnalyzeClass:
         assert {"type": "UserRepository", "name": "userRepo"} in info["dependencies"]
 
 
+class TestTypeDeclaration:
+    """The file's type is its first declaration (seen on radio-planning: `Vaud`, a class
+    holding a nested `record Ferie`, was briefed as a record with no methods)."""
+
+    VAUD = (
+        "package ch.calendrier;\n"
+        "/** Fériés vaudois: this class computes … */\n"
+        "public final class Vaud {\n"
+        "    // record below is nested\n"
+        "    public record Ferie(LocalDate date, String nom) {}\n"
+        "    public static List<Ferie> feriesVaud(int annee) { return List.of(); }\n"
+        "}\n"
+    )
+
+    def test_nested_record_does_not_hide_the_class(self):
+        info = _analyze_class(self.VAUD)
+        assert (info["class_name"], info["is_record"]) == ("Vaud", False)
+        assert [m["name"] for m in info["methods"]] == ["feriesVaud"]
+
+    def test_comment_mentioning_class_is_not_a_declaration(self):
+        info = _analyze_class("// the class Helper is gone\npublic record Point(int x, Money m) {}\n")
+        assert (info["class_name"], info["is_record"]) == ("Point", True)
+        assert info["dependencies"] == [{"type": "Money", "name": "m"}]
+
+    def test_annotations_before_the_type_are_kept(self):
+        info = _analyze_class("@Service\npublic class Billing { public int total() { return 1; } }")
+        assert info["annotations"] == ["Service"]
+
+
 class TestDetectClassType:
     def test_by_annotation_and_name(self):
         cases = [

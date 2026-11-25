@@ -41,19 +41,19 @@ async def _cmd_mutate_async(args: argparse.Namespace) -> int:
     session_dir = session["session_dir"]
     logger = MdLogger(session_dir, "mutation", verbose=getattr(args, "verbose", False))
 
-    # Check prerequisites: validation must have passed
+    # Prerequisite: validated tests. With --target-tests PIT's own green-suite
+    # check runs exactly those tests first, so no separate validation is needed.
     val_file = Path(session_dir) / "validation.md"
-    if not val_file.exists():
-        logger.error("Validation step not completed. Run `validate` first.")
-        return 1
-    val_status = _read_step_status(val_file)
+    val_status = _read_step_status(val_file) if val_file.exists() else "not run"
     if val_status != "completed":
-        logger.error(
-            f"Validation step has status '{val_status}'. "
-            "Tests must pass before running mutation testing. "
-            "Fix the failing tests and re-run `validate`."
-        )
-        return 1
+        if getattr(args, "target_tests", None):
+            logger.warn(f"Validation {val_status}: PIT checks that the --target-tests pass before mutating.")
+        else:
+            logger.error(
+                f"Validation step: {val_status}. Tests must pass before mutation testing: "
+                "run `validate`, or give `--target-tests` (PIT then checks those tests itself)."
+            )
+            return 1
 
     update_step_file(session_dir, "mutation", STATUS_IN_PROGRESS, "# Mutation Testing\n\nRunning PIT...")
 

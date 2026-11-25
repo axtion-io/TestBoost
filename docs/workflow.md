@@ -118,7 +118,7 @@ Inside an LLM CLI the assistant is already an LLM: calling a second one through 
 another API key and duplicates the work. In agent mode TestBoost never calls an LLM:
 
 1. `context <project> [--files …]` writes, for each gap, a short brief to
-   `sessions/<id>/agent/<Class>.md` (plus `agent/manifest.json`) and prints the test path the
+   `sessions/<id>/agent/<SourceFile>.md` (plus `agent/manifest.json`) and prints the test path the
    plugin expects: what only TestBoost knows — the test stack actually available, the detected
    conventions, the exact dependency signatures from the class index, the parent class, the
    uncovered lines (`gaps --coverage`) and which project tests to imitate. The agent reads the class
@@ -129,15 +129,22 @@ another API key and duplicates the work. In agent mode TestBoost never calls an 
    the step fails until they are fixed; otherwise `generation.md` is completed (`mode: agent`) and the
    integrity token is emitted. `validate` and `mutate` are unchanged.
 
+`--files` (here and in `generate`) is matched against the gaps first, then against every source
+file of the project — asking for a class that already has a test is how one strengthens it. A
+pattern that matches nothing is an error, never a silent fallback to every gap.
+
 The same cycle exists for mutation testing: `context --killer [--max-tests N]` writes one brief per
 class with surviving mutants (`agent/killer/`: ids, lines, mutations), the agent writes the
 `*KillerTest` files, and `killer --agent` registers and compiles them.
 
 ## 5. Validate
 
-**Command:** `python -m src.lib.cli validate <project_path>`
+**Command:** `python -m src.lib.cli validate <project_path> [--full]`
 
-Compiles and runs the generated tests using the plugin's build commands.
+Compiles and runs the generated tests using the plugin's build commands. Only the generated tests
+run (Maven: `-Dtest=<their classes>`; Python: one run per file): this step checks what was
+generated, and a module's whole suite can outlast `test_timeout_seconds`. `--full` runs the whole
+suite, to check for regressions. The report records the scope (`generated` or `full`).
 
 **What it does:**
 1. Resolves the technology plugin for the current session
@@ -150,9 +157,11 @@ Compiles and runs the generated tests using the plugin's build commands.
 
 ## 6. Mutate
 
-**Command:** `python -m src.lib.cli mutate <project_path> [--min-score 80]`
+**Command:** `python -m src.lib.cli mutate <project_path> [--min-score 80] [--target-classes …] [--target-tests …]`
 
-Runs PIT mutation testing to measure test quality (Java only).
+Runs PIT mutation testing to measure test quality (Java only). It requires a completed `validate`,
+except with `--target-tests`: PIT then runs those tests green before mutating, which is the same
+check.
 
 **What it does:**
 - Runs PIT mutation testing via Maven

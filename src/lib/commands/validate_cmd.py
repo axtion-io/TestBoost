@@ -67,6 +67,7 @@ async def _cmd_validate_async(args: argparse.Namespace) -> int:
 
     fail_on_uncertainty = bool(getattr(args, "fail_on_uncertainty", False))
     test_timeout = load_project_config(project_path)["test_timeout_seconds"]
+    full_suite = bool(getattr(args, "full", False))
     validate_fixes = (
         answer_payload.get("validate_fixes", {})
         if isinstance(answer_payload, dict) else {}
@@ -120,7 +121,8 @@ async def _cmd_validate_async(args: argparse.Namespace) -> int:
 
         content = "# Validation Results\n\n"
         content += f"- **Compile**: `{' '.join(compile_cmd_tpl)}`\n"
-        content += f"- **Test**: `{' '.join(test_run_cmd_tpl)}`\n\n"
+        content += f"- **Test**: `{' '.join(test_run_cmd_tpl)}`\n"
+        content += f"- **Scope**: {'whole suite' if full_suite else 'generated tests only (`--full` for the whole suite)'}\n\n"
 
         # Step 1: Compile tests
         compile_failed = False
@@ -189,8 +191,14 @@ async def _cmd_validate_async(args: argparse.Namespace) -> int:
             test_output = all_output
             test_returncode = final_returncode
         else:
-            # Whole-project test execution (Java/Maven)
+            # Maven: only the generated test classes by default — the rest of the suite
+            # is not what this step validates, and on a real module it can take far
+            # longer than the timeout. `--full` runs the whole suite (regressions).
             test_run_cmd = test_run_cmd_tpl
+            if test_file_paths and not full_suite:
+                classes = ",".join(sorted({Path(p).stem for p in test_file_paths}))
+                test_run_cmd = [*test_run_cmd_tpl, f"-Dtest={classes}",
+                                "-Dsurefire.failIfNoSpecifiedTests=false"]
             logger.info(f"Running tests: {' '.join(test_run_cmd)}")
             test_result = subprocess.run(
                 test_run_cmd, cwd=project_path, capture_output=True, text=True, timeout=test_timeout,
@@ -274,6 +282,7 @@ async def _cmd_validate_async(args: argparse.Namespace) -> int:
                 "compilation": "passed",
                 "tests": "passed" if test_returncode == 0 else "failed",
                 "return_code": test_returncode,
+                "scope": "full" if full_suite else "generated",
             },
         )
 

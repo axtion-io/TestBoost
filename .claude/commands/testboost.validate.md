@@ -4,7 +4,7 @@ description: Compile and run generated tests to validate them
 
 # /testboost.validate
 
-Compile and run the generated tests using Maven.
+Compile and run the generated tests using Maven. Only the generated tests run; add `--full` to run the whole suite (regression check — it can be long).
 
 ## Prerequisites
 

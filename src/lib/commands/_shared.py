@@ -114,16 +114,27 @@ def load_answer_for_step(
         return None, 1
 
 
-def filter_target_files(files: list[str], patterns: list[str] | None, logger) -> list[str]:
+def filter_target_files(files: list[str], patterns: list[str] | None, logger,
+                        others: list[str] | None = None) -> list[str]:
     """Keep the files matching any `--files` pattern (substring, `\\` or `/`).
 
-    No pattern, or no match (warned), keeps every file.
+    No pattern keeps every file. A pattern that matches none of `files` (the
+    gaps) is looked up in `others` (every source file of the project): asking
+    for a class that already has a test is how one strengthens it. No match at
+    all is an error (empty list), never a silent fallback to every file.
     """
     if not patterns:
         return list(files)
     normalized = [p.replace("\\", "/") for p in patterns]
-    kept = [f for f in files if any(p in f.replace("\\", "/") for p in normalized)]
+
+    def matching(candidates: list[str]) -> list[str]:
+        return [f for f in candidates if any(p in f.replace("\\", "/") for p in normalized)]
+
+    kept = matching(files)
+    if not kept and others:
+        kept = matching(others)
+        if kept:
+            logger.info(f"Not a coverage gap, targeted as asked: {', '.join(kept)}")
     if not kept:
-        logger.warn(f"No files matched filter: {patterns}")
-        return list(files)
+        logger.error(f"No source file matches --files {' '.join(patterns)}")
     return kept

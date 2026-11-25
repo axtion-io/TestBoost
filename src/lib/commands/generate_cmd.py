@@ -125,7 +125,14 @@ async def _cmd_generate_async(args: argparse.Namespace) -> int:
                 maven_test_cmd = session_test_cmd
 
         # Apply file filter if specified (separators normalized for Windows)
-        target_files = filter_target_files(gaps, getattr(args, "files", None), logger)
+        from src.lib.bridge import find_source_files as bridge_sources
+        patterns = getattr(args, "files", None)
+        target_files = filter_target_files(gaps, patterns, logger,
+                                           others=bridge_sources(project_path) if patterns else None)
+        if patterns and not target_files:
+            update_step_file(session_dir, "generation", STATUS_FAILED,
+                             f"# Test Generation\n\nNo source file matches --files {' '.join(patterns)}\n")
+            return 1
 
         logger.info(f"Generating tests for {len(target_files)} files...")
 

@@ -8,7 +8,7 @@ Run PIT mutation testing to measure how effective the generated tests are at det
 
 ## Prerequisites
 
-The validation step must be completed first (tests must compile and pass). If not, suggest running `/testboost.validate`.
+The validation step must be completed first (tests must compile and pass), unless you pass `--target-tests` (PIT then checks those tests pass itself). If not, suggest running `/testboost.validate`.
 
 The Java project must have the PIT Maven plugin configured in its `pom.xml`. If PIT is not configured, suggest adding:
 

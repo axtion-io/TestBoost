@@ -226,23 +226,21 @@ def _generate_recommendations(
             "Add tests for these methods first."
         )
 
-    # Analyze mutator patterns
-    mutators = analysis["by_mutator"]
-    if "ConditionalsBoundaryMutator" in mutators:
-        count = mutators["ConditionalsBoundaryMutator"]
+    # Patterns among the SURVIVORS (by_mutator counts every mutant, killed ones included)
+    surviving_by_mutator = Counter(m["mutator"] for m in surviving)
+    count = surviving_by_mutator.get("ConditionalsBoundaryMutator", 0)
+    if count:
         recommendations.append(
             f"{count} boundary condition mutants survived. "
             "Add tests for boundary values (<=, >=, <, >)."
         )
-
-    if "NegateConditionalsMutator" in mutators:
-        count = mutators["NegateConditionalsMutator"]
+    count = surviving_by_mutator.get("NegateConditionalsMutator", 0)
+    if count:
         recommendations.append(
             f"{count} negated conditional mutants survived. "
             "Add tests that verify both true and false branches."
         )
-
-    if "ReturnValuesMutator" in mutators or "EmptyReturnValuesMutator" in mutators:
+    if any("Return" in mutator for mutator in surviving_by_mutator):
         recommendations.append(
             "Surviving return value mutants detected. "
             "Add assertions that verify actual return values, not just non-null."

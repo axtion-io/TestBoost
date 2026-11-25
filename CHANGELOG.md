@@ -19,6 +19,12 @@ GitLab CI template to the new tag.
   code moves). `mutate` reports an effective score without them (the threshold applies to it);
   killer steps no longer target them; in LLM mode the model can only suggest them.
 
+### Fixed
+- The mutation report's recommendations counted every mutant of a mutator, killed ones included
+  ("40 negated conditional mutants survived" with 0 survivors).
+- A class holding a nested record (`class Vaud { record Ferie(…) }`) was analysed as that record,
+  with no methods; comments mentioning `class X` are no longer read as declarations.
+
 ### Changed
 - `gaps --coverage` (Java/Maven): gaps are the classes below `--min-coverage` JaCoCo line coverage,
   with their uncovered lines — instead of "no `FooTest` file" (4 real gaps instead of 70 on a module
@@ -26,6 +32,11 @@ GitLab CI template to the new tag.
 - Agent mode: `context` writes a ~25-line brief (test path, available stack, conventions, exact
   dependency signatures, uncovered lines, examples to imitate) instead of the full LLM prompt; the
   agent reads the source itself. Same for `context --killer`.
+- `validate` runs only the generated tests (`-Dtest=…` for Maven); `--full` runs the whole suite.
+- `mutate --target-tests` no longer requires a prior `validate`: PIT checks those tests pass itself.
+- `--files` (`context`, `generate`) also matches source files that are not gaps, and a pattern
+  matching nothing is an error instead of silently selecting every gap.
+- Agent briefs are named after the source file (`agent/Vaud.md`), not the detected class.
 - Generation prompt: only the rules relevant to the class (JPA, reflection, reactive, Mockito),
   no mandatory setup method, at most 2 test examples (same package first, 80 lines each) —
   about half the size on a real module.

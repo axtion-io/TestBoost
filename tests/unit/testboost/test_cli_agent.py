@@ -84,6 +84,23 @@ class TestContext:
         manifest = json.loads((_session_dir(initialized_project) / "agent/manifest.json").read_text())
         assert [m["test_path"] for m in manifest] == [CONTROLLER_TEST]
 
+    @pytest.mark.asyncio
+    async def test_files_outside_the_gaps_is_targeted_as_asked(self, initialized_project):
+        """An already-tested class (absent from gaps) can still be strengthened."""
+        await setup_gaps(initialized_project, files=[ORDER_SERVICE, USER_CONTROLLER])
+        gaps = _session_dir(initialized_project) / "coverage-gaps.md"
+        gaps.write_text(gaps.read_text().replace(USER_CONTROLLER, "src/main/java/com/example/Other.java"))
+        assert cmd_context(_args(initialized_project, files=["UserController"], killer=False)) == 0
+        manifest = json.loads((_session_dir(initialized_project) / "agent/manifest.json").read_text())
+        assert [m["test_path"] for m in manifest] == [CONTROLLER_TEST]
+
+    @pytest.mark.asyncio
+    async def test_files_matching_nothing_is_an_error_not_every_gap(self, initialized_project, capsys):
+        await setup_gaps(initialized_project, files=[ORDER_SERVICE, USER_CONTROLLER])
+        assert cmd_context(_args(initialized_project, files=["Typo"], killer=False)) == 1
+        assert not (_session_dir(initialized_project) / "agent/manifest.json").exists()
+        assert "No source file matches --files Typo" in capsys.readouterr().err
+
     def test_requires_gaps(self, initialized_project):
         assert cmd_context(_args(initialized_project, files=None, killer=False)) == 1
 

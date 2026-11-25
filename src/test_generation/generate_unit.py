@@ -385,14 +385,67 @@ def _resolve_dependency_signatures_from_index(
     return "\n\n".join(results)
 
 
+MAX_PROMPT_EXAMPLES = 2
+# The head of a test file (imports, fixtures, first tests) carries the style.
+MAX_EXAMPLE_LINES = 80
+
+
+def _select_test_examples(test_examples: list[dict[str, str]], package: str) -> list[dict[str, str]]:
+    """The examples closest to the class under test: same package first, then the others
+    (in `analyze` order), at most MAX_PROMPT_EXAMPLES — style is shown, not repeated."""
+    package_dir = "/" + package.replace(".", "/") + "/" if package else None
+
+    def same_package(example: dict[str, str]) -> bool:
+        path = "/" + example.get("path", "").replace("\\", "/")
+        return bool(package_dir) and package_dir in path and "/" not in path.split(package_dir, 1)[1]
+
+    ranked = sorted(test_examples, key=lambda e: not same_package(e))   # stable: keeps analyze order
+    return ranked[:MAX_PROMPT_EXAMPLES]
+
+
+def _build_specific_rules(context: dict[str, Any], source_code: str, test_deps: dict[str, Any]) -> str:
+    """Rules that only apply to some classes, so that the prompt carries no irrelevant advice."""
+    rules: list[str] = []
+    if test_deps.get("has_mockito"):
+        rules.append("    - If using Mockito: verify() for interaction count, ArgumentCaptor for argument values")
+    sections = "\n".join(rules) + ("\n" if rules else "")
+    if re.search(r"\b(?:Mono|Flux)<", source_code):
+        sections += "\n## Reactive Types:\n- For Mono/Flux, use StepVerifier (reactor-test)\n"
+    jpa = context.get("is_jpa_entity") or context["class_type"] in ("model", "repository") or any(
+        a in ("Entity", "Table") for a in context.get("annotations", []))
+    if jpa:
+        sections += (
+            "\n## JPA Entity Guidelines (CRITICAL):\n"
+            "- NEVER call setId() on @GeneratedValue fields - use ReflectionTestUtils.setField(entity, \"id\", 1L)\n"
+            "- Use Optional.of(entity) for present values, Optional.empty() for not-found scenarios\n"
+            "- Use correct ID types (Long for JPA, not Integer)\n"
+            "- Check actual date field type before using date values\n"
+        )
+    return sections
+
+
+_EXTENDS = re.compile(r"\bclass\s+\w+(?:<[^>{]*>)?\s+extends\s+\w")
+
+REFLECTION_SECTION = (
+    "## Additional Java/Reflection Rules:\n"
+    "- Private parent fields: CANNOT be accessed in anonymous subclasses — use ReflectionTestUtils.setField() "
+    "or restructure\n"
+    "- Reflection: always call `field.setAccessible(true)` before `.get()` / `.getInt()` — declare "
+    "`throws Exception` on test method\n\n"
+)
+
+
 def _build_test_examples_section(test_examples: list[dict[str, str]]) -> str:
-    """Build the test style examples section (up to 3 examples extracted by `analyze`)."""
+    """Build the test style examples section (examples extracted by `analyze`)."""
     if not test_examples:
         return ""
     parts = ["\n## Existing Test Examples (follow this style and imports exactly):\n"]
     for example in test_examples[:3]:
         path = example.get("path", "unknown")
-        content = example.get("content", "")
+        lines = example.get("content", "").splitlines()
+        content = "\n".join(lines[:MAX_EXAMPLE_LINES])
+        if len(lines) > MAX_EXAMPLE_LINES:
+            content += f"\n// … ({len(lines) - MAX_EXAMPLE_LINES} more lines)"
         parts.append(f"### Example from `{path}`:\n```java\n{content}\n```\n")
     return "\n".join(parts)
 
@@ -514,7 +567,7 @@ def build_generation_prompt(
     framework_instructions = _build_framework_instructions(test_deps)
 
     # Context built once by `analyze` (.testboost/analysis.md)
-    existing_test_example = _build_test_examples_section(test_examples or [])
+    existing_test_example = _build_test_examples_section(_select_test_examples(test_examples or [], package))
     dep_signatures = (
         _resolve_dependency_signatures_from_index(dependencies, class_index)
         if class_index else ""
@@ -604,11 +657,9 @@ def build_generation_prompt(
 """
 
     # Build prompt from template
-    methods_json = json.dumps(
-        [{"name": m["name"], "params": m.get("parameters", []), "return_type": m.get("return_type", "void")}
-         for m in methods],
-        indent=2,
-    )
+    methods_json = "".join(
+        f"\n  - `{m['name']}({m.get('parameters', '')})` → `{m.get('return_type', 'void')}`" for m in methods
+    ) or " none"
     test_requirements_section = (
         json.dumps(test_requirements, indent=2) if test_requirements
         else "Generate standard coverage tests for all public methods."
@@ -632,6 +683,9 @@ def build_generation_prompt(
         dependencies_json=json.dumps(dependencies, indent=2),
         methods_json=methods_json,
         test_requirements_section=test_requirements_section,
+        # Reflection advice only matters for a subclass (private parent fields).
+        reflection_section=REFLECTION_SECTION if _EXTENDS.search(source_code) else "",
+        specific_rules=_build_specific_rules(context, source_code, test_deps),
     )
     return prompt, test_deps
 

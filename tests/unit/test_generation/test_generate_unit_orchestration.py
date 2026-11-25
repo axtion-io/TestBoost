@@ -213,3 +213,44 @@ class TestPromptWithoutMockito:
         prompt = llm.ainvoke.await_args.args[0]
         assert "**Uses Mockito**: no" in prompt
         assert "use @Mock" not in prompt
+
+
+class TestPromptOnlyCarriesRelevantRules:
+    """A prompt is not a checklist of every Java pitfall: JPA, reflection and reactive
+    rules appear only for the classes they apply to; examples are the closest ones."""
+
+    async def _prompt(self, source, **overrides):
+        llm = _llm_returning(JAVA_TEST)
+        with patch("src.test_generation.generate_unit.get_llm", return_value=llm):
+            await _generate_test_code_with_llm(_context(**overrides), source)
+        return llm.ainvoke.await_args.args[0]
+
+    @pytest.mark.asyncio
+    async def test_plain_utility_class(self):
+        prompt = await self._prompt("public final class Py { static long mod(long a, long b) {} }",
+                                    class_type="utility", dependencies=[])
+        for absent in ("JPA Entity Guidelines", "StepVerifier", "Reflection Rules"):
+            assert absent not in prompt
+        assert "only when several tests share fixtures" in prompt
+
+    @pytest.mark.asyncio
+    async def test_entity_subclass_and_reactive_service(self):
+        entity = await self._prompt("@Entity public class Order extends Base {}", class_type="model",
+                                    annotations=["Entity"])
+        assert "JPA Entity Guidelines" in entity and "Reflection Rules" in entity
+        reactive = await self._prompt("class S { Mono<Order> find() {} Flux<Order> all() {} }")
+        assert "StepVerifier" in reactive and "JPA Entity Guidelines" not in reactive
+
+    @pytest.mark.asyncio
+    async def test_closest_examples_first_at_most_two_and_trimmed(self):
+        examples = [
+            {"path": "src/test/java/com/other/AlphaTest.java", "content": "// alpha"},
+            {"path": "src/test/java/com/example/service/sub/BetaTest.java", "content": "// beta"},
+            {"path": "src/test/java/com/example/service/GammaTest.java",
+             "content": "\n".join(f"// gamma {i}" for i in range(100))},
+        ]
+        prompt = await self._prompt("class OrderService {}", test_examples=examples)
+        assert prompt.index("GammaTest") < prompt.index("AlphaTest")   # same package first
+        assert "BetaTest" not in prompt                                  # at most two
+        assert "// gamma 79" in prompt and "// gamma 80" not in prompt
+        assert "(20 more lines)" in prompt

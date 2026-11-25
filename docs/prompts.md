@@ -36,14 +36,16 @@ Used by `generate_adaptive_tests()` in `generate_unit.py`. This is the main prom
 | `{{class_type_instructions}}` | Controller / service / repository-specific test patterns |
 | `{{dep_section}}` | Public method signatures of dependency classes (from class index) |
 | `{{inheritance_context}}` | Parent class fields and methods when the tested class extends another class in the index |
-| `{{existing_test_example}}` | Up to 3 representative test files from the project for style reference |
+| `{{existing_test_example}}` | Up to 2 project test files (same package first), first 80 lines each, for style reference |
 | `{{source_code}}` | Full source code of the class to test |
 | `{{class_name}}` | Simple class name |
 | `{{package}}` | Java package |
 | `{{class_type}}` | controller, service, repository, utility, model |
 | `{{dependencies_json}}` | JSON list of constructor-injected dependencies |
-| `{{methods_json}}` | JSON list of public methods with return types |
+| `{{methods_json}}` | One line per public method: `name(params)` → `return type` |
 | `{{test_requirements_section}}` | Specific test requirements, or default coverage instruction |
+| `{{reflection_section}}` | Reflection / private parent field rules — only when the class extends another class |
+| `{{specific_rules}}` | Rules that only apply to some classes: Mockito `verify()`/`ArgumentCaptor` (Mockito available), StepVerifier (Mono/Flux in the source), JPA entity guidelines (entities and repositories) |
 
 ### What the prompt enforces
 
